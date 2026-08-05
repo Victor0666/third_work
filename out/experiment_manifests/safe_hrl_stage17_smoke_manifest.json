@@ -1,0 +1,1178 @@
+{
+  "active_workflows_per_episode": 2,
+  "admitted_llm_heuristic_ids": [],
+  "artifact_integrity": [
+    {
+      "artifact_role": "workflow_instance",
+      "path": "data/dax/CyberShake_30.xml",
+      "sha256": "0683aa34ab935adb33bad540096e24d7602d9770ea38d67fa13ebccb611560da"
+    },
+    {
+      "artifact_role": "workflow_instance",
+      "path": "data/dax/Epigenomics_24.xml",
+      "sha256": "867696c4d3028eded842bec41c9ce3ef6ddceb3ccd925212f1282281101c7af1"
+    },
+    {
+      "artifact_role": "workflow_instance",
+      "path": "data/dax/Ligo_30.xml",
+      "sha256": "6d8773fecf8376fda8c5df5c33c527a2485c721371b11f476f4858e1e8f5229b"
+    },
+    {
+      "artifact_role": "workflow_instance",
+      "path": "data/dax/Montage_25.xml",
+      "sha256": "3c791f17b8e57a06e5e7afad57fffc625c0611caf168036efeaa18b1888bab19"
+    },
+    {
+      "artifact_role": "workflow_instance",
+      "path": "data/dax/Sipht_29.xml",
+      "sha256": "f9d6bcaf70a9b3f9e57bd599955da2dd90fa35b8c2b9daabea7e137e36534bb6"
+    },
+    {
+      "artifact_role": "deadline_cache",
+      "path": "data/deadlines/fcfs/fcfs_smallTask_smallRes_seed0-1000.json",
+      "sha256": "a3d76f33f04dd1f7d9b1771b633bf68143a9ea62efd3b4af8ad86db79157ccc9"
+    },
+    {
+      "artifact_role": "heuristic_library_manifest",
+      "path": "LLM/problems/cews_task_constructive/safe_heuristic_library.json",
+      "sha256": "f14e748d929a796a991a8f95bd2d654ddd96a417e3097c662495f40c18b2c642"
+    }
+  ],
+  "case_fixtures": {
+    "final_test": [
+      {
+        "arrival_seed": 201,
+        "arrival_times": [
+          109.60974434488426,
+          124.20089575604115
+        ],
+        "case_id": "final_test_seed_201",
+        "dax_sequence": [
+          "CyberShake_30.xml",
+          "Epigenomics_24.xml"
+        ],
+        "deadline_alpha_sequence": [
+          2.0,
+          3.0
+        ],
+        "episode_seed": 201,
+        "fixture_sha256": "0b7ed02e769630db9cbac9740a004120a927cc7a9de45caefdd6829c1488d269",
+        "fuzzy_delta1": 0.75,
+        "fuzzy_delta2": 1.2,
+        "fuzzy_resource_seed": 201,
+        "resource_seed": 201,
+        "workflow_seed": 201,
+        "workflows_per_episode": 2,
+        "workload_payload_seeds": [
+          201,
+          202
+        ]
+      }
+    ],
+    "training": [
+      {
+        "arrival_seed": 1,
+        "arrival_times": [
+          35.76763421241797,
+          46.04940568326078
+        ],
+        "case_id": "train_seed_001",
+        "dax_sequence": [
+          "Montage_25.xml",
+          "Sipht_29.xml"
+        ],
+        "deadline_alpha_sequence": [
+          2.0,
+          2.0
+        ],
+        "episode_seed": 1,
+        "fixture_sha256": "2244756a863ab58e917b4462061d8296e6513353f55b5ead25c3227402e35344",
+        "fuzzy_delta1": 0.75,
+        "fuzzy_delta2": 1.2,
+        "fuzzy_resource_seed": 1,
+        "resource_seed": 1,
+        "workflow_seed": 1,
+        "workflows_per_episode": 2,
+        "workload_payload_seeds": [
+          1,
+          2
+        ]
+      }
+    ],
+    "validation": [
+      {
+        "arrival_seed": 101,
+        "arrival_times": [
+          136.3229502039196,
+          155.5941291268777
+        ],
+        "case_id": "validation_seed_101",
+        "dax_sequence": [
+          "Montage_25.xml",
+          "Epigenomics_24.xml"
+        ],
+        "deadline_alpha_sequence": [
+          2.0,
+          2.0
+        ],
+        "episode_seed": 101,
+        "fixture_sha256": "61ad54d330dd59b468f4376d68f63a9b2bcccbe30226917ab3c803c143f9ccd6",
+        "fuzzy_delta1": 0.75,
+        "fuzzy_delta2": 1.2,
+        "fuzzy_resource_seed": 101,
+        "resource_seed": 101,
+        "workflow_seed": 101,
+        "workflows_per_episode": 2,
+        "workload_payload_seeds": [
+          101,
+          102
+        ]
+      }
+    ]
+  },
+  "experiment_id": "safe_hrl_comparison_ablation_ss_tight_v1",
+  "generator": {
+    "code_sha256": "fcdfb17c241a3cdb20c968b25c4ca8c6385b33217516c4fff8082c1203731e49",
+    "module": "hrl_mix.experiment_matrix",
+    "numpy_version": "2.1.2",
+    "python_version": "3.12.10"
+  },
+  "manifest_schema_version": 1,
+  "manifest_sha256": "5e4b922aaa2055eca777c7a7bafd839038db06391b32ebfe9adc31be103c132f",
+  "manifest_version": "2026-07-28.stage17.v1",
+  "profile_kind": "smoke",
+  "runs": [
+    {
+      "base_method_id": "original_hrl",
+      "blocking_reasons": [],
+      "configuration_valid": true,
+      "description": "原 Manager 规则权重 + Host D3QN + VM D3QN；关闭全部 safe_rl 与 LLM 扩展。",
+      "disabled_components": [],
+      "effective_components": {
+        "demonstration_pretraining": false,
+        "empty_safe_action_behavior": "legacy_action",
+        "fallback_controller": false,
+        "fixed_heuristic_id": null,
+        "heuristic_candidate_set": "FCFS,SJF,MCF,HUR,EDF",
+        "host_policy": "learned_d3qn",
+        "information_contract_id": "legacy_hrl",
+        "lagrange_mode": "none",
+        "lambda_value": null,
+        "llm_demonstration_pretraining": false,
+        "llm_enabled": false,
+        "llm_host_vm_access": false,
+        "llm_rule_mode": "none",
+        "manager_observation": "legacy",
+        "manager_policy": "legacy_rule_weight",
+        "policy_family": "hrl",
+        "safe_rl": false,
+        "safety_cost_recording": false,
+        "safety_shield": false,
+        "safety_value_network": false,
+        "task_level_safety_deadline": false,
+        "task_ordering": "legacy_weighted_traditional_heuristics",
+        "training_seed_mode": "multi_seed",
+        "vm_policy": "learned_d3qn"
+      },
+      "evaluation_case_ids": [
+        "validation_seed_101",
+        "final_test_seed_201"
+      ],
+      "execution_adapter": "original_hrl_train_runner",
+      "execution_ready": true,
+      "information_contract_id": "legacy_hrl",
+      "information_contract_sha256": "a8ab70ae79cf4eb9deb15e475be44c6708c09c14d176767889a0998518f17ab0",
+      "llm_host_vm_access": false,
+      "run_id": "original_hrl",
+      "run_kind": "comparison_method",
+      "shared_protocol_sha256": "3b9853fb898d5e434d889ea474b7d7039077e2dc0124d6727b9d88a918085347",
+      "training_case_ids": [
+        "train_seed_001"
+      ],
+      "uses_information_outside_declared_contract": false
+    },
+    {
+      "base_method_id": "original_hrl_plus_llm",
+      "blocking_reasons": [
+        "execution_adapter_not_implemented:legacy_heuristic_manager_adapter",
+        "no_admitted_llm_heuristic"
+      ],
+      "configuration_valid": true,
+      "description": "旧 observation 与旧 reward 语义不变，仅让 Manager 选择传统或已准入的 ready-task 规则；Host/VM 不接收 LLM 信息。",
+      "disabled_components": [],
+      "effective_components": {
+        "demonstration_pretraining": false,
+        "empty_safe_action_behavior": "legacy_action",
+        "fallback_controller": false,
+        "fixed_heuristic_id": null,
+        "heuristic_candidate_set": "FCFS,SJF,MCF,HUR,EDF,admitted_seevo",
+        "host_policy": "learned_d3qn",
+        "information_contract_id": "legacy_hrl_with_task_rule",
+        "lagrange_mode": "none",
+        "lambda_value": null,
+        "llm_demonstration_pretraining": false,
+        "llm_enabled": true,
+        "llm_host_vm_access": false,
+        "llm_rule_mode": "manager_selects_admitted_rule",
+        "manager_observation": "legacy",
+        "manager_policy": "heuristic_selection_with_legacy_observation",
+        "policy_family": "hrl",
+        "safe_rl": false,
+        "safety_cost_recording": false,
+        "safety_shield": false,
+        "safety_value_network": false,
+        "task_level_safety_deadline": false,
+        "task_ordering": "manager_selected_heuristic",
+        "training_seed_mode": "multi_seed",
+        "vm_policy": "learned_d3qn"
+      },
+      "evaluation_case_ids": [
+        "validation_seed_101",
+        "final_test_seed_201"
+      ],
+      "execution_adapter": "legacy_heuristic_manager_adapter",
+      "execution_ready": false,
+      "information_contract_id": "legacy_hrl_with_task_rule",
+      "information_contract_sha256": "5aac201dd083885b37cb3238df36a26d99a734377f01beabd77f41b557498aa4",
+      "llm_host_vm_access": false,
+      "run_id": "original_hrl_plus_llm",
+      "run_kind": "comparison_method",
+      "shared_protocol_sha256": "3b9853fb898d5e434d889ea474b7d7039077e2dc0124d6727b9d88a918085347",
+      "training_case_ids": [
+        "train_seed_001"
+      ],
+      "uses_information_outside_declared_contract": false
+    },
+    {
+      "base_method_id": "safe_hrl_without_llm",
+      "blocking_reasons": [
+        "execution_adapter_not_implemented:safe_hrl_without_llm_adapter"
+      ],
+      "configuration_valid": true,
+      "description": "完整安全 HRL，但 Manager 候选集合只有 FCFS/SJF/MCF/HUR/EDF。",
+      "disabled_components": [],
+      "effective_components": {
+        "demonstration_pretraining": false,
+        "empty_safe_action_behavior": "deterministic_fixed_vm_fallback",
+        "fallback_controller": true,
+        "fixed_heuristic_id": null,
+        "heuristic_candidate_set": "FCFS,SJF,MCF,HUR,EDF",
+        "host_policy": "learned_safe_d3qn",
+        "information_contract_id": "safe_hrl_no_external_rule",
+        "lagrange_mode": "dynamic",
+        "lambda_value": 1.0,
+        "llm_demonstration_pretraining": false,
+        "llm_enabled": false,
+        "llm_host_vm_access": false,
+        "llm_rule_mode": "none",
+        "manager_observation": "safe",
+        "manager_policy": "heuristic_selection_safe_observation",
+        "policy_family": "hrl",
+        "safe_rl": true,
+        "safety_cost_recording": true,
+        "safety_shield": true,
+        "safety_value_network": true,
+        "task_level_safety_deadline": true,
+        "task_ordering": "manager_selected_heuristic",
+        "training_seed_mode": "multi_seed",
+        "vm_policy": "learned_safe_d3qn"
+      },
+      "evaluation_case_ids": [
+        "validation_seed_101",
+        "final_test_seed_201"
+      ],
+      "execution_adapter": "safe_hrl_without_llm_adapter",
+      "execution_ready": false,
+      "information_contract_id": "safe_hrl_no_external_rule",
+      "information_contract_sha256": "de40edc58a46f42002a8549cd82d27657be8a307444c6caef141485287267314",
+      "llm_host_vm_access": false,
+      "run_id": "safe_hrl_without_llm",
+      "run_kind": "comparison_method",
+      "shared_protocol_sha256": "3b9853fb898d5e434d889ea474b7d7039077e2dc0124d6727b9d88a918085347",
+      "training_case_ids": [
+        "train_seed_001"
+      ],
+      "uses_information_outside_declared_contract": false
+    },
+    {
+      "base_method_id": "llm_augmented_safe_hrl",
+      "blocking_reasons": [
+        "no_admitted_llm_heuristic",
+        "demonstration_dataset_manifest_missing"
+      ],
+      "configuration_valid": true,
+      "description": "完整安全 HRL，Manager 从传统和已准入 SeEvo ready-task 规则中选择；资源动作仍由 Host/VM Agent 与 shield 控制。",
+      "disabled_components": [],
+      "effective_components": {
+        "demonstration_pretraining": true,
+        "empty_safe_action_behavior": "deterministic_fixed_vm_fallback",
+        "fallback_controller": true,
+        "fixed_heuristic_id": null,
+        "heuristic_candidate_set": "FCFS,SJF,MCF,HUR,EDF,admitted_seevo",
+        "host_policy": "learned_safe_d3qn",
+        "information_contract_id": "safe_hrl_with_task_rule",
+        "lagrange_mode": "dynamic",
+        "lambda_value": 1.0,
+        "llm_demonstration_pretraining": true,
+        "llm_enabled": true,
+        "llm_host_vm_access": false,
+        "llm_rule_mode": "manager_selects_admitted_rule",
+        "manager_observation": "safe",
+        "manager_policy": "heuristic_selection_safe_observation",
+        "policy_family": "hrl",
+        "safe_rl": true,
+        "safety_cost_recording": true,
+        "safety_shield": true,
+        "safety_value_network": true,
+        "task_level_safety_deadline": true,
+        "task_ordering": "manager_selected_heuristic",
+        "training_seed_mode": "multi_seed",
+        "vm_policy": "learned_safe_d3qn"
+      },
+      "evaluation_case_ids": [
+        "validation_seed_101",
+        "final_test_seed_201"
+      ],
+      "execution_adapter": "safe_hrl_train_runner",
+      "execution_ready": false,
+      "information_contract_id": "safe_hrl_with_task_rule",
+      "information_contract_sha256": "77c69f5343eb0b43ae105ad24c52b46651449c36a463cc41e841ceeb7a54f511",
+      "llm_host_vm_access": false,
+      "run_id": "llm_augmented_safe_hrl",
+      "run_kind": "comparison_method",
+      "shared_protocol_sha256": "3b9853fb898d5e434d889ea474b7d7039077e2dc0124d6727b9d88a918085347",
+      "training_case_ids": [
+        "train_seed_001"
+      ],
+      "uses_information_outside_declared_contract": false
+    },
+    {
+      "base_method_id": "seevo_best_heuristic_only",
+      "blocking_reasons": [
+        "execution_adapter_not_implemented:fixed_heuristic_evaluator",
+        "no_admitted_llm_heuristic"
+      ],
+      "configuration_valid": true,
+      "description": "固定使用当前 manifest 中最优已准入 SeEvo ready-task 规则，并沿用确定性固定 VM 资源规则。",
+      "disabled_components": [],
+      "effective_components": {
+        "demonstration_pretraining": false,
+        "empty_safe_action_behavior": "fixed_vm_rule_internal",
+        "fallback_controller": false,
+        "fixed_heuristic_id": "best_admitted_seevo",
+        "heuristic_candidate_set": "best_admitted_seevo",
+        "host_policy": "deterministic_fixed_vm_rule",
+        "information_contract_id": "admitted_task_rule_only",
+        "lagrange_mode": "none",
+        "lambda_value": null,
+        "llm_demonstration_pretraining": false,
+        "llm_enabled": true,
+        "llm_host_vm_access": false,
+        "llm_rule_mode": "best_admitted_rule",
+        "manager_observation": "not_applicable",
+        "manager_policy": "fixed_heuristic",
+        "policy_family": "fixed_heuristic",
+        "safe_rl": false,
+        "safety_cost_recording": false,
+        "safety_shield": false,
+        "safety_value_network": false,
+        "task_level_safety_deadline": false,
+        "task_ordering": "fixed_admitted_seevo_rule",
+        "training_seed_mode": "not_applicable",
+        "vm_policy": "deterministic_fixed_vm_rule"
+      },
+      "evaluation_case_ids": [
+        "validation_seed_101",
+        "final_test_seed_201"
+      ],
+      "execution_adapter": "fixed_heuristic_evaluator",
+      "execution_ready": false,
+      "information_contract_id": "admitted_task_rule_only",
+      "information_contract_sha256": "321a208936d9da8c3d364efeea21a22cee6eace8e71a28625880aa834268980e",
+      "llm_host_vm_access": false,
+      "run_id": "seevo_best_heuristic_only",
+      "run_kind": "comparison_method",
+      "shared_protocol_sha256": "3b9853fb898d5e434d889ea474b7d7039077e2dc0124d6727b9d88a918085347",
+      "training_case_ids": [],
+      "uses_information_outside_declared_contract": false
+    },
+    {
+      "base_method_id": "edf_baseline",
+      "blocking_reasons": [
+        "execution_adapter_not_implemented:fixed_heuristic_evaluator"
+      ],
+      "configuration_valid": true,
+      "description": "固定 EDF ready-task 排序并沿用确定性固定 VM 资源规则。",
+      "disabled_components": [],
+      "effective_components": {
+        "demonstration_pretraining": false,
+        "empty_safe_action_behavior": "fixed_vm_rule_internal",
+        "fallback_controller": false,
+        "fixed_heuristic_id": "traditional_edf",
+        "heuristic_candidate_set": "EDF",
+        "host_policy": "deterministic_fixed_vm_rule",
+        "information_contract_id": "traditional_heuristic_only",
+        "lagrange_mode": "none",
+        "lambda_value": null,
+        "llm_demonstration_pretraining": false,
+        "llm_enabled": false,
+        "llm_host_vm_access": false,
+        "llm_rule_mode": "none",
+        "manager_observation": "not_applicable",
+        "manager_policy": "fixed_heuristic",
+        "policy_family": "fixed_heuristic",
+        "safe_rl": false,
+        "safety_cost_recording": false,
+        "safety_shield": false,
+        "safety_value_network": false,
+        "task_level_safety_deadline": false,
+        "task_ordering": "fixed_traditional_rule",
+        "training_seed_mode": "not_applicable",
+        "vm_policy": "deterministic_fixed_vm_rule"
+      },
+      "evaluation_case_ids": [
+        "validation_seed_101",
+        "final_test_seed_201"
+      ],
+      "execution_adapter": "fixed_heuristic_evaluator",
+      "execution_ready": false,
+      "information_contract_id": "traditional_heuristic_only",
+      "information_contract_sha256": "2f56ce484778f12ef35cd34893a6e5e6d4be8c9653b8fbd395033eb368b72477",
+      "llm_host_vm_access": false,
+      "run_id": "edf_baseline",
+      "run_kind": "comparison_method",
+      "shared_protocol_sha256": "3b9853fb898d5e434d889ea474b7d7039077e2dc0124d6727b9d88a918085347",
+      "training_case_ids": [],
+      "uses_information_outside_declared_contract": false
+    },
+    {
+      "base_method_id": "fcfs_baseline",
+      "blocking_reasons": [
+        "execution_adapter_not_implemented:fixed_heuristic_evaluator"
+      ],
+      "configuration_valid": true,
+      "description": "固定 FCFS ready-task 排序并沿用确定性固定 VM 资源规则。",
+      "disabled_components": [],
+      "effective_components": {
+        "demonstration_pretraining": false,
+        "empty_safe_action_behavior": "fixed_vm_rule_internal",
+        "fallback_controller": false,
+        "fixed_heuristic_id": "traditional_fcfs",
+        "heuristic_candidate_set": "FCFS",
+        "host_policy": "deterministic_fixed_vm_rule",
+        "information_contract_id": "traditional_heuristic_only",
+        "lagrange_mode": "none",
+        "lambda_value": null,
+        "llm_demonstration_pretraining": false,
+        "llm_enabled": false,
+        "llm_host_vm_access": false,
+        "llm_rule_mode": "none",
+        "manager_observation": "not_applicable",
+        "manager_policy": "fixed_heuristic",
+        "policy_family": "fixed_heuristic",
+        "safe_rl": false,
+        "safety_cost_recording": false,
+        "safety_shield": false,
+        "safety_value_network": false,
+        "task_level_safety_deadline": false,
+        "task_ordering": "fixed_traditional_rule",
+        "training_seed_mode": "not_applicable",
+        "vm_policy": "deterministic_fixed_vm_rule"
+      },
+      "evaluation_case_ids": [
+        "validation_seed_101",
+        "final_test_seed_201"
+      ],
+      "execution_adapter": "fixed_heuristic_evaluator",
+      "execution_ready": false,
+      "information_contract_id": "traditional_heuristic_only",
+      "information_contract_sha256": "2f56ce484778f12ef35cd34893a6e5e6d4be8c9653b8fbd395033eb368b72477",
+      "llm_host_vm_access": false,
+      "run_id": "fcfs_baseline",
+      "run_kind": "comparison_method",
+      "shared_protocol_sha256": "3b9853fb898d5e434d889ea474b7d7039077e2dc0124d6727b9d88a918085347",
+      "training_case_ids": [],
+      "uses_information_outside_declared_contract": false
+    },
+    {
+      "base_method_id": "llm_augmented_safe_hrl",
+      "blocking_reasons": [
+        "execution_adapter_not_implemented:safe_heuristic_no_shield_adapter",
+        "no_admitted_llm_heuristic",
+        "demonstration_dataset_manifest_missing"
+      ],
+      "configuration_valid": true,
+      "description": "关闭 Host/VM DDL shield；由于 fallback 只定义于空安全集合，fallback 同时停用，动作仅受原 legal mask 约束。",
+      "disabled_components": [
+        {
+          "component": "safety_shield",
+          "effect": "不构造或应用 DDL safety mask，保留硬合法性 mask。",
+          "from": true,
+          "to": false
+        },
+        {
+          "component": "fallback_controller",
+          "effect": "shield 关闭后不存在空安全动作集合，因此不调用安全 fallback。",
+          "from": true,
+          "to": false
+        },
+        {
+          "component": "empty_safe_action_behavior",
+          "effect": "空安全集合语义替换为只使用 legal mask。",
+          "from": "deterministic_fixed_vm_fallback",
+          "to": "unshielded_legal_action"
+        }
+      ],
+      "effective_components": {
+        "demonstration_pretraining": true,
+        "empty_safe_action_behavior": "unshielded_legal_action",
+        "fallback_controller": false,
+        "fixed_heuristic_id": null,
+        "heuristic_candidate_set": "FCFS,SJF,MCF,HUR,EDF,admitted_seevo",
+        "host_policy": "learned_safe_d3qn",
+        "information_contract_id": "safe_hrl_with_task_rule",
+        "lagrange_mode": "dynamic",
+        "lambda_value": 1.0,
+        "llm_demonstration_pretraining": true,
+        "llm_enabled": true,
+        "llm_host_vm_access": false,
+        "llm_rule_mode": "manager_selects_admitted_rule",
+        "manager_observation": "safe",
+        "manager_policy": "heuristic_selection_safe_observation",
+        "policy_family": "hrl",
+        "safe_rl": true,
+        "safety_cost_recording": true,
+        "safety_shield": false,
+        "safety_value_network": true,
+        "task_level_safety_deadline": true,
+        "task_ordering": "manager_selected_heuristic",
+        "training_seed_mode": "multi_seed",
+        "vm_policy": "learned_safe_d3qn"
+      },
+      "evaluation_case_ids": [
+        "validation_seed_101",
+        "final_test_seed_201"
+      ],
+      "execution_adapter": "safe_heuristic_no_shield_adapter",
+      "execution_ready": false,
+      "information_contract_id": "safe_hrl_with_task_rule",
+      "information_contract_sha256": "77c69f5343eb0b43ae105ad24c52b46651449c36a463cc41e841ceeb7a54f511",
+      "intentional_protocol_deviation": null,
+      "llm_host_vm_access": false,
+      "run_id": "no_safety_shield",
+      "run_kind": "safety_ablation",
+      "shared_protocol_sha256": "3b9853fb898d5e434d889ea474b7d7039077e2dc0124d6727b9d88a918085347",
+      "training_case_ids": [
+        "train_seed_001"
+      ],
+      "uses_information_outside_declared_contract": false
+    },
+    {
+      "base_method_id": "llm_augmented_safe_hrl",
+      "blocking_reasons": [
+        "execution_adapter_not_implemented:safe_without_qc_adapter",
+        "no_admitted_llm_heuristic",
+        "demonstration_dataset_manifest_missing"
+      ],
+      "configuration_valid": true,
+      "description": "保留独立 safety cost、task deadline、shield 和 fallback，但关闭三层 Q_c 与基于 Q_c 的拉格朗日评分。",
+      "disabled_components": [
+        {
+          "component": "safety_value_network",
+          "effect": "不建立或训练 Q_c online/target 网络。",
+          "from": true,
+          "to": false
+        },
+        {
+          "component": "lagrange_mode",
+          "effect": "动作价值只使用 Q_r；shield 仍负责即时安全筛选。",
+          "from": "dynamic",
+          "to": "performance_only"
+        },
+        {
+          "component": "lambda_value",
+          "effect": "无 Q_c 时不使用 lambda_DDL。",
+          "from": 1.0,
+          "to": null
+        }
+      ],
+      "effective_components": {
+        "demonstration_pretraining": true,
+        "empty_safe_action_behavior": "deterministic_fixed_vm_fallback",
+        "fallback_controller": true,
+        "fixed_heuristic_id": null,
+        "heuristic_candidate_set": "FCFS,SJF,MCF,HUR,EDF,admitted_seevo",
+        "host_policy": "learned_safe_d3qn",
+        "information_contract_id": "safe_hrl_with_task_rule",
+        "lagrange_mode": "performance_only",
+        "lambda_value": null,
+        "llm_demonstration_pretraining": true,
+        "llm_enabled": true,
+        "llm_host_vm_access": false,
+        "llm_rule_mode": "manager_selects_admitted_rule",
+        "manager_observation": "safe",
+        "manager_policy": "heuristic_selection_safe_observation",
+        "policy_family": "hrl",
+        "safe_rl": true,
+        "safety_cost_recording": true,
+        "safety_shield": true,
+        "safety_value_network": false,
+        "task_level_safety_deadline": true,
+        "task_ordering": "manager_selected_heuristic",
+        "training_seed_mode": "multi_seed",
+        "vm_policy": "learned_safe_d3qn"
+      },
+      "evaluation_case_ids": [
+        "validation_seed_101",
+        "final_test_seed_201"
+      ],
+      "execution_adapter": "safe_without_qc_adapter",
+      "execution_ready": false,
+      "information_contract_id": "safe_hrl_with_task_rule",
+      "information_contract_sha256": "77c69f5343eb0b43ae105ad24c52b46651449c36a463cc41e841ceeb7a54f511",
+      "intentional_protocol_deviation": null,
+      "llm_host_vm_access": false,
+      "run_id": "no_safety_value_network",
+      "run_kind": "safety_ablation",
+      "shared_protocol_sha256": "3b9853fb898d5e434d889ea474b7d7039077e2dc0124d6727b9d88a918085347",
+      "training_case_ids": [
+        "train_seed_001"
+      ],
+      "uses_information_outside_declared_contract": false
+    },
+    {
+      "base_method_id": "llm_augmented_safe_hrl",
+      "blocking_reasons": [
+        "no_admitted_llm_heuristic",
+        "demonstration_dataset_manifest_missing"
+      ],
+      "configuration_valid": true,
+      "description": "保留 Q_c，但关闭动态拉格朗日更新，固定 lambda_DDL=1.0。",
+      "disabled_components": [
+        {
+          "component": "lagrange_mode",
+          "effect": "关闭 episode/EMA lambda 更新并固定使用配置值 1.0。",
+          "from": "dynamic",
+          "to": "fixed"
+        }
+      ],
+      "effective_components": {
+        "demonstration_pretraining": true,
+        "empty_safe_action_behavior": "deterministic_fixed_vm_fallback",
+        "fallback_controller": true,
+        "fixed_heuristic_id": null,
+        "heuristic_candidate_set": "FCFS,SJF,MCF,HUR,EDF,admitted_seevo",
+        "host_policy": "learned_safe_d3qn",
+        "information_contract_id": "safe_hrl_with_task_rule",
+        "lagrange_mode": "fixed",
+        "lambda_value": 1.0,
+        "llm_demonstration_pretraining": true,
+        "llm_enabled": true,
+        "llm_host_vm_access": false,
+        "llm_rule_mode": "manager_selects_admitted_rule",
+        "manager_observation": "safe",
+        "manager_policy": "heuristic_selection_safe_observation",
+        "policy_family": "hrl",
+        "safe_rl": true,
+        "safety_cost_recording": true,
+        "safety_shield": true,
+        "safety_value_network": true,
+        "task_level_safety_deadline": true,
+        "task_ordering": "manager_selected_heuristic",
+        "training_seed_mode": "multi_seed",
+        "vm_policy": "learned_safe_d3qn"
+      },
+      "evaluation_case_ids": [
+        "validation_seed_101",
+        "final_test_seed_201"
+      ],
+      "execution_adapter": "safe_hrl_train_runner",
+      "execution_ready": false,
+      "information_contract_id": "safe_hrl_with_task_rule",
+      "information_contract_sha256": "77c69f5343eb0b43ae105ad24c52b46651449c36a463cc41e841ceeb7a54f511",
+      "intentional_protocol_deviation": null,
+      "llm_host_vm_access": false,
+      "run_id": "fixed_lambda",
+      "run_kind": "safety_ablation",
+      "shared_protocol_sha256": "3b9853fb898d5e434d889ea474b7d7039077e2dc0124d6727b9d88a918085347",
+      "training_case_ids": [
+        "train_seed_001"
+      ],
+      "uses_information_outside_declared_contract": false
+    },
+    {
+      "base_method_id": "llm_augmented_safe_hrl",
+      "blocking_reasons": [
+        "execution_adapter_not_implemented:workflow_level_shield_adapter",
+        "no_admitted_llm_heuristic",
+        "demonstration_dataset_manifest_missing"
+      ],
+      "configuration_valid": true,
+      "description": "关闭 D_safe_ij 任务级动态边界；其余工作流级 safety cost 与诊断保留。",
+      "disabled_components": [
+        {
+          "component": "task_level_safety_deadline",
+          "effect": "动作风险不使用当前任务完成后的剩余关键路径安全边界。",
+          "from": true,
+          "to": false
+        }
+      ],
+      "effective_components": {
+        "demonstration_pretraining": true,
+        "empty_safe_action_behavior": "deterministic_fixed_vm_fallback",
+        "fallback_controller": true,
+        "fixed_heuristic_id": null,
+        "heuristic_candidate_set": "FCFS,SJF,MCF,HUR,EDF,admitted_seevo",
+        "host_policy": "learned_safe_d3qn",
+        "information_contract_id": "safe_hrl_with_task_rule",
+        "lagrange_mode": "dynamic",
+        "lambda_value": 1.0,
+        "llm_demonstration_pretraining": true,
+        "llm_enabled": true,
+        "llm_host_vm_access": false,
+        "llm_rule_mode": "manager_selects_admitted_rule",
+        "manager_observation": "safe",
+        "manager_policy": "heuristic_selection_safe_observation",
+        "policy_family": "hrl",
+        "safe_rl": true,
+        "safety_cost_recording": true,
+        "safety_shield": true,
+        "safety_value_network": true,
+        "task_level_safety_deadline": false,
+        "task_ordering": "manager_selected_heuristic",
+        "training_seed_mode": "multi_seed",
+        "vm_policy": "learned_safe_d3qn"
+      },
+      "evaluation_case_ids": [
+        "validation_seed_101",
+        "final_test_seed_201"
+      ],
+      "execution_adapter": "workflow_level_shield_adapter",
+      "execution_ready": false,
+      "information_contract_id": "safe_hrl_with_task_rule",
+      "information_contract_sha256": "77c69f5343eb0b43ae105ad24c52b46651449c36a463cc41e841ceeb7a54f511",
+      "intentional_protocol_deviation": null,
+      "llm_host_vm_access": false,
+      "run_id": "no_task_level_safety_deadline",
+      "run_kind": "safety_ablation",
+      "shared_protocol_sha256": "3b9853fb898d5e434d889ea474b7d7039077e2dc0124d6727b9d88a918085347",
+      "training_case_ids": [
+        "train_seed_001"
+      ],
+      "uses_information_outside_declared_contract": false
+    },
+    {
+      "base_method_id": "llm_augmented_safe_hrl",
+      "blocking_reasons": [
+        "execution_adapter_not_implemented:safe_no_fallback_adapter",
+        "no_admitted_llm_heuristic",
+        "demonstration_dataset_manifest_missing"
+      ],
+      "configuration_valid": true,
+      "description": "保留 shield；安全动作集合为空时终止该不可行决策，不调用确定性固定 VM fallback。",
+      "disabled_components": [
+        {
+          "component": "fallback_controller",
+          "effect": "不执行最小违反量、边际能耗、风险完成时间、稳定 ID 的确定性回退排序。",
+          "from": true,
+          "to": false
+        },
+        {
+          "component": "empty_safe_action_behavior",
+          "effect": "显式终止并记录不可行决策，避免偷偷选择不安全动作。",
+          "from": "deterministic_fixed_vm_fallback",
+          "to": "terminate_infeasible_decision"
+        }
+      ],
+      "effective_components": {
+        "demonstration_pretraining": true,
+        "empty_safe_action_behavior": "terminate_infeasible_decision",
+        "fallback_controller": false,
+        "fixed_heuristic_id": null,
+        "heuristic_candidate_set": "FCFS,SJF,MCF,HUR,EDF,admitted_seevo",
+        "host_policy": "learned_safe_d3qn",
+        "information_contract_id": "safe_hrl_with_task_rule",
+        "lagrange_mode": "dynamic",
+        "lambda_value": 1.0,
+        "llm_demonstration_pretraining": true,
+        "llm_enabled": true,
+        "llm_host_vm_access": false,
+        "llm_rule_mode": "manager_selects_admitted_rule",
+        "manager_observation": "safe",
+        "manager_policy": "heuristic_selection_safe_observation",
+        "policy_family": "hrl",
+        "safe_rl": true,
+        "safety_cost_recording": true,
+        "safety_shield": true,
+        "safety_value_network": true,
+        "task_level_safety_deadline": true,
+        "task_ordering": "manager_selected_heuristic",
+        "training_seed_mode": "multi_seed",
+        "vm_policy": "learned_safe_d3qn"
+      },
+      "evaluation_case_ids": [
+        "validation_seed_101",
+        "final_test_seed_201"
+      ],
+      "execution_adapter": "safe_no_fallback_adapter",
+      "execution_ready": false,
+      "information_contract_id": "safe_hrl_with_task_rule",
+      "information_contract_sha256": "77c69f5343eb0b43ae105ad24c52b46651449c36a463cc41e841ceeb7a54f511",
+      "intentional_protocol_deviation": null,
+      "llm_host_vm_access": false,
+      "run_id": "no_fallback_controller",
+      "run_kind": "safety_ablation",
+      "shared_protocol_sha256": "3b9853fb898d5e434d889ea474b7d7039077e2dc0124d6727b9d88a918085347",
+      "training_case_ids": [
+        "train_seed_001"
+      ],
+      "uses_information_outside_declared_contract": false
+    },
+    {
+      "base_method_id": "llm_augmented_safe_hrl",
+      "blocking_reasons": [
+        "no_admitted_llm_heuristic"
+      ],
+      "configuration_valid": true,
+      "description": "关闭全部离线示范预训练，在线阶段仍可由 Manager 选择已准入 LLM ready-task 规则。",
+      "disabled_components": [
+        {
+          "component": "demonstration_pretraining",
+          "effect": "Q_r、Q_c 和可选行为克隆均不从示范数据初始化。",
+          "from": true,
+          "to": false
+        },
+        {
+          "component": "llm_demonstration_pretraining",
+          "effect": "不读取 LLM 启发式生成的示范轨迹。",
+          "from": true,
+          "to": false
+        }
+      ],
+      "effective_components": {
+        "demonstration_pretraining": false,
+        "empty_safe_action_behavior": "deterministic_fixed_vm_fallback",
+        "fallback_controller": true,
+        "fixed_heuristic_id": null,
+        "heuristic_candidate_set": "FCFS,SJF,MCF,HUR,EDF,admitted_seevo",
+        "host_policy": "learned_safe_d3qn",
+        "information_contract_id": "safe_hrl_with_task_rule",
+        "lagrange_mode": "dynamic",
+        "lambda_value": 1.0,
+        "llm_demonstration_pretraining": false,
+        "llm_enabled": true,
+        "llm_host_vm_access": false,
+        "llm_rule_mode": "manager_selects_admitted_rule",
+        "manager_observation": "safe",
+        "manager_policy": "heuristic_selection_safe_observation",
+        "policy_family": "hrl",
+        "safe_rl": true,
+        "safety_cost_recording": true,
+        "safety_shield": true,
+        "safety_value_network": true,
+        "task_level_safety_deadline": true,
+        "task_ordering": "manager_selected_heuristic",
+        "training_seed_mode": "multi_seed",
+        "vm_policy": "learned_safe_d3qn"
+      },
+      "evaluation_case_ids": [
+        "validation_seed_101",
+        "final_test_seed_201"
+      ],
+      "execution_adapter": "safe_hrl_train_runner",
+      "execution_ready": false,
+      "information_contract_id": "safe_hrl_with_task_rule",
+      "information_contract_sha256": "77c69f5343eb0b43ae105ad24c52b46651449c36a463cc41e841ceeb7a54f511",
+      "intentional_protocol_deviation": null,
+      "llm_host_vm_access": false,
+      "run_id": "no_llm_demonstration_pretraining",
+      "run_kind": "safety_ablation",
+      "shared_protocol_sha256": "3b9853fb898d5e434d889ea474b7d7039077e2dc0124d6727b9d88a918085347",
+      "training_case_ids": [
+        "train_seed_001"
+      ],
+      "uses_information_outside_declared_contract": false
+    },
+    {
+      "base_method_id": "llm_augmented_safe_hrl",
+      "blocking_reasons": [
+        "no_admitted_llm_heuristic",
+        "demonstration_dataset_manifest_missing"
+      ],
+      "configuration_valid": true,
+      "description": "训练只使用冻结 training split 的第一个 seed；validation 与 final-test seed 完全不变。",
+      "disabled_components": [
+        {
+          "component": "training_seed_mode",
+          "effect": "仅缩减训练 seed，不改变 validation/final-test、实例、DDL、资源或指标。",
+          "from": "multi_seed",
+          "to": "single_seed"
+        }
+      ],
+      "effective_components": {
+        "demonstration_pretraining": true,
+        "empty_safe_action_behavior": "deterministic_fixed_vm_fallback",
+        "fallback_controller": true,
+        "fixed_heuristic_id": null,
+        "heuristic_candidate_set": "FCFS,SJF,MCF,HUR,EDF,admitted_seevo",
+        "host_policy": "learned_safe_d3qn",
+        "information_contract_id": "safe_hrl_with_task_rule",
+        "lagrange_mode": "dynamic",
+        "lambda_value": 1.0,
+        "llm_demonstration_pretraining": true,
+        "llm_enabled": true,
+        "llm_host_vm_access": false,
+        "llm_rule_mode": "manager_selects_admitted_rule",
+        "manager_observation": "safe",
+        "manager_policy": "heuristic_selection_safe_observation",
+        "policy_family": "hrl",
+        "safe_rl": true,
+        "safety_cost_recording": true,
+        "safety_shield": true,
+        "safety_value_network": true,
+        "task_level_safety_deadline": true,
+        "task_ordering": "manager_selected_heuristic",
+        "training_seed_mode": "single_seed",
+        "vm_policy": "learned_safe_d3qn"
+      },
+      "evaluation_case_ids": [
+        "validation_seed_101",
+        "final_test_seed_201"
+      ],
+      "execution_adapter": "safe_hrl_train_runner",
+      "execution_ready": false,
+      "information_contract_id": "safe_hrl_with_task_rule",
+      "information_contract_sha256": "77c69f5343eb0b43ae105ad24c52b46651449c36a463cc41e841ceeb7a54f511",
+      "intentional_protocol_deviation": "training_seed_subset_only",
+      "llm_host_vm_access": false,
+      "run_id": "single_seed_training",
+      "run_kind": "safety_ablation",
+      "shared_protocol_sha256": "3b9853fb898d5e434d889ea474b7d7039077e2dc0124d6727b9d88a918085347",
+      "training_case_ids": [
+        "train_seed_001"
+      ],
+      "uses_information_outside_declared_contract": false
+    }
+  ],
+  "shared_protocol": {
+    "case_splits": {
+      "final_test": [
+        {
+          "arrival_seed": 201,
+          "case_id": "final_test_seed_201",
+          "episode_seed": 201,
+          "resource_seed": 201,
+          "workflow_seed": 201
+        },
+        {
+          "arrival_seed": 202,
+          "case_id": "final_test_seed_202",
+          "episode_seed": 202,
+          "resource_seed": 202,
+          "workflow_seed": 202
+        },
+        {
+          "arrival_seed": 203,
+          "case_id": "final_test_seed_203",
+          "episode_seed": 203,
+          "resource_seed": 203,
+          "workflow_seed": 203
+        }
+      ],
+      "training": [
+        {
+          "arrival_seed": 1,
+          "case_id": "train_seed_001",
+          "episode_seed": 1,
+          "resource_seed": 1,
+          "workflow_seed": 1
+        },
+        {
+          "arrival_seed": 2,
+          "case_id": "train_seed_002",
+          "episode_seed": 2,
+          "resource_seed": 2,
+          "workflow_seed": 2
+        },
+        {
+          "arrival_seed": 3,
+          "case_id": "train_seed_003",
+          "episode_seed": 3,
+          "resource_seed": 3,
+          "workflow_seed": 3
+        },
+        {
+          "arrival_seed": 4,
+          "case_id": "train_seed_004",
+          "episode_seed": 4,
+          "resource_seed": 4,
+          "workflow_seed": 4
+        },
+        {
+          "arrival_seed": 5,
+          "case_id": "train_seed_005",
+          "episode_seed": 5,
+          "resource_seed": 5,
+          "workflow_seed": 5
+        }
+      ],
+      "validation": [
+        {
+          "arrival_seed": 101,
+          "case_id": "validation_seed_101",
+          "episode_seed": 101,
+          "resource_seed": 101,
+          "workflow_seed": 101
+        },
+        {
+          "arrival_seed": 102,
+          "case_id": "validation_seed_102",
+          "episode_seed": 102,
+          "resource_seed": 102,
+          "workflow_seed": 102
+        },
+        {
+          "arrival_seed": 103,
+          "case_id": "validation_seed_103",
+          "episode_seed": 103,
+          "resource_seed": 103,
+          "workflow_seed": 103
+        }
+      ]
+    },
+    "ddl_setting": "Tight",
+    "deadline_cache_path": "../../data/deadlines/fcfs/fcfs_smallTask_smallRes_seed0-1000.json",
+    "demonstration_dataset_manifest_path": "../../out/safe_demonstrations/manifest.json",
+    "evaluation_metrics": {
+      "fields": [
+        "fuzzy_ddl_violation_rate",
+        "feasible_workflow_ratio",
+        "feasible_episode_ratio",
+        "all_seed_feasible",
+        "feasible_seed_rate",
+        "mean_fuzzy_lateness",
+        "max_fuzzy_lateness",
+        "minimum_fuzzy_safety_margin",
+        "worst_seed_violation_rate",
+        "worst_seed_fuzzy_lateness",
+        "shield_intervention_count",
+        "shield_intervention_rate",
+        "no_safe_action_count",
+        "no_safe_action_rate",
+        "fallback_count",
+        "fallback_rate",
+        "proposed_executed_action_mismatch_rate",
+        "q_c_prediction_error",
+        "lambda_trajectory",
+        "fuzzy_energy_mean",
+        "fuzzy_energy_std",
+        "fuzzy_energy_score",
+        "modal_energy",
+        "scheduling_time_seconds",
+        "convergence_speed",
+        "selected_llm_heuristic_frequency",
+        "energy_improvement_from_llm",
+        "convergence_acceleration",
+        "llm_associated_shield_rate",
+        "strict_ddl_feasibility_with_llm",
+        "strict_ddl_feasibility_without_llm"
+      ],
+      "schema_version": 1
+    },
+    "fuzzy": {
+      "deadline_eta": 0.95,
+      "deadline_is_deterministic": true,
+      "delta1": 0.75,
+      "delta2": 1.2,
+      "enabled": true,
+      "energy_lambda": 1.0,
+      "resource_seed_mode": "episode_seed"
+    },
+    "heuristic_library_manifest_path": "../../LLM/problems/cews_task_constructive/safe_heuristic_library.json",
+    "resource_topology": {
+      "cloud_bw_tiers": [
+        1000.0,
+        2000.0,
+        4000.0,
+        6000.0,
+        8000.0
+      ],
+      "cloud_pc_tiers": [
+        1.0,
+        2.0,
+        4.0,
+        6.0,
+        8.0
+      ],
+      "cloud_vms_per_host": [
+        9,
+        8
+      ],
+      "edge_bw_tiers": [
+        1000.0,
+        2000.0,
+        4000.0,
+        6000.0,
+        8000.0
+      ],
+      "edge_pc_tiers": [
+        1.0,
+        2.0,
+        4.0,
+        6.0,
+        8.0
+      ],
+      "edge_vms_per_host": [
+        8
+      ],
+      "num_cloud_hosts": 2,
+      "num_edge_hosts": 1
+    },
+    "scenario": "SS",
+    "workflow_files": [
+      "../../data/dax/CyberShake_30.xml",
+      "../../data/dax/Epigenomics_24.xml",
+      "../../data/dax/Ligo_30.xml",
+      "../../data/dax/Montage_25.xml",
+      "../../data/dax/Sipht_29.xml"
+    ],
+    "workload": {
+      "arrival_lambda": 0.03,
+      "deadline_alpha_large": 3.0,
+      "deadline_alpha_small": 2.0,
+      "deadline_alpha_small_probability": 0.8,
+      "deadline_mode": "cache_fcfs",
+      "horizon": 1000000000.0,
+      "workflows_per_episode": 50
+    }
+  },
+  "shared_protocol_sha256": "3b9853fb898d5e434d889ea474b7d7039077e2dc0124d6727b9d88a918085347",
+  "smoke_validation": {
+    "ablation_count": 7,
+    "all_runs_share_evaluation_cases": true,
+    "all_runs_share_protocol_hash": true,
+    "case_limit_per_split": 1,
+    "configuration_resolution_passed": true,
+    "episodes_per_learning_method": 1,
+    "formal_experiment_executed": false,
+    "method_count": 7,
+    "training_executed": false,
+    "unready_run_ids": [
+      "original_hrl_plus_llm",
+      "safe_hrl_without_llm",
+      "llm_augmented_safe_hrl",
+      "seevo_best_heuristic_only",
+      "edf_baseline",
+      "fcfs_baseline",
+      "no_safety_shield",
+      "no_safety_value_network",
+      "fixed_lambda",
+      "no_task_level_safety_deadline",
+      "no_fallback_controller",
+      "no_llm_demonstration_pretraining",
+      "single_seed_training"
+    ]
+  },
+  "source_config_path": "hrl_mix/config/safe_hrl_experiment_matrix.json",
+  "source_config_sha256": "9efa3dff701e56dfd52abc5101911e9a4aea4baf1612a4b0b721778d91e620f6"
+}

@@ -1,0 +1,125 @@
+{
+  "analyzed_decisions": 1,
+  "analyzed_runs": 1,
+  "compared_alternatives": 2,
+  "config_hash": "43d3d3d2c1c1715d19793344ea1383e9932543e557d7ef0dacdc366cb027bdae",
+  "cross_agent_conflicts": [],
+  "cross_agent_consensus": [
+    {
+      "agents": [
+        "ddl_diagnostic_agent",
+        "energy_diagnostic_agent",
+        "uncertainty_diagnostic_agent"
+      ],
+      "decision_id": "smoke:d000000",
+      "preferred_task": 1
+    }
+  ],
+  "ddl_patterns": [
+    {
+      "agent_name": "ddl_diagnostic_agent",
+      "confidence": "low",
+      "decision_ids": [
+        "smoke:d000000"
+      ],
+      "diagnosis_code": "low_slack_task_deferred+critical_path_or_successor_blocked+higher_ddl_risk_choice",
+      "occurrences": 1,
+      "scenarios": [
+        "SS"
+      ],
+      "seeds": [
+        7
+      ],
+      "suggested_structural_actions": [
+        "add_conditional_ddl_protection_gate",
+        "add_successor_release_interaction",
+        "add_upward_rank_remaining_work_interaction",
+        "normalize_slack_by_workflow_deadline_budget"
+      ]
+    }
+  ],
+  "diagnostics_hash": "952262fe5c8b524ad525459e3ba698e7eea27071f5dfb0d994c145b97259bb3d",
+  "energy_patterns": [
+    {
+      "agent_name": "energy_diagnostic_agent",
+      "confidence": "low",
+      "decision_ids": [
+        "smoke:d000000"
+      ],
+      "diagnosis_code": "small_energy_saving_large_ddl_regret",
+      "occurrences": 1,
+      "scenarios": [
+        "SS"
+      ],
+      "seeds": [
+        7
+      ],
+      "suggested_structural_actions": [
+        "add_small_energy_gap_high_ddl_risk_gate"
+      ]
+    }
+  ],
+  "frozen_rule_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "high_confidence_structural_actions": [],
+  "insufficient_evidence_items": [],
+  "limitations": [
+    "local_one_step comparisons are mechanism evidence, not strict causal proof",
+    "bounded replay is disabled because the environment has no safe snapshot API",
+    "energy is considered only after DDL evidence; no weighted DDL-energy sum is used"
+  ],
+  "medium_confidence_actions": [],
+  "repeated_failure_patterns": [],
+  "representative_cases": [
+    {
+      "alternatives": [
+        1,
+        2
+      ],
+      "critical_reasons": [
+        "low_or_negative_slack_present",
+        "selected_not_minimum_slack",
+        "selected_not_maximum_upward_rank",
+        "close_rule_scores",
+        "high_uncertainty",
+        "successor_release_difference",
+        "critical_path_competition"
+      ],
+      "decision_id": "smoke:d000000",
+      "diagnosis_code": "low_slack_task_deferred+critical_path_or_successor_blocked+higher_ddl_risk_choice",
+      "estimator_type": "local_one_step",
+      "quantitative_deltas": {
+        "critical_successor_release_regret": 1.0,
+        "predicted_violation_regret": 2.0,
+        "remaining_critical_path_regret": -6.0,
+        "safety_margin_regret": 4.0
+      },
+      "scenario_id": "SS",
+      "seed": 7,
+      "selected_task_id": 0
+    }
+  ],
+  "structure_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "summary_version": "counterfactual_feedback_v1",
+  "uncertainty_patterns": [
+    {
+      "agent_name": "uncertainty_diagnostic_agent",
+      "confidence": "low",
+      "decision_ids": [
+        "smoke:d000000"
+      ],
+      "diagnosis_code": "modal_safe_pessimistic_violation",
+      "occurrences": 1,
+      "scenarios": [
+        "SS"
+      ],
+      "seeds": [
+        7
+      ],
+      "suggested_structural_actions": [
+        "add_pessimistic_risk_gate",
+        "add_uncertainty_ddl_interaction",
+        "replace_linear_risk_with_smooth_nonlinear_form"
+      ]
+    }
+  ]
+}

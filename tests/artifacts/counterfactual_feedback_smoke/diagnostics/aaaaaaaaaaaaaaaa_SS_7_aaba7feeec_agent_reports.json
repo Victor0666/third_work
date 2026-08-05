@@ -1,0 +1,125 @@
+[
+  {
+    "agent_name": "ddl_diagnostic_agent",
+    "confidence": "high",
+    "decision_id": "smoke:d000000",
+    "diagnosis_code": "low_slack_task_deferred+critical_path_or_successor_blocked+higher_ddl_risk_choice",
+    "evidence": {
+      "alternative_pessimistic_finish": 8.0,
+      "alternative_safety_margin": 2.0,
+      "alternative_slack": -1.0,
+      "alternative_upward_rank": 10.0,
+      "selected_pessimistic_finish": 14.0,
+      "selected_safety_margin": -2.0,
+      "selected_slack": 5.0,
+      "selected_upward_rank": 2.0
+    },
+    "limitations": [
+      "local one-step evidence is not a long-horizon causal proof"
+    ],
+    "preferred_task": 1,
+    "quantitative_deltas": {
+      "critical_successor_release_regret": 1.0,
+      "predicted_violation_regret": 2.0,
+      "remaining_critical_path_regret": -6.0,
+      "safety_margin_regret": 4.0
+    },
+    "rejected_task": 0,
+    "scenario_id": "SS",
+    "seed": 7,
+    "severity": "high",
+    "state_conditions": {
+      "critical_reasons": [
+        "low_or_negative_slack_present",
+        "selected_not_minimum_slack",
+        "selected_not_maximum_upward_rank",
+        "close_rule_scores",
+        "high_uncertainty",
+        "successor_release_difference",
+        "critical_path_competition"
+      ],
+      "negative_slack_present": true,
+      "queue_size": 3
+    },
+    "suggested_structural_actions": [
+      "add_conditional_ddl_protection_gate",
+      "normalize_slack_by_workflow_deadline_budget",
+      "add_upward_rank_remaining_work_interaction",
+      "add_successor_release_interaction"
+    ]
+  },
+  {
+    "agent_name": "energy_diagnostic_agent",
+    "confidence": "medium",
+    "decision_id": "smoke:d000000",
+    "diagnosis_code": "small_energy_saving_large_ddl_regret",
+    "evidence": {
+      "alternative_active_time_extension": 2.0,
+      "alternative_energy": 3.2,
+      "alternative_host_load_after": 0.3,
+      "ddl_priority_applied": true,
+      "relative_energy_difference": 0.06250000000000006,
+      "selected_active_time_extension": 2.0,
+      "selected_energy": 3.0,
+      "selected_host_load_after": 0.8
+    },
+    "limitations": [
+      "marginal energy and active-time extension are local proxies"
+    ],
+    "preferred_task": 1,
+    "quantitative_deltas": {
+      "communication_regret": 0.5,
+      "host_load_delta_difference": 0.10000000000000003,
+      "marginal_fuzzy_energy_regret": -0.20000000000000018,
+      "predicted_violation_regret": 2.0
+    },
+    "rejected_task": 0,
+    "scenario_id": "SS",
+    "seed": 7,
+    "severity": "high",
+    "state_conditions": {
+      "host_load_maximum": 0.4,
+      "queue_size": 3
+    },
+    "suggested_structural_actions": [
+      "add_small_energy_gap_high_ddl_risk_gate"
+    ]
+  },
+  {
+    "agent_name": "uncertainty_diagnostic_agent",
+    "confidence": "high",
+    "decision_id": "smoke:d000000",
+    "diagnosis_code": "modal_safe_pessimistic_violation",
+    "evidence": {
+      "alternative_uncertainty_width": 2.0,
+      "selected_modal_finish": 9.0,
+      "selected_optimistic_finish": 6.0,
+      "selected_pessimistic_finish": 14.0,
+      "selected_task_safe_deadline": 10.0,
+      "selected_uncertainty_width": 8.0
+    },
+    "limitations": [
+      "fuzzy timelines express model uncertainty, not strict causal effects"
+    ],
+    "preferred_task": 1,
+    "quantitative_deltas": {
+      "pessimistic_finish_regret": 6.0,
+      "safety_margin_regret": 4.0,
+      "uncertainty_low_slack_regret": 8.0
+    },
+    "rejected_task": 0,
+    "scenario_id": "SS",
+    "seed": 7,
+    "severity": "high",
+    "state_conditions": {
+      "low_slack_high_uncertainty_joint": true,
+      "maximum_uncertainty": 8.0,
+      "minimum_slack": -1.0
+    },
+    "suggested_structural_actions": [
+      "add_uncertainty_ddl_interaction",
+      "add_pessimistic_risk_gate",
+      "replace_linear_risk_with_smooth_nonlinear_form"
+    ]
+  }
+]

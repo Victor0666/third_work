@@ -1,0 +1,187 @@
+defaults:
+  # 先合并本文件，再加载问题专用配置。命令行仍可使用
+  # `problem=cews_task_constructive` 显式选择本问题。
+  - _self_
+  - problem: cews_task_constructive
+
+hydra:
+  job:
+    chdir: True
+
+# The chosen algorithm
+# 选择使用的算法
+algorithm: seevo # Options: "seevo" (main algorithm with self-evolution), "reevo" (baseline comparison method)
+                 # 选项："seevo"（带自进化的主算法），"reevo"（基线对比方法）
+
+# Execution mode
+# 执行模式
+mode: train  # Options: "train" (normal evolution from seed), "test" (load trained rules from data_dir and run one iteration)
+             # 选项："train"（从种子开始正常进化），"test"（从 data_dir 加载已训练规则并运行一次迭代）
+data_dir: data  # Directory to load trained rules from (only used in test mode)
+                # 加载已训练规则的目录（仅在 test 模式下使用）
+
+# LLM parameters
+# 大语言模型参数
+model: qwen-plus # #gpt-3.5-turbo-0125  # LLM model (other options include gpt-4-turbo-preview; GLM-3-Turbo, GLM-4; and moonshot-v1-8k) 
+                 # 大语言模型（其他选项包括 gpt-4-turbo-preview、GLM-3-Turbo、GLM-4 和 moonshot-v1-8k）
+temperature: 1  # temperature for chat completion
+                # 聊天补全的温度参数
+# 留空时不在全局层覆盖算例编号，而是由问题 YAML 根据 train/test 模式
+# 分别读取 dataset.train_seeds 或 dataset.test_seeds。这样训练集与测试集
+# 的划分只在问题配置中维护，避免两个配置来源不一致。
+case_num: []
+
+# Main GA loop parameters
+# 主遗传算法循环参数
+max_fe: 20 # maximum number of function evaluations
+           # 最大函数评估次数
+pop_size: 20 # population size for GA
+             # 遗传算法的种群规模
+init_pop_size: 20 # initial population size for GA
+                  # 遗传算法的初始种群规模
+mutation_rate: 0.5 # mutation rate for GA
+                   # 遗传算法的变异率
+timeout: 100 # timeout for evaluation of a single heuristic
+             # 单个启发式规则评估的超时时间
+diversify_init_pop: True # whether to diversify the initial population
+
+# LLM contract recovery runs before CMA-ES or scheduling simulation. Invalid
+# responses are repaired using their exact parser error; the validated
+# parameterized reference is used only when an entire generated batch fails.
+candidate_generation:
+  validation_retries: 3
+  repair_temperature: 0.0
+  use_validated_reference_fallback: true
+                          # 是否对初始种群进行多样化处理
+
+# Offline structure-parameter co-evolution. This is never used by the online
+# Manager-Host-VM decision path.
+parameter_optimization:
+  enabled: true
+  optimizer_seed: 0
+  max_parameters: 12
+  population_size: 6
+  max_generations: 4
+  initial_sigma: 0.25
+  stage_seed_counts:
+    quick: 1
+    refine: 3
+    confirm: 0  # all configured validation_seeds; skipped when that list is empty
+  # Evaluate every parameter vector on the same workload/resource scenarios.
+  scenario_ids: [SS, MS, LS]
+  elite_fraction: 0.25
+  boundary_epsilon: 0.000001
+  sensitivity_epsilon: 0.02
+  correlation_threshold: 0.85
+  early_stop_patience: 3
+  cache_enabled: true
+  cache_path: parameter_evaluation_cache.json
+  cache_precision: 12
+  # Independent scenario/seed simulations run as bounded subprocesses. Keep
+  # this below the number of physical CPU cores to avoid memory contention.
+  max_parallel_evaluations: 4
+  max_branches: 6
+  max_ast_depth: 18
+  max_interactions: 8
+  performance_tolerance: 0.01
+  diagnostic_perturbations: true
+  auto_admission_enabled: true
+  admission_required: true
+  admission_config_path: cfg/problem/cews_task_constructive_hrl_ss_admission.yaml
+  admission_manifest_path: problems/cews_task_constructive/safe_heuristic_library_resS.json
+
+# Offline decision-mechanism analysis. It runs only after CMA-ES has frozen
+# selected structures and is never imported by the online Manager path.
+counterfactual_feedback:
+  enabled: true
+  run_after_parameter_optimization: true
+  max_structures_per_generation: 2
+  include_top_feasible: 1
+  include_infeasible_low_energy: 1
+  scenario_ids: [SS, MS]
+  train_seed_count: 2
+  validation_seed_count: 0
+
+  trace:
+    max_traced_decisions_per_run: 200
+    max_critical_decisions_per_run: 12
+    store_full_ready_ids: true
+    store_full_ready_features: false
+
+  alternatives:
+    max_per_decision: 3
+    include_rule_runner_up: true
+    include_min_slack: true
+    include_max_upward_rank: true
+    include_min_energy: true
+    include_max_uncertainty: true
+
+  criticality:
+    slack_threshold: 0.0
+    uncertainty_threshold: 1.0
+    score_margin_threshold: 0.05
+    queue_congestion_threshold: 4
+
+  estimator:
+    mode: local_one_step
+    bounded_replay_enabled: false
+    bounded_replay_steps: 0
+    assert_state_immutability: true
+
+  aggregation:
+    min_repeated_evidence: 2
+    high_confidence_seed_count: 2
+    high_confidence_scenario_count: 2
+    max_representative_cases: 4
+    max_feedback_chars: 12000
+
+  cache:
+    enabled: true
+    path: counterfactual_feedback/cache.json
+
+# Offline cross-generation stress states. This consumes only frozen-rule
+# counterfactual artifacts and never participates in CMA vectors or Manager IO.
+critical_state_replay:
+  enabled: true
+  run_after_counterfactual_feedback: true
+  strict_replay_gate: false
+
+  archive:
+    global_capacity: 300
+    per_category_capacity: 50
+    max_states_per_scenario: 120
+    max_states_per_workflow_type: 120
+    exact_duplicate_merge: true
+    semantic_similarity_enabled: true
+    semantic_signature_precision: 4
+    min_admission_confidence: medium
+    min_counterfactual_evidence_quality: medium
+    resolved_success_threshold: 3
+    hard_failure_threshold: 2
+    dormant_generation_threshold: 8
+    allow_validation_archive: false
+    near_zero_slack_threshold: 1.0
+    resource_bottleneck_threshold: 0.85
+    archive_path: critical_state_replay/archive/critical_state_archive.json
+
+  replay:
+    max_states_per_generation: 40
+    max_hard_states_per_generation: 20
+    max_new_states_per_generation: 10
+    resolved_replay_fraction: 0.1
+    max_states_per_semantic_cluster: 3
+    candidate_outcome_expansion_cap: 6
+    min_verified_candidate_coverage: 0.5
+    deterministic_sampling_seed: 0
+
+  feedback:
+    min_repeated_failure_count: 2
+    high_confidence_seed_count: 2
+    high_confidence_scenario_count: 2
+    max_failure_examples: 5
+    max_success_examples: 3
+    max_feedback_chars: 10000
+
+  cache:
+    enabled: true
+    path: critical_state_replay/replay_cache.json

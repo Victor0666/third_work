@@ -1,0 +1,493 @@
+{
+  "archive_hash": "24f6757712ed2f182a81e5e5d98d4e706aa84dd92a1d83ab20bca60d315a34b0",
+  "archive_statistics": {
+    "cluster_count": 1,
+    "ddl_severity_counts": {
+      "1": 1
+    },
+    "eviction_count": 0,
+    "risk_category_counts": {
+      "COUNTERFACTUAL_DOMINATED_CHOICE": 1
+    },
+    "scenario_counts": {
+      "SS": 1
+    },
+    "seed_counts": {
+      "7": 1
+    },
+    "state_count": 1,
+    "status_counts": {
+      "ACTIVE": 1
+    },
+    "workflow_type_counts": {
+      "workflow_0": 1
+    }
+  },
+  "archive_version": "critical_state_archive_v1",
+  "cluster_metadata": {
+    "45298cfa8b11b75604a2c5a473e4c0bffec13a4dfdb00d74df4d9d7d056d9f69": [
+      "55ca43f155709834829e397063ccddc5cd0c3b9919dcb7b5f6e12e62c5b5a92d"
+    ]
+  },
+  "config_hash": "c3f3007eeea4f4f085a5fc0ef5592ce7cbef2a7985d3fb945ec6a688c38a20a7",
+  "created_at": "2026-08-05T06:41:41.815238+00:00",
+  "eviction_log": [],
+  "global_capacity": 300,
+  "last_updated_generation": 1,
+  "per_category_capacity": 50,
+  "state_records": [
+    {
+      "archive_priority": [
+        1.0,
+        2.0,
+        4.0,
+        0.0,
+        1.0,
+        1.0,
+        0.0,
+        2.0
+      ],
+      "auxiliary_risk_categories": [
+        "CRITICAL_PATH_STARVATION",
+        "DDL_ENERGY_CONFLICT",
+        "NEGATIVE_SLACK",
+        "PESSIMISTIC_TIMELINE_RISK",
+        "SUCCESSOR_RELEASE_BLOCKING",
+        "UNCERTAINTY_SPIKE"
+      ],
+      "confidence": "high",
+      "config_hash": "c3f3007eeea4f4f085a5fc0ef5592ce7cbef2a7985d3fb945ec6a688c38a20a7",
+      "consecutive_failure_count": 0,
+      "consecutive_success_count": 1,
+      "content_hash": "2e8967b3b237cb6f24b24ef8c63dd2cb19deaa8fb2d7381959a3e4f8e73f035f",
+      "counterfactual_comparisons": [
+        {
+          "alternative_outcome": {
+            "communication_time": 0.5,
+            "ddl_risk": 16.0,
+            "evidence_quality": "high",
+            "execution_time": 1.5,
+            "host_id": 1,
+            "host_load_after": 0.3,
+            "host_load_before": 0.0,
+            "host_load_delta": 0.3,
+            "marginal_fuzzy_energy": 3.2,
+            "modal_finish": 7.0,
+            "optimistic_finish": 6.0,
+            "pessimistic_finish": 8.0,
+            "predicted_finish": 7.0,
+            "predicted_violation": 0.0,
+            "queue_time": 0.0,
+            "released_critical_successors": 1,
+            "released_successors": 1,
+            "remaining_critical_path": 8.0,
+            "safety_margin": 2.0,
+            "server_active_time_extension": 2.0,
+            "task_id": 1,
+            "task_safe_deadline": 10.0,
+            "uncertainty_low_slack_risk": 0.0,
+            "uncertainty_width": 2.0,
+            "vm_id": 1,
+            "workflow_id": 0,
+            "workflow_modal_finish": 15.0,
+            "workflow_optimistic_finish": 14.0,
+            "workflow_pessimistic_finish": 16.0
+          },
+          "alternative_task_id": 1,
+          "communication_delta": 0.5,
+          "ddl_risk_delta": -2.0,
+          "decision_id": "smoke:d000000",
+          "dominance": "tradeoff_or_equal",
+          "elapsed_ms": 0.11429993901401758,
+          "estimator_type": "local_one_step",
+          "evidence_quality": "high",
+          "marginal_fuzzy_energy_delta": -0.20000000000000018,
+          "pessimistic_finish_delta": 6.0,
+          "predicted_finish_delta": 2.0,
+          "predicted_violation_delta": 2.0,
+          "released_critical_successor_delta": 1,
+          "released_successor_delta": 1,
+          "remaining_critical_path_delta": -6.0,
+          "safety_margin_delta": 4.0,
+          "selected_outcome": {
+            "communication_time": 1.0,
+            "ddl_risk": 14.0,
+            "evidence_quality": "high",
+            "execution_time": 2.0,
+            "host_id": 0,
+            "host_load_after": 0.8,
+            "host_load_before": 0.4,
+            "host_load_delta": 0.4,
+            "marginal_fuzzy_energy": 3.0,
+            "modal_finish": 9.0,
+            "optimistic_finish": 6.0,
+            "pessimistic_finish": 14.0,
+            "predicted_finish": 9.0,
+            "predicted_violation": 2.0,
+            "queue_time": 1.0,
+            "released_critical_successors": 0,
+            "released_successors": 0,
+            "remaining_critical_path": 2.0,
+            "safety_margin": -2.0,
+            "server_active_time_extension": 2.0,
+            "task_id": 0,
+            "task_safe_deadline": 10.0,
+            "uncertainty_low_slack_risk": 8.0,
+            "uncertainty_width": 8.0,
+            "vm_id": 0,
+            "workflow_id": 0,
+            "workflow_modal_finish": 11.0,
+            "workflow_optimistic_finish": 8.0,
+            "workflow_pessimistic_finish": 16.0
+          },
+          "selected_task_id": 0,
+          "state_fingerprint_after": "6b3c41240727eb5f2281fe3cc08d8728cf4d93aaeef18680509a20891759de4f",
+          "state_fingerprint_before": "6b3c41240727eb5f2281fe3cc08d8728cf4d93aaeef18680509a20891759de4f",
+          "uncertainty_risk_delta": 8.0
+        },
+        {
+          "alternative_outcome": {
+            "communication_time": 0.2,
+            "ddl_risk": 10.0,
+            "evidence_quality": "high",
+            "execution_time": 1.0,
+            "host_id": 0,
+            "host_load_after": 0.8,
+            "host_load_before": 0.4,
+            "host_load_delta": 0.4,
+            "marginal_fuzzy_energy": 1.0,
+            "modal_finish": 8.0,
+            "optimistic_finish": 4.0,
+            "pessimistic_finish": 15.0,
+            "predicted_finish": 8.0,
+            "predicted_violation": 0.0,
+            "queue_time": 1.0,
+            "released_critical_successors": 0,
+            "released_successors": 0,
+            "remaining_critical_path": 1.0,
+            "safety_margin": 1.0,
+            "server_active_time_extension": 1.0,
+            "task_id": 2,
+            "task_safe_deadline": 10.0,
+            "uncertainty_low_slack_risk": 0.0,
+            "uncertainty_width": 11.0,
+            "vm_id": 0,
+            "workflow_id": 0,
+            "workflow_modal_finish": 9.0,
+            "workflow_optimistic_finish": 5.0,
+            "workflow_pessimistic_finish": 16.0
+          },
+          "alternative_task_id": 2,
+          "communication_delta": 0.8,
+          "ddl_risk_delta": 4.0,
+          "decision_id": "smoke:d000000",
+          "dominance": "alternative_dominates",
+          "elapsed_ms": 0.09169999975711107,
+          "estimator_type": "local_one_step",
+          "evidence_quality": "high",
+          "marginal_fuzzy_energy_delta": 2.0,
+          "pessimistic_finish_delta": -1.0,
+          "predicted_finish_delta": 1.0,
+          "predicted_violation_delta": 2.0,
+          "released_critical_successor_delta": 0,
+          "released_successor_delta": 0,
+          "remaining_critical_path_delta": 1.0,
+          "safety_margin_delta": 3.0,
+          "selected_outcome": {
+            "communication_time": 1.0,
+            "ddl_risk": 14.0,
+            "evidence_quality": "high",
+            "execution_time": 2.0,
+            "host_id": 0,
+            "host_load_after": 0.8,
+            "host_load_before": 0.4,
+            "host_load_delta": 0.4,
+            "marginal_fuzzy_energy": 3.0,
+            "modal_finish": 9.0,
+            "optimistic_finish": 6.0,
+            "pessimistic_finish": 14.0,
+            "predicted_finish": 9.0,
+            "predicted_violation": 2.0,
+            "queue_time": 1.0,
+            "released_critical_successors": 0,
+            "released_successors": 0,
+            "remaining_critical_path": 2.0,
+            "safety_margin": -2.0,
+            "server_active_time_extension": 2.0,
+            "task_id": 0,
+            "task_safe_deadline": 10.0,
+            "uncertainty_low_slack_risk": 8.0,
+            "uncertainty_width": 8.0,
+            "vm_id": 0,
+            "workflow_id": 0,
+            "workflow_modal_finish": 11.0,
+            "workflow_optimistic_finish": 8.0,
+            "workflow_pessimistic_finish": 16.0
+          },
+          "selected_task_id": 0,
+          "state_fingerprint_after": "6b3c41240727eb5f2281fe3cc08d8728cf4d93aaeef18680509a20891759de4f",
+          "state_fingerprint_before": "6b3c41240727eb5f2281fe3cc08d8728cf4d93aaeef18680509a20891759de4f",
+          "uncertainty_risk_delta": 8.0
+        }
+      ],
+      "created_generation": 0,
+      "critical_reasons": [
+        "close_rule_scores",
+        "critical_path_competition",
+        "high_uncertainty",
+        "low_or_negative_slack_present",
+        "selected_not_maximum_upward_rank",
+        "selected_not_minimum_slack",
+        "successor_release_difference"
+      ],
+      "criticality_score": 18.54,
+      "current_time": 5.0,
+      "ddl_evidence": {
+        "max_counterfactual_ddl_regret": 4.0,
+        "negative_slack": true,
+        "reports": [
+          {
+            "agent_name": "ddl_diagnostic_agent",
+            "confidence": "high",
+            "decision_id": "smoke:d000000",
+            "diagnosis_code": "low_slack_task_deferred+critical_path_or_successor_blocked+higher_ddl_risk_choice",
+            "evidence": {
+              "alternative_pessimistic_finish": 8.0,
+              "alternative_safety_margin": 2.0,
+              "alternative_slack": -1.0,
+              "alternative_upward_rank": 10.0,
+              "selected_pessimistic_finish": 14.0,
+              "selected_safety_margin": -2.0,
+              "selected_slack": 5.0,
+              "selected_upward_rank": 2.0
+            },
+            "limitations": [
+              "local one-step evidence is not a long-horizon causal proof"
+            ],
+            "preferred_task": 1,
+            "quantitative_deltas": {
+              "critical_successor_release_regret": 1.0,
+              "predicted_violation_regret": 2.0,
+              "remaining_critical_path_regret": -6.0,
+              "safety_margin_regret": 4.0
+            },
+            "rejected_task": 0,
+            "scenario_id": "SS",
+            "seed": 7,
+            "severity": "high",
+            "state_conditions": {
+              "critical_reasons": [
+                "low_or_negative_slack_present",
+                "selected_not_minimum_slack",
+                "selected_not_maximum_upward_rank",
+                "close_rule_scores",
+                "high_uncertainty",
+                "successor_release_difference",
+                "critical_path_competition"
+              ],
+              "negative_slack_present": true,
+              "queue_size": 3
+            },
+            "suggested_structural_actions": [
+              "add_conditional_ddl_protection_gate",
+              "normalize_slack_by_workflow_deadline_budget",
+              "add_upward_rank_remaining_work_interaction",
+              "add_successor_release_interaction"
+            ]
+          }
+        ]
+      },
+      "diagnosis_codes": [
+        "low_slack_task_deferred+critical_path_or_successor_blocked+higher_ddl_risk_choice",
+        "modal_safe_pessimistic_violation",
+        "small_energy_saving_large_ddl_regret"
+      ],
+      "dominated_task_ids": [
+        0
+      ],
+      "energy_evidence": {
+        "max_energy_regret_within_ddl_class": 2.0,
+        "reports": [
+          {
+            "agent_name": "energy_diagnostic_agent",
+            "confidence": "medium",
+            "decision_id": "smoke:d000000",
+            "diagnosis_code": "small_energy_saving_large_ddl_regret",
+            "evidence": {
+              "alternative_active_time_extension": 2.0,
+              "alternative_energy": 3.2,
+              "alternative_host_load_after": 0.3,
+              "ddl_priority_applied": true,
+              "relative_energy_difference": 0.06250000000000006,
+              "selected_active_time_extension": 2.0,
+              "selected_energy": 3.0,
+              "selected_host_load_after": 0.8
+            },
+            "limitations": [
+              "marginal energy and active-time extension are local proxies"
+            ],
+            "preferred_task": 1,
+            "quantitative_deltas": {
+              "communication_regret": 0.5,
+              "host_load_delta_difference": 0.10000000000000003,
+              "marginal_fuzzy_energy_regret": -0.20000000000000018,
+              "predicted_violation_regret": 2.0
+            },
+            "rejected_task": 0,
+            "scenario_id": "SS",
+            "seed": 7,
+            "severity": "high",
+            "state_conditions": {
+              "host_load_maximum": 0.4,
+              "queue_size": 3
+            },
+            "suggested_structural_actions": [
+              "add_small_energy_gap_high_ddl_risk_gate"
+            ]
+          }
+        ]
+      },
+      "eviction_reason": null,
+      "exact_signature": "e911952a974bb28a71a7c7a82a99f872427f5f679be042b8c8aa62a44246d813",
+      "failure_count": 0,
+      "failure_generations": [],
+      "last_replayed_generation": 1,
+      "merged_evidence_count": 2,
+      "preferred_task_ids": [
+        1,
+        2
+      ],
+      "ready_task_features": {
+        "0": {
+          "min_comm_time": 1.0,
+          "min_exec_time": 2.0,
+          "min_incremental_energy": 3.0,
+          "ready_wait_time": 0.0,
+          "remaining_work": 10.0,
+          "slack": 5.0,
+          "uncertainty": 4.0,
+          "upward_rank": 2.0
+        },
+        "1": {
+          "min_comm_time": 0.5,
+          "min_exec_time": 2.5,
+          "min_incremental_energy": 3.2,
+          "ready_wait_time": 3.0,
+          "remaining_work": 30.0,
+          "slack": -1.0,
+          "uncertainty": 1.0,
+          "upward_rank": 10.0
+        },
+        "2": {
+          "min_comm_time": 0.2,
+          "min_exec_time": 1.0,
+          "min_incremental_energy": 1.0,
+          "ready_wait_time": 1.0,
+          "remaining_work": 5.0,
+          "slack": 10.0,
+          "uncertainty": 8.0,
+          "upward_rank": 1.0
+        }
+      },
+      "ready_task_ids": [
+        0,
+        1,
+        2
+      ],
+      "ready_task_scores": {
+        "0": 0.0,
+        "1": 0.01,
+        "2": 0.2
+      },
+      "replay_count": 1,
+      "replay_outcomes": [
+        {
+          "generation": 1,
+          "replay_status": "VERIFIED_SUCCESS",
+          "result_hash": "f0496e098d9c095391b831a120f5677bfdb7d1d27cea8985a6799d6f8eada443",
+          "structure_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+        }
+      ],
+      "replay_structure_hashes": [
+        "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      ],
+      "risk_category": "COUNTERFACTUAL_DOMINATED_CHOICE",
+      "selected_task_id": 0,
+      "selected_task_rank": 1,
+      "selected_task_score": 0.0,
+      "semantic_signature": "45298cfa8b11b75604a2c5a473e4c0bffec13a4dfdb00d74df4d9d7d056d9f69",
+      "source_decision_index": 0,
+      "source_frozen_rule_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "source_generation": 0,
+      "source_parameter_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "source_run_id": "smoke",
+      "source_scenario_id": "SS",
+      "source_scenarios": [
+        "SS"
+      ],
+      "source_seed": 7,
+      "source_seeds": [
+        7
+      ],
+      "source_structure_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "source_structures": [
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      ],
+      "state_id": "55ca43f155709834829e397063ccddc5cd0c3b9919dcb7b5f6e12e62c5b5a92d",
+      "state_signature": "e911952a974bb28a71a7c7a82a99f872427f5f679be042b8c8aa62a44246d813",
+      "status": "ACTIVE",
+      "success_count": 1,
+      "success_generations": [
+        1
+      ],
+      "uncertainty_evidence": {
+        "max_uncertainty_regret": 8.0,
+        "reports": [
+          {
+            "agent_name": "uncertainty_diagnostic_agent",
+            "confidence": "high",
+            "decision_id": "smoke:d000000",
+            "diagnosis_code": "modal_safe_pessimistic_violation",
+            "evidence": {
+              "alternative_uncertainty_width": 2.0,
+              "selected_modal_finish": 9.0,
+              "selected_optimistic_finish": 6.0,
+              "selected_pessimistic_finish": 14.0,
+              "selected_task_safe_deadline": 10.0,
+              "selected_uncertainty_width": 8.0
+            },
+            "limitations": [
+              "fuzzy timelines express model uncertainty, not strict causal effects"
+            ],
+            "preferred_task": 1,
+            "quantitative_deltas": {
+              "pessimistic_finish_regret": 6.0,
+              "safety_margin_regret": 4.0,
+              "uncertainty_low_slack_regret": 8.0
+            },
+            "rejected_task": 0,
+            "scenario_id": "SS",
+            "seed": 7,
+            "severity": "high",
+            "state_conditions": {
+              "low_slack_high_uncertainty_joint": true,
+              "maximum_uncertainty": 8.0,
+              "minimum_slack": -1.0
+            },
+            "suggested_structural_actions": [
+              "add_uncertainty_ddl_interaction",
+              "add_pessimistic_risk_gate",
+              "replace_linear_risk_with_smooth_nonlinear_form"
+            ]
+          }
+        ]
+      },
+      "unresolved_count": 0,
+      "unverified_task_ids": [],
+      "verified_coverage": 1.0,
+      "workflow_id": 0,
+      "workflow_type": "workflow_0"
+    }
+  ],
+  "used_test_seed": false
+}
