@@ -77,9 +77,10 @@ parameter_optimization:
   cache_enabled: true
   cache_path: parameter_evaluation_cache.json
   cache_precision: 12
-  # Independent scenario/seed simulations run as bounded subprocesses. Keep
-  # this below the number of physical CPU cores to avoid memory contention.
-  max_parallel_evaluations: 4
+  # The 30-core server reserves two cores for the SeEvo parent process and OS.
+  # CMA generations and diagnostic perturbations share this bounded pool;
+  # every child process is restricted to one BLAS thread.
+  max_parallel_evaluations: 28
   max_branches: 6
   max_ast_depth: 18
   max_interactions: 8

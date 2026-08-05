@@ -468,6 +468,51 @@ class CMAESSmokeTests(unittest.TestCase):
         self.assertEqual(result.final_stage, "refine")
         self.assertEqual({item["stage"] for item in result.history}, {"refine"})
 
+    def test_generation_confirm_and_diagnostics_use_batch_evaluator(self):
+        candidate = parse_rule_candidate(_source())
+        config = OptimizerConfig(
+            enabled=True,
+            optimizer_seed=5,
+            population_size=4,
+            max_generations=1,
+            stage_seed_counts={"quick": 1, "refine": 2, "confirm": 1},
+            elite_fraction=0.25,
+            diagnostic_perturbations=True,
+        )
+        scalar_calls = []
+        batch_calls = []
+
+        def scalar_evaluator(parameters, stage, seeds):
+            scalar_calls.append((parameters, stage, list(seeds)))
+            return _metrics(parameters["weight"], seed=int(seeds[0]))
+
+        def batch_evaluator(parameter_maps, stage, seeds):
+            batch_calls.append((stage, len(parameter_maps), list(seeds)))
+            return [
+                _metrics(parameters["weight"], seed=int(seeds[0]))
+                for parameters in parameter_maps
+            ]
+
+        result = CMAESOptimizer(config).optimize(
+            candidate.parameter_schema,
+            scalar_evaluator,
+            batch_evaluator=batch_evaluator,
+            train_seeds=[1, 2],
+            validation_seeds=[3],
+            final_test_seeds=[100],
+        )
+
+        self.assertFalse(scalar_calls)
+        self.assertEqual(
+            batch_calls,
+            [
+                ("refine", 4, [1, 2]),
+                ("confirm", 1, [3]),
+                ("diagnostic", 4, [3]),
+            ],
+        )
+        self.assertEqual(result.evaluations, 9)
+
 
 class DiagnosticTests(unittest.TestCase):
     def test_boundary_inactivity_correlation_confidence_and_scenario_format(self):
@@ -703,6 +748,10 @@ class StagedEvaluationConfigurationTests(unittest.TestCase):
             config.parameter_optimization.max_parallel_evaluations,
             2,
         )
+        self.assertEqual(
+            config.parameter_optimization.max_parallel_evaluations,
+            28,
+        )
 
     def test_parameter_map_runs_same_seed_grid_for_each_scenario(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -834,6 +883,85 @@ class StagedEvaluationConfigurationTests(unittest.TestCase):
             self.assertEqual(algorithm.parameter_evaluation_count, 4)
             for call in run.call_args_list:
                 self.assertEqual(call.kwargs["env"]["OMP_NUM_THREADS"], "1")
+
+    def test_parameter_batch_flattens_vectors_into_one_worker_pool(self):
+        with tempfile.TemporaryDirectory() as directory:
+            algorithm = object.__new__(SeEvo)
+            algorithm.generated_dir = directory
+            algorithm.parameter_optimizer_config = OptimizerConfig(
+                enabled=True,
+                scenario_ids=("SS", "MS"),
+                cache_enabled=False,
+                max_parallel_evaluations=28,
+            )
+            algorithm.parameter_evaluation_cache = EvaluationCache(enabled=False)
+            algorithm.parameter_evaluation_count = 0
+            algorithm.cfg = SimpleNamespace(
+                problem={
+                    "dataset": {"scenario": "SS"},
+                    "resources": {},
+                    "fuzzy": {},
+                },
+                timeout=10,
+            )
+            algorithm._evaluation_command = MethodType(
+                lambda self, candidate_path, case_num, dataset_mode=None,
+                scenario_id=None, config_path=None: [
+                    "fake-eval",
+                    str(scenario_id),
+                    str(case_num[0]),
+                    str(candidate_path),
+                ],
+                algorithm,
+            )
+            candidate = parse_rule_candidate(_source())
+            lock = threading.Lock()
+            activity = {"active": 0, "maximum": 0}
+
+            def fake_run(command, **_kwargs):
+                with lock:
+                    activity["active"] += 1
+                    activity["maximum"] = max(
+                        activity["maximum"], activity["active"]
+                    )
+                time.sleep(0.03)
+                with lock:
+                    activity["active"] -= 1
+                scenario_id = command[1]
+                seed = int(command[2])
+                metrics = _metrics(10.0 + seed, seed=seed)
+                metrics["scenario_id"] = scenario_id
+                metrics["per_seed_metrics"][0]["scenario_id"] = scenario_id
+                return SimpleNamespace(
+                    returncode=0,
+                    stdout="RESULT_JSON=" + json.dumps(metrics),
+                    stderr="",
+                )
+
+            parameter_maps = [
+                {"weight": weight, "epsilon": 0.1}
+                for weight in (0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0)
+            ]
+            with mock.patch("seevo.subprocess.run", side_effect=fake_run) as run:
+                results = algorithm._evaluate_parameter_maps(
+                    candidate,
+                    parameter_maps,
+                    "refine",
+                    [1, 2],
+                )
+
+            self.assertEqual(run.call_count, 28)
+            self.assertEqual(activity["maximum"], 28)
+            self.assertEqual(len(results), 7)
+            self.assertEqual(algorithm.parameter_evaluation_count, 28)
+            for result in results:
+                self.assertEqual(
+                    [
+                        (row["scenario_id"], row["seed"])
+                        for row in result["per_seed_metrics"]
+                    ],
+                    [("SS", 1), ("SS", 2), ("MS", 1), ("MS", 2)],
+                )
 
 
 class StructureDeduplicationTests(unittest.TestCase):

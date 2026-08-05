@@ -854,34 +854,33 @@ class SeEvo:
         stage: str,
         seeds: list[int],
     ) -> dict:
-        """Freeze one vector and evaluate each seed through the existing CEWS CLI."""
+        """Backward-compatible single-vector parameter evaluation."""
+        return self._evaluate_parameter_maps(
+            candidate,
+            [parameters],
+            stage,
+            seeds,
+        )[0]
+
+    def _evaluate_parameter_maps(
+        self,
+        candidate,
+        parameter_maps,
+        stage: str,
+        seeds: list[int],
+    ) -> list[dict]:
+        """Evaluate a parameter batch through one bounded global context pool."""
         del stage  # Stage affects the common seed set, not scheduling semantics.
+        parameter_maps = [dict(parameters) for parameters in parameter_maps]
+        if not parameter_maps:
+            return []
         schema = candidate.parameter_schema
-        values = [parameters[name] for name in schema.names]
-        frozen_source = freeze_rule_source(
-            candidate.parameterized_rule_source,
-            schema,
-            values,
-        )
-        source_hash = hashlib.sha256(frozen_source.encode("utf-8")).hexdigest()
         search_dir = os.path.join(
             self.generated_dir,
             "parameter_search",
             candidate.structure_hash[:16],
         )
         os.makedirs(search_dir, exist_ok=True)
-        candidate_path = os.path.abspath(
-            os.path.join(search_dir, f"params_{source_hash[:20]}.py")
-        )
-        if not os.path.isfile(candidate_path):
-            with open(
-                candidate_path,
-                "w",
-                encoding="utf-8",
-                newline="\n",
-            ) as handle:
-                handle.write(frozen_source)
-
         problem_config = self._problem_config_dict()
         resource_config_hash = rule_json_sha256(
             {
@@ -893,55 +892,97 @@ class SeEvo:
         config = self._optimizer_config()
         scenario_ids = self._optimization_scenario_ids()
         contexts = []
-        for scenario_id in scenario_ids:
-            scenario_config = json.loads(json.dumps(problem_config))
-            scenario_config.setdefault("dataset", {})["scenario"] = scenario_id
-            evaluation_config_hash = rule_json_sha256(scenario_config)
-            for seed in seeds:
-                cache_key = EvaluationCacheKey.create(
-                    structure_hash=candidate.structure_hash,
-                    parameter_vector=values,
-                    seed=int(seed),
-                    scenario_id=scenario_id,
-                    evaluation_config_hash=evaluation_config_hash,
-                    resource_config_hash=resource_config_hash,
-                    precision=config.cache_precision,
-                )
-                cached = cache.get(cache_key) if cache is not None else None
-                contexts.append(
-                    {
-                        "scenario_id": scenario_id,
-                        "seed": int(seed),
-                        "cache_key": cache_key,
-                        "cached": cached,
-                        "command": (
-                            None
-                            if cached is not None
-                            else self._evaluation_command(
-                                candidate_path,
-                                [int(seed)],
-                                dataset_mode="train",
-                                scenario_id=scenario_id,
-                            )
-                        ),
-                    }
-                )
+        context_groups = []
+        for parameter_index, parameters in enumerate(parameter_maps):
+            values = [parameters[name] for name in schema.names]
+            frozen_source = freeze_rule_source(
+                candidate.parameterized_rule_source,
+                schema,
+                values,
+            )
+            source_hash = hashlib.sha256(
+                frozen_source.encode("utf-8")
+            ).hexdigest()
+            candidate_path = os.path.abspath(
+                os.path.join(search_dir, f"params_{source_hash[:20]}.py")
+            )
+            if not os.path.isfile(candidate_path):
+                with open(
+                    candidate_path,
+                    "w",
+                    encoding="utf-8",
+                    newline="\n",
+                ) as handle:
+                    handle.write(frozen_source)
+            group = []
+            for scenario_id in scenario_ids:
+                scenario_config = json.loads(json.dumps(problem_config))
+                scenario_config.setdefault("dataset", {})[
+                    "scenario"
+                ] = scenario_id
+                evaluation_config_hash = rule_json_sha256(scenario_config)
+                for seed in seeds:
+                    cache_key = EvaluationCacheKey.create(
+                        structure_hash=candidate.structure_hash,
+                        parameter_vector=values,
+                        seed=int(seed),
+                        scenario_id=scenario_id,
+                        evaluation_config_hash=evaluation_config_hash,
+                        resource_config_hash=resource_config_hash,
+                        precision=config.cache_precision,
+                    )
+                    cached = cache.get(cache_key) if cache is not None else None
+                    group.append(len(contexts))
+                    contexts.append(
+                        {
+                            "parameter_index": parameter_index,
+                            "scenario_id": scenario_id,
+                            "seed": int(seed),
+                            "cache_key": cache_key,
+                            "cached": cached,
+                            "command": (
+                                None
+                                if cached is not None
+                                else self._evaluation_command(
+                                    candidate_path,
+                                    [int(seed)],
+                                    dataset_mode="train",
+                                    scenario_id=scenario_id,
+                                )
+                            ),
+                        }
+                    )
+            context_groups.append(group)
 
-        pending = [
-            (index, context)
-            for index, context in enumerate(contexts)
-            if context["cached"] is None
-        ]
+        pending = []
+        result_source_indexes = {}
+        pending_by_digest = {}
+        for index, context in enumerate(contexts):
+            if context["cached"] is not None:
+                continue
+            digest = context["cache_key"].digest
+            source_index = pending_by_digest.get(digest)
+            if source_index is None:
+                source_index = index
+                pending_by_digest[digest] = index
+                pending.append((index, context))
+            result_source_indexes[index] = source_index
         workers = min(
             max(1, int(config.max_parallel_evaluations)),
             max(1, len(pending)),
         )
+        cached_count = sum(
+            context["cached"] is not None for context in contexts
+        )
+        duplicate_count = len(contexts) - cached_count - len(pending)
         logging.info(
-            "Parameter context grid structure=%s contexts=%d cached=%d "
-            "pending=%d workers=%d",
+            "Parameter batch structure=%s vectors=%d contexts=%d cached=%d "
+            "deduplicated=%d pending=%d workers=%d",
             candidate.structure_hash,
+            len(parameter_maps),
             len(contexts),
-            len(contexts) - len(pending),
+            cached_count,
+            duplicate_count,
             len(pending),
             workers if pending else 0,
         )
@@ -970,26 +1011,37 @@ class SeEvo:
                 for future in as_completed(future_to_index):
                     completed_results[future_to_index[future]] = future.result()
 
-        seed_results = []
-        evaluation_seeds = []
         cache_entries = []
-        for index, context in enumerate(contexts):
-            result = context["cached"]
-            if result is None:
-                result = completed_results[index]
-                cache_entries.append((context["cache_key"], result))
-            seed_results.append(result)
-            evaluation_seeds.append(context["seed"])
+        aggregates = []
+        cached_result_by_index = {}
+        for group in context_groups:
+            seed_results = []
+            evaluation_seeds = []
+            for index in group:
+                context = contexts[index]
+                result = context["cached"]
+                if result is None:
+                    source_index = result_source_indexes[index]
+                    result = completed_results[source_index]
+                    if source_index not in cached_result_by_index:
+                        cache_entries.append((context["cache_key"], result))
+                        cached_result_by_index[source_index] = result
+                seed_results.append(result)
+                evaluation_seeds.append(context["seed"])
+            aggregate = aggregate_seed_evaluations(
+                seed_results,
+                evaluation_seeds,
+            )
+            aggregate["seeds"] = [int(seed) for seed in seeds]
+            aggregate["scenario_ids"] = scenario_ids
+            aggregate["evaluation_context_count"] = len(seed_results)
+            aggregates.append(aggregate)
         if cache is not None:
             cache.put_many(cache_entries)
         self.parameter_evaluation_count = int(
             getattr(self, "parameter_evaluation_count", 0)
         ) + len(pending)
-        aggregate = aggregate_seed_evaluations(seed_results, evaluation_seeds)
-        aggregate["seeds"] = [int(seed) for seed in seeds]
-        aggregate["scenario_ids"] = scenario_ids
-        aggregate["evaluation_context_count"] = len(seed_results)
-        return aggregate
+        return aggregates
 
     def _write_parameter_artifacts(
         self,
@@ -1097,6 +1149,15 @@ class SeEvo:
                     params,
                     stage,
                     list(seeds),
+                ),
+                batch_evaluator=(
+                    lambda parameter_maps, stage, seeds:
+                    self._evaluate_parameter_maps(
+                        candidate,
+                        parameter_maps,
+                        stage,
+                        list(seeds),
+                    )
                 ),
                 train_seeds=train_seeds,
                 validation_seeds=validation_seeds,

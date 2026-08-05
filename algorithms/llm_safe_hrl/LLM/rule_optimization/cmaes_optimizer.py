@@ -12,6 +12,10 @@ from .parameter_schema import ParameterDefinition, ParameterSchema
 
 
 MetricEvaluator = Callable[[dict[str, float], str, Sequence[int]], Mapping[str, Any]]
+BatchMetricEvaluator = Callable[
+    [Sequence[dict[str, float]], str, Sequence[int]],
+    Sequence[Mapping[str, Any]],
+]
 
 
 def _finite(value: Any, default: float = float("inf")) -> float:
@@ -296,11 +300,44 @@ class CMAESOptimizer:
                 "per_seed_metrics": [],
             }
 
+    @classmethod
+    def _safe_evaluate_many(
+        cls,
+        evaluator: MetricEvaluator,
+        batch_evaluator: BatchMetricEvaluator | None,
+        parameter_maps: Sequence[dict[str, float]],
+        stage: str,
+        seeds: Sequence[int],
+    ) -> list[dict[str, Any]]:
+        """Evaluate a batch while preserving the legacy per-vector fallback."""
+        if not parameter_maps:
+            return []
+        if batch_evaluator is None:
+            return [
+                cls._safe_evaluate(evaluator, parameters, stage, seeds)
+                for parameters in parameter_maps
+            ]
+        try:
+            results = list(batch_evaluator(parameter_maps, stage, seeds))
+            if len(results) != len(parameter_maps):
+                raise ValueError(
+                    "batch evaluator must return one result per parameter vector"
+                )
+            return [dict(result) for result in results]
+        except Exception:
+            # Isolate a batch transport failure using the established per-vector
+            # deterministic error handling instead of invalidating the whole batch.
+            return [
+                cls._safe_evaluate(evaluator, parameters, stage, seeds)
+                for parameters in parameter_maps
+            ]
+
     def optimize(
         self,
         schema: ParameterSchema,
         evaluator: MetricEvaluator,
         *,
+        batch_evaluator: BatchMetricEvaluator | None = None,
         train_seeds: Sequence[int],
         validation_seeds: Sequence[int] = (),
         final_test_seeds: Sequence[int] = (),
@@ -388,10 +425,13 @@ class CMAESOptimizer:
                 }
                 for vector in repaired
             ]
-            metrics = [
-                self._safe_evaluate(evaluator, parameters, stage, seeds)
-                for parameters in parameter_maps
-            ]
+            metrics = self._safe_evaluate_many(
+                evaluator,
+                batch_evaluator,
+                parameter_maps,
+                stage,
+                seeds,
+            )
             fitness = rank_fitness(
                 metrics,
                 performance_tolerance=self.config.performance_tolerance,
@@ -453,7 +493,7 @@ class CMAESOptimizer:
 
         confirm_evaluations = 0
         if stage_seeds["confirm"]:
-            confirmed = []
+            confirm_candidates = []
             seen = set()
             confirm_limit = max(1, int(math.ceil(self.config.population_size * self.config.elite_fraction)))
             for elite in ordered:
@@ -461,12 +501,18 @@ class CMAESOptimizer:
                 if vector_key in seen:
                     continue
                 seen.add(vector_key)
-                result = self._safe_evaluate(
-                    evaluator,
-                    elite["parameters"],
-                    "confirm",
-                    stage_seeds["confirm"],
-                )
+                confirm_candidates.append(elite)
+                if len(confirm_candidates) >= confirm_limit:
+                    break
+            confirm_results = self._safe_evaluate_many(
+                evaluator,
+                batch_evaluator,
+                [item["parameters"] for item in confirm_candidates],
+                "confirm",
+                stage_seeds["confirm"],
+            )
+            confirmed = []
+            for elite, result in zip(confirm_candidates, confirm_results):
                 confirmed.append(
                     {
                         **elite,
@@ -482,8 +528,6 @@ class CMAESOptimizer:
                     }
                 )
                 confirm_evaluations += 1
-                if len(confirmed) >= confirm_limit:
-                    break
             if confirmed:
                 ordered = sorted(confirmed, key=lambda item: tuple(item["comparison_key"]))
                 elites = ordered
@@ -493,6 +537,7 @@ class CMAESOptimizer:
         diagnostic_seeds = stage_seeds["confirm"] or stage_seeds["refine"]
         local_perturbations = []
         if self.config.diagnostic_perturbations:
+            perturbation_requests = []
             for definition in schema.parameters:
                 center = float(best["parameters"][definition.name])
                 delta = self.config.sensitivity_epsilon * (
@@ -504,28 +549,37 @@ class CMAESOptimizer:
                         definition.upper_bound,
                         max(definition.lower_bound, center + direction * delta),
                     )
-                    result = self._safe_evaluate(
-                        evaluator,
-                        perturbed,
-                        "diagnostic",
-                        diagnostic_seeds,
+                    perturbation_requests.append(
+                        (definition, direction, center, perturbed)
                     )
-                    local_perturbations.append(
-                        {
-                            "parameter": definition.name,
-                            "direction": direction,
-                            "delta": perturbed[definition.name] - center,
-                            "parameters": perturbed,
-                            "metrics": result,
-                            "comparison_key": list(
-                                constraint_priority_key(
-                                    result,
-                                    performance_tolerance=self.config.performance_tolerance,
-                                )
-                            ),
-                            "seeds": list(diagnostic_seeds),
-                        }
-                    )
+            perturbation_results = self._safe_evaluate_many(
+                evaluator,
+                batch_evaluator,
+                [item[3] for item in perturbation_requests],
+                "diagnostic",
+                diagnostic_seeds,
+            )
+            for request, result in zip(
+                perturbation_requests,
+                perturbation_results,
+            ):
+                definition, direction, center, perturbed = request
+                local_perturbations.append(
+                    {
+                        "parameter": definition.name,
+                        "direction": direction,
+                        "delta": perturbed[definition.name] - center,
+                        "parameters": perturbed,
+                        "metrics": result,
+                        "comparison_key": list(
+                            constraint_priority_key(
+                                result,
+                                performance_tolerance=self.config.performance_tolerance,
+                            )
+                        ),
+                        "seeds": list(diagnostic_seeds),
+                    }
+                )
 
         return OptimizationResult(
             best_parameters=dict(best["parameters"]),
