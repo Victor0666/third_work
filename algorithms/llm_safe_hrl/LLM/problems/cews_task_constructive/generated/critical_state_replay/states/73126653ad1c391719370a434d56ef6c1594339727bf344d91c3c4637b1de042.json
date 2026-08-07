@@ -1,0 +1,275 @@
+{
+  "archive_priority": [
+    0.0,
+    1.0,
+    0.0,
+    0.0,
+    1.0,
+    1.0,
+    0.0,
+    1.9537985631085206
+  ],
+  "auxiliary_risk_categories": [
+    "CRITICAL_PATH_STARVATION"
+  ],
+  "confidence": "medium",
+  "config_hash": "173c9d569752f0055d5279cc915466e15009ccf02425b18b772481bb968c52ba",
+  "consecutive_failure_count": 0,
+  "consecutive_success_count": 1,
+  "content_hash": "d1af3b06818a3b8b3e1b99eb628f2373db5f7936760352b43e2a1ff7b70ba02e",
+  "counterfactual_comparisons": [
+    {
+      "alternative_outcome": {
+        "communication_time": 7.237095273835697,
+        "ddl_risk": 832.0610203586693,
+        "evidence_quality": "high",
+        "execution_time": 36.2963331848362,
+        "host_id": 0,
+        "host_load_after": 0.4117647058823529,
+        "host_load_before": 0.35294117647058826,
+        "host_load_delta": 0.05882352941176466,
+        "marginal_fuzzy_energy": 67.82573645261559,
+        "modal_finish": 716.7301685875177,
+        "optimistic_finish": 678.7324539524657,
+        "pessimistic_finish": 804.281284074617,
+        "predicted_finish": 716.7301685875177,
+        "predicted_violation": 0.0,
+        "queue_time": 323.0092154289196,
+        "released_critical_successors": 1,
+        "released_successors": 1,
+        "remaining_critical_path": 32.157292058407336,
+        "safety_margin": 641.4517353187354,
+        "server_active_time_extension": 0.0,
+        "task_id": 48,
+        "task_safe_deadline": 1441.3554636189974,
+        "uncertainty_low_slack_risk": 0.0,
+        "uncertainty_width": 125.54883012215134,
+        "vm_id": 1,
+        "workflow_id": 1,
+        "workflow_modal_finish": 746.5947937073952,
+        "workflow_optimistic_finish": 706.072269662368,
+        "workflow_pessimistic_finish": 836.5592428139996
+      },
+      "alternative_task_id": 48,
+      "communication_delta": 5.2505081092212595,
+      "ddl_risk_delta": -12.578453563859625,
+      "decision_id": "iter22:039b31fd4bcff9f3:MS:1:d000104",
+      "dominance": "alternative_dominates",
+      "elapsed_ms": 15.405004029162228,
+      "estimator_type": "local_one_step",
+      "evidence_quality": "high",
+      "marginal_fuzzy_energy_delta": 1.9537985631085206,
+      "pessimistic_finish_delta": 1.2967504438280457,
+      "predicted_finish_delta": 1.3577111522342875,
+      "predicted_violation_delta": 0.0,
+      "released_critical_successor_delta": 1,
+      "released_successor_delta": 1,
+      "remaining_critical_path_delta": -13.878252043108045,
+      "safety_margin_delta": -12.578453563859853,
+      "selected_outcome": {
+        "communication_time": 12.487603383056957,
+        "ddl_risk": 819.4825667948097,
+        "evidence_quality": "high",
+        "execution_time": 32.40353622784931,
+        "host_id": 0,
+        "host_load_after": 0.4117647058823529,
+        "host_load_before": 0.35294117647058826,
+        "host_load_delta": 0.05882352941176466,
+        "marginal_fuzzy_energy": 69.77953501572411,
+        "modal_finish": 718.0878797397521,
+        "optimistic_finish": 679.9615226394352,
+        "pessimistic_finish": 805.5780345184451,
+        "predicted_finish": 718.087879739752,
+        "predicted_violation": 0.0,
+        "queue_time": 323.0092154289196,
+        "released_critical_successors": 0,
+        "released_successors": 0,
+        "remaining_critical_path": 18.27904001529929,
+        "safety_margin": 654.0301888825952,
+        "server_active_time_extension": 0.0,
+        "task_id": 52,
+        "task_safe_deadline": 1455.2337156621056,
+        "uncertainty_low_slack_risk": 0.0,
+        "uncertainty_width": 125.61651187900986,
+        "vm_id": 1,
+        "workflow_id": 1,
+        "workflow_modal_finish": 734.9390276399582,
+        "workflow_optimistic_finish": 695.5794964543305,
+        "workflow_pessimistic_finish": 823.9322267503283
+      },
+      "selected_task_id": 52,
+      "state_fingerprint_after": "1d12a701a8bbd437bd1b0c2e534f25b57329552998ea0003bb4f47e1fb2af598",
+      "state_fingerprint_before": "1d12a701a8bbd437bd1b0c2e534f25b57329552998ea0003bb4f47e1fb2af598",
+      "uncertainty_risk_delta": 0.0
+    }
+  ],
+  "created_generation": 22,
+  "critical_reasons": [
+    "selected_not_minimum_slack",
+    "selected_not_maximum_upward_rank",
+    "small_energy_gap_possible_ddl_risk_difference",
+    "successor_release_difference",
+    "critical_path_competition"
+  ],
+  "criticality_score": 11.0,
+  "current_time": 350.1875246999262,
+  "ddl_evidence": {
+    "max_counterfactual_ddl_regret": 0.0,
+    "negative_slack": false,
+    "reports": [
+      {
+        "agent_name": "ddl_diagnostic_agent",
+        "confidence": "medium",
+        "decision_id": "iter22:039b31fd4bcff9f3:MS:1:d000104",
+        "diagnosis_code": "critical_path_or_successor_blocked",
+        "evidence": {
+          "alternative_pessimistic_finish": 804.281284074617,
+          "alternative_safety_margin": 641.4517353187354,
+          "alternative_slack": 933.6733345489837,
+          "alternative_upward_rank": 90.0104682195929,
+          "selected_pessimistic_finish": 805.5780345184451,
+          "selected_safety_margin": 654.0301888825952,
+          "selected_slack": 982.777797844715,
+          "selected_upward_rank": 62.01406051991094
+        },
+        "limitations": [
+          "local one-step evidence is not a long-horizon causal proof"
+        ],
+        "preferred_task": 48,
+        "quantitative_deltas": {
+          "critical_successor_release_regret": 1.0,
+          "predicted_violation_regret": 0.0,
+          "remaining_critical_path_regret": -13.878252043108045,
+          "safety_margin_regret": -12.578453563859853
+        },
+        "rejected_task": 52,
+        "scenario_id": "MS",
+        "seed": 1,
+        "severity": "medium",
+        "state_conditions": {
+          "critical_reasons": [
+            "selected_not_minimum_slack",
+            "selected_not_maximum_upward_rank",
+            "small_energy_gap_possible_ddl_risk_difference",
+            "successor_release_difference",
+            "critical_path_competition"
+          ],
+          "negative_slack_present": false,
+          "queue_size": 2
+        },
+        "suggested_structural_actions": [
+          "add_upward_rank_remaining_work_interaction",
+          "add_successor_release_interaction"
+        ]
+      }
+    ]
+  },
+  "diagnosis_codes": [
+    "critical_path_or_successor_blocked"
+  ],
+  "dominated_task_ids": [
+    52
+  ],
+  "energy_evidence": {
+    "max_energy_regret_within_ddl_class": 1.9537985631085206,
+    "reports": []
+  },
+  "eviction_reason": null,
+  "exact_signature": "43f0e543ec39967bd34c1d6b3c986f26425d42e21d3cece77915ff41bad564fc",
+  "failure_count": 1,
+  "failure_generations": [
+    23
+  ],
+  "last_replayed_generation": 36,
+  "merged_evidence_count": 1,
+  "preferred_task_ids": [
+    48
+  ],
+  "ready_task_features": {
+    "48": {
+      "min_comm_time": 1.8092738184589243,
+      "min_exec_time": 9.07408329620905,
+      "min_incremental_energy": 67.82573645261559,
+      "ready_wait_time": 0.0,
+      "remaining_work": 202.59549211595186,
+      "slack": 933.6733345489837,
+      "uncertainty": 0.13960752428200215,
+      "upward_rank": 90.0104682195929
+    },
+    "52": {
+      "min_comm_time": 3.121900845764239,
+      "min_exec_time": 8.100884056962327,
+      "min_incremental_energy": 69.77953501572411,
+      "ready_wait_time": 0.0,
+      "remaining_work": 127.9638016213168,
+      "slack": 982.777797844715,
+      "uncertainty": 0.17578205765793653,
+      "upward_rank": 62.01406051991094
+    }
+  },
+  "ready_task_ids": [
+    48,
+    52
+  ],
+  "ready_task_scores": {
+    "48": -1.0,
+    "52": -3.152587845295968
+  },
+  "replay_count": 2,
+  "replay_outcomes": [
+    {
+      "generation": 23,
+      "replay_status": "VERIFIED_FAILURE",
+      "result_hash": "70d766f9cfda4c04b37e65da099480037ec96ac3e52443b44ccdca1cb0864272",
+      "structure_hash": "6dff6b324db392d1634ab06b1898ada9f7d2e7386f51ec7c86f6a9014e15c0be"
+    },
+    {
+      "generation": 36,
+      "replay_status": "VERIFIED_SUCCESS",
+      "result_hash": "247bc0ecd2de05dab2ce0f1f2b21fabc3ad656165e2c4a22b819932a61c8a9db",
+      "structure_hash": "f0110ffbac3a4b2a3d1c8ec35547bffe147fc83da0c4ebabf40204fe008fa2d5"
+    }
+  ],
+  "replay_structure_hashes": [
+    "6dff6b324db392d1634ab06b1898ada9f7d2e7386f51ec7c86f6a9014e15c0be",
+    "f0110ffbac3a4b2a3d1c8ec35547bffe147fc83da0c4ebabf40204fe008fa2d5"
+  ],
+  "risk_category": "SUCCESSOR_RELEASE_BLOCKING",
+  "selected_task_id": 52,
+  "selected_task_rank": 1,
+  "selected_task_score": -3.152587845295968,
+  "semantic_signature": "55be85021377d10e238ca1e0bf7edd96984ce9d30cdbee3609f94d4dfd45ec48",
+  "source_decision_index": 104,
+  "source_frozen_rule_hash": "1cb2bb98b2cdfa2a2f542e1f9a7a991bc79a48e063023667e83a07d8534b5c52",
+  "source_generation": 22,
+  "source_parameter_hash": "1cbc753b7911251de61761cdd0a8584119926a44df991af49456e62c58e72d40",
+  "source_run_id": "iter22:039b31fd4bcff9f3:MS:1",
+  "source_scenario_id": "MS",
+  "source_scenarios": [
+    "MS"
+  ],
+  "source_seed": 1,
+  "source_seeds": [
+    1
+  ],
+  "source_structure_hash": "039b31fd4bcff9f3c3a0f4a1322eafd9dbd5ca5266abcbe84b5e302e08c90a17",
+  "source_structures": [
+    "039b31fd4bcff9f3c3a0f4a1322eafd9dbd5ca5266abcbe84b5e302e08c90a17"
+  ],
+  "state_id": "73126653ad1c391719370a434d56ef6c1594339727bf344d91c3c4637b1de042",
+  "state_signature": "43f0e543ec39967bd34c1d6b3c986f26425d42e21d3cece77915ff41bad564fc",
+  "status": "ACTIVE",
+  "success_count": 1,
+  "success_generations": [
+    36
+  ],
+  "uncertainty_evidence": {
+    "max_uncertainty_regret": 0.0,
+    "reports": []
+  },
+  "unresolved_count": 1,
+  "unverified_task_ids": [],
+  "verified_coverage": 1.0,
+  "workflow_id": 1,
+  "workflow_type": "Sipht"
+}

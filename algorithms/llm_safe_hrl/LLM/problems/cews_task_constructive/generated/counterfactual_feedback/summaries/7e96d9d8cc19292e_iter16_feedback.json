@@ -1,0 +1,611 @@
+{
+  "analyzed_decisions": 48,
+  "analyzed_runs": 4,
+  "compared_alternatives": 131,
+  "config_hash": "c3074ee338fc3651c21e53936f4e8ed5357c1277fb1fa8d5958f13d78338f0e9",
+  "cross_agent_conflicts": [],
+  "cross_agent_consensus": [
+    {
+      "agents": [
+        "ddl_diagnostic_agent",
+        "energy_diagnostic_agent"
+      ],
+      "decision_id": "iter16:7e96d9d8cc19292e:MS:0:d000023",
+      "preferred_task": 62
+    },
+    {
+      "agents": [
+        "ddl_diagnostic_agent",
+        "energy_diagnostic_agent"
+      ],
+      "decision_id": "iter16:7e96d9d8cc19292e:MS:0:d000177",
+      "preferred_task": 305
+    },
+    {
+      "agents": [
+        "ddl_diagnostic_agent",
+        "energy_diagnostic_agent"
+      ],
+      "decision_id": "iter16:7e96d9d8cc19292e:SS:0:d000001",
+      "preferred_task": 18
+    },
+    {
+      "agents": [
+        "ddl_diagnostic_agent",
+        "energy_diagnostic_agent"
+      ],
+      "decision_id": "iter16:7e96d9d8cc19292e:SS:0:d000023",
+      "preferred_task": 62
+    },
+    {
+      "agents": [
+        "ddl_diagnostic_agent",
+        "energy_diagnostic_agent"
+      ],
+      "decision_id": "iter16:7e96d9d8cc19292e:SS:0:d000101",
+      "preferred_task": 215
+    },
+    {
+      "agents": [
+        "ddl_diagnostic_agent",
+        "energy_diagnostic_agent"
+      ],
+      "decision_id": "iter16:7e96d9d8cc19292e:SS:0:d000139",
+      "preferred_task": 170
+    },
+    {
+      "agents": [
+        "ddl_diagnostic_agent",
+        "energy_diagnostic_agent"
+      ],
+      "decision_id": "iter16:7e96d9d8cc19292e:SS:1:d000077",
+      "preferred_task": 233
+    }
+  ],
+  "ddl_patterns": [
+    {
+      "agent_name": "ddl_diagnostic_agent",
+      "confidence": "high",
+      "decision_ids": [
+        "iter16:7e96d9d8cc19292e:SS:0:d000033",
+        "iter16:7e96d9d8cc19292e:MS:0:d000033"
+      ],
+      "diagnosis_code": "critical_path_or_successor_blocked",
+      "occurrences": 2,
+      "scenarios": [
+        "MS",
+        "SS"
+      ],
+      "seeds": [
+        0
+      ],
+      "suggested_structural_actions": [
+        "add_successor_release_interaction",
+        "add_upward_rank_remaining_work_interaction"
+      ]
+    },
+    {
+      "agent_name": "ddl_diagnostic_agent",
+      "confidence": "high",
+      "decision_ids": [
+        "iter16:7e96d9d8cc19292e:SS:0:d000001",
+        "iter16:7e96d9d8cc19292e:SS:0:d000050",
+        "iter16:7e96d9d8cc19292e:SS:1:d000047"
+      ],
+      "diagnosis_code": "critical_path_or_successor_blocked+higher_ddl_risk_choice",
+      "occurrences": 3,
+      "scenarios": [
+        "SS"
+      ],
+      "seeds": [
+        0,
+        1
+      ],
+      "suggested_structural_actions": [
+        "add_conditional_ddl_protection_gate",
+        "add_successor_release_interaction",
+        "add_upward_rank_remaining_work_interaction"
+      ]
+    },
+    {
+      "agent_name": "ddl_diagnostic_agent",
+      "confidence": "high",
+      "decision_ids": [
+        "iter16:7e96d9d8cc19292e:SS:0:d000023",
+        "iter16:7e96d9d8cc19292e:SS:0:d000101",
+        "iter16:7e96d9d8cc19292e:SS:0:d000139",
+        "iter16:7e96d9d8cc19292e:SS:1:d000077",
+        "iter16:7e96d9d8cc19292e:SS:1:d000088",
+        "iter16:7e96d9d8cc19292e:MS:0:d000023",
+        "iter16:7e96d9d8cc19292e:MS:0:d000177",
+        "iter16:7e96d9d8cc19292e:MS:1:d000039"
+      ],
+      "diagnosis_code": "higher_ddl_risk_choice",
+      "occurrences": 9,
+      "scenarios": [
+        "MS",
+        "SS"
+      ],
+      "seeds": [
+        0,
+        1
+      ],
+      "suggested_structural_actions": [
+        "add_conditional_ddl_protection_gate"
+      ]
+    }
+  ],
+  "diagnostics_hash": "7918c93b363740a5f14ee849c35503c469207d8e409b44e645b027acc4ec2a6c",
+  "energy_patterns": [
+    {
+      "agent_name": "energy_diagnostic_agent",
+      "confidence": "high",
+      "decision_ids": [
+        "iter16:7e96d9d8cc19292e:SS:0:d000001",
+        "iter16:7e96d9d8cc19292e:SS:0:d000023",
+        "iter16:7e96d9d8cc19292e:SS:0:d000101",
+        "iter16:7e96d9d8cc19292e:SS:0:d000139",
+        "iter16:7e96d9d8cc19292e:SS:1:d000077",
+        "iter16:7e96d9d8cc19292e:MS:0:d000023",
+        "iter16:7e96d9d8cc19292e:MS:0:d000177"
+      ],
+      "diagnosis_code": "avoidable_marginal_energy_or_load_cost",
+      "occurrences": 7,
+      "scenarios": [
+        "MS",
+        "SS"
+      ],
+      "seeds": [
+        0,
+        1
+      ],
+      "suggested_structural_actions": [
+        "add_host_load_conditional_gate",
+        "add_load_successor_release_interaction"
+      ]
+    }
+  ],
+  "frozen_rule_hash": "23cf2320737aa424c62555d15b27bbf2e20c515c2e76f393df6e5833b4f065b6",
+  "high_confidence_structural_actions": [
+    {
+      "action": "add_conditional_ddl_protection_gate",
+      "agents": [
+        "ddl_diagnostic_agent"
+      ],
+      "evidence_decision_ids": [
+        "iter16:7e96d9d8cc19292e:SS:0:d000001",
+        "iter16:7e96d9d8cc19292e:SS:0:d000023",
+        "iter16:7e96d9d8cc19292e:SS:0:d000050",
+        "iter16:7e96d9d8cc19292e:SS:0:d000101",
+        "iter16:7e96d9d8cc19292e:SS:0:d000139",
+        "iter16:7e96d9d8cc19292e:SS:1:d000047"
+      ],
+      "occurrences": 12,
+      "scenario_count": 2,
+      "seed_count": 2
+    },
+    {
+      "action": "add_host_load_conditional_gate",
+      "agents": [
+        "energy_diagnostic_agent"
+      ],
+      "evidence_decision_ids": [
+        "iter16:7e96d9d8cc19292e:SS:0:d000001",
+        "iter16:7e96d9d8cc19292e:SS:0:d000023",
+        "iter16:7e96d9d8cc19292e:SS:0:d000101",
+        "iter16:7e96d9d8cc19292e:SS:0:d000139",
+        "iter16:7e96d9d8cc19292e:SS:1:d000077",
+        "iter16:7e96d9d8cc19292e:MS:0:d000023"
+      ],
+      "occurrences": 7,
+      "scenario_count": 2,
+      "seed_count": 2
+    },
+    {
+      "action": "add_load_successor_release_interaction",
+      "agents": [
+        "energy_diagnostic_agent"
+      ],
+      "evidence_decision_ids": [
+        "iter16:7e96d9d8cc19292e:SS:0:d000001",
+        "iter16:7e96d9d8cc19292e:SS:0:d000023",
+        "iter16:7e96d9d8cc19292e:SS:0:d000101",
+        "iter16:7e96d9d8cc19292e:SS:0:d000139",
+        "iter16:7e96d9d8cc19292e:MS:0:d000023",
+        "iter16:7e96d9d8cc19292e:MS:0:d000177"
+      ],
+      "occurrences": 6,
+      "scenario_count": 2,
+      "seed_count": 1
+    },
+    {
+      "action": "add_successor_release_interaction",
+      "agents": [
+        "ddl_diagnostic_agent"
+      ],
+      "evidence_decision_ids": [
+        "iter16:7e96d9d8cc19292e:SS:0:d000001",
+        "iter16:7e96d9d8cc19292e:SS:0:d000033",
+        "iter16:7e96d9d8cc19292e:SS:0:d000050",
+        "iter16:7e96d9d8cc19292e:SS:1:d000047",
+        "iter16:7e96d9d8cc19292e:MS:0:d000033"
+      ],
+      "occurrences": 5,
+      "scenario_count": 2,
+      "seed_count": 2
+    },
+    {
+      "action": "add_upward_rank_remaining_work_interaction",
+      "agents": [
+        "ddl_diagnostic_agent"
+      ],
+      "evidence_decision_ids": [
+        "iter16:7e96d9d8cc19292e:SS:0:d000001",
+        "iter16:7e96d9d8cc19292e:SS:0:d000033",
+        "iter16:7e96d9d8cc19292e:SS:0:d000050",
+        "iter16:7e96d9d8cc19292e:SS:1:d000047",
+        "iter16:7e96d9d8cc19292e:MS:0:d000033"
+      ],
+      "occurrences": 5,
+      "scenario_count": 2,
+      "seed_count": 2
+    }
+  ],
+  "insufficient_evidence_items": [
+    {
+      "agent_name": "uncertainty_diagnostic_agent",
+      "decision_id": "iter16:7e96d9d8cc19292e:SS:0:d000001",
+      "limitations": [
+        "modal and pessimistic evidence do not disagree materially"
+      ]
+    },
+    {
+      "agent_name": "ddl_diagnostic_agent",
+      "decision_id": "iter16:7e96d9d8cc19292e:SS:0:d000021",
+      "limitations": [
+        "no alternative has a material DDL advantage"
+      ]
+    },
+    {
+      "agent_name": "energy_diagnostic_agent",
+      "decision_id": "iter16:7e96d9d8cc19292e:SS:0:d000021",
+      "limitations": [
+        "energy differences are immaterial or justified by a selected-task DDL advantage"
+      ]
+    },
+    {
+      "agent_name": "uncertainty_diagnostic_agent",
+      "decision_id": "iter16:7e96d9d8cc19292e:SS:0:d000021",
+      "limitations": [
+        "modal and pessimistic evidence do not disagree materially"
+      ]
+    },
+    {
+      "agent_name": "uncertainty_diagnostic_agent",
+      "decision_id": "iter16:7e96d9d8cc19292e:SS:0:d000023",
+      "limitations": [
+        "modal and pessimistic evidence do not disagree materially"
+      ]
+    },
+    {
+      "agent_name": "energy_diagnostic_agent",
+      "decision_id": "iter16:7e96d9d8cc19292e:SS:0:d000033",
+      "limitations": [
+        "energy differences are immaterial or justified by a selected-task DDL advantage"
+      ]
+    },
+    {
+      "agent_name": "uncertainty_diagnostic_agent",
+      "decision_id": "iter16:7e96d9d8cc19292e:SS:0:d000033",
+      "limitations": [
+        "modal and pessimistic evidence do not disagree materially"
+      ]
+    },
+    {
+      "agent_name": "ddl_diagnostic_agent",
+      "decision_id": "iter16:7e96d9d8cc19292e:SS:0:d000044",
+      "limitations": [
+        "no alternative has a material DDL advantage"
+      ]
+    },
+    {
+      "agent_name": "energy_diagnostic_agent",
+      "decision_id": "iter16:7e96d9d8cc19292e:SS:0:d000044",
+      "limitations": [
+        "energy differences are immaterial or justified by a selected-task DDL advantage"
+      ]
+    },
+    {
+      "agent_name": "uncertainty_diagnostic_agent",
+      "decision_id": "iter16:7e96d9d8cc19292e:SS:0:d000044",
+      "limitations": [
+        "modal and pessimistic evidence do not disagree materially"
+      ]
+    },
+    {
+      "agent_name": "energy_diagnostic_agent",
+      "decision_id": "iter16:7e96d9d8cc19292e:SS:0:d000050",
+      "limitations": [
+        "energy differences are immaterial or justified by a selected-task DDL advantage"
+      ]
+    },
+    {
+      "agent_name": "uncertainty_diagnostic_agent",
+      "decision_id": "iter16:7e96d9d8cc19292e:SS:0:d000050",
+      "limitations": [
+        "modal and pessimistic evidence do not disagree materially"
+      ]
+    },
+    {
+      "agent_name": "ddl_diagnostic_agent",
+      "decision_id": "iter16:7e96d9d8cc19292e:SS:0:d000092",
+      "limitations": [
+        "no alternative has a material DDL advantage"
+      ]
+    },
+    {
+      "agent_name": "energy_diagnostic_agent",
+      "decision_id": "iter16:7e96d9d8cc19292e:SS:0:d000092",
+      "limitations": [
+        "energy differences are immaterial or justified by a selected-task DDL advantage"
+      ]
+    },
+    {
+      "agent_name": "uncertainty_diagnostic_agent",
+      "decision_id": "iter16:7e96d9d8cc19292e:SS:0:d000092",
+      "limitations": [
+        "modal and pessimistic evidence do not disagree materially"
+      ]
+    },
+    {
+      "agent_name": "ddl_diagnostic_agent",
+      "decision_id": "iter16:7e96d9d8cc19292e:SS:0:d000093",
+      "limitations": [
+        "no alternative has a material DDL advantage"
+      ]
+    },
+    {
+      "agent_name": "energy_diagnostic_agent",
+      "decision_id": "iter16:7e96d9d8cc19292e:SS:0:d000093",
+      "limitations": [
+        "energy differences are immaterial or justified by a selected-task DDL advantage"
+      ]
+    },
+    {
+      "agent_name": "uncertainty_diagnostic_agent",
+      "decision_id": "iter16:7e96d9d8cc19292e:SS:0:d000093",
+      "limitations": [
+        "modal and pessimistic evidence do not disagree materially"
+      ]
+    },
+    {
+      "agent_name": "ddl_diagnostic_agent",
+      "decision_id": "iter16:7e96d9d8cc19292e:SS:0:d000094",
+      "limitations": [
+        "no alternative has a material DDL advantage"
+      ]
+    },
+    {
+      "agent_name": "energy_diagnostic_agent",
+      "decision_id": "iter16:7e96d9d8cc19292e:SS:0:d000094",
+      "limitations": [
+        "energy differences are immaterial or justified by a selected-task DDL advantage"
+      ]
+    }
+  ],
+  "limitations": [
+    "local_one_step comparisons are mechanism evidence, not strict causal proof",
+    "bounded replay is disabled because the environment has no safe snapshot API",
+    "energy is considered only after DDL evidence; no weighted DDL-energy sum is used"
+  ],
+  "medium_confidence_actions": [],
+  "repeated_failure_patterns": [
+    {
+      "agent_name": "energy_diagnostic_agent",
+      "confidence": "high",
+      "decision_ids": [
+        "iter16:7e96d9d8cc19292e:SS:0:d000001",
+        "iter16:7e96d9d8cc19292e:SS:0:d000023",
+        "iter16:7e96d9d8cc19292e:SS:0:d000101",
+        "iter16:7e96d9d8cc19292e:SS:0:d000139",
+        "iter16:7e96d9d8cc19292e:SS:1:d000077",
+        "iter16:7e96d9d8cc19292e:MS:0:d000023",
+        "iter16:7e96d9d8cc19292e:MS:0:d000177"
+      ],
+      "diagnosis_code": "avoidable_marginal_energy_or_load_cost",
+      "occurrences": 7,
+      "scenarios": [
+        "MS",
+        "SS"
+      ],
+      "seeds": [
+        0,
+        1
+      ],
+      "suggested_structural_actions": [
+        "add_host_load_conditional_gate",
+        "add_load_successor_release_interaction"
+      ]
+    },
+    {
+      "agent_name": "ddl_diagnostic_agent",
+      "confidence": "high",
+      "decision_ids": [
+        "iter16:7e96d9d8cc19292e:SS:0:d000033",
+        "iter16:7e96d9d8cc19292e:MS:0:d000033"
+      ],
+      "diagnosis_code": "critical_path_or_successor_blocked",
+      "occurrences": 2,
+      "scenarios": [
+        "MS",
+        "SS"
+      ],
+      "seeds": [
+        0
+      ],
+      "suggested_structural_actions": [
+        "add_successor_release_interaction",
+        "add_upward_rank_remaining_work_interaction"
+      ]
+    },
+    {
+      "agent_name": "ddl_diagnostic_agent",
+      "confidence": "high",
+      "decision_ids": [
+        "iter16:7e96d9d8cc19292e:SS:0:d000001",
+        "iter16:7e96d9d8cc19292e:SS:0:d000050",
+        "iter16:7e96d9d8cc19292e:SS:1:d000047"
+      ],
+      "diagnosis_code": "critical_path_or_successor_blocked+higher_ddl_risk_choice",
+      "occurrences": 3,
+      "scenarios": [
+        "SS"
+      ],
+      "seeds": [
+        0,
+        1
+      ],
+      "suggested_structural_actions": [
+        "add_conditional_ddl_protection_gate",
+        "add_successor_release_interaction",
+        "add_upward_rank_remaining_work_interaction"
+      ]
+    },
+    {
+      "agent_name": "ddl_diagnostic_agent",
+      "confidence": "high",
+      "decision_ids": [
+        "iter16:7e96d9d8cc19292e:SS:0:d000023",
+        "iter16:7e96d9d8cc19292e:SS:0:d000101",
+        "iter16:7e96d9d8cc19292e:SS:0:d000139",
+        "iter16:7e96d9d8cc19292e:SS:1:d000077",
+        "iter16:7e96d9d8cc19292e:SS:1:d000088",
+        "iter16:7e96d9d8cc19292e:MS:0:d000023",
+        "iter16:7e96d9d8cc19292e:MS:0:d000177",
+        "iter16:7e96d9d8cc19292e:MS:1:d000039"
+      ],
+      "diagnosis_code": "higher_ddl_risk_choice",
+      "occurrences": 9,
+      "scenarios": [
+        "MS",
+        "SS"
+      ],
+      "seeds": [
+        0,
+        1
+      ],
+      "suggested_structural_actions": [
+        "add_conditional_ddl_protection_gate"
+      ]
+    }
+  ],
+  "representative_cases": [
+    {
+      "alternatives": [
+        62,
+        61
+      ],
+      "critical_reasons": [
+        "selected_not_minimum_slack",
+        "selected_not_maximum_upward_rank",
+        "ready_queue_congestion",
+        "small_energy_gap_possible_ddl_risk_difference",
+        "successor_release_difference",
+        "critical_path_competition"
+      ],
+      "decision_id": "iter16:7e96d9d8cc19292e:MS:0:d000023",
+      "diagnosis_code": "higher_ddl_risk_choice",
+      "estimator_type": "local_one_step",
+      "quantitative_deltas": {
+        "critical_successor_release_regret": 0.0,
+        "predicted_violation_regret": 0.0,
+        "remaining_critical_path_regret": -0.3787800062750648,
+        "safety_margin_regret": 0.1863546102207465
+      },
+      "scenario_id": "MS",
+      "seed": 0,
+      "selected_task_id": 63
+    },
+    {
+      "alternatives": [
+        111,
+        113
+      ],
+      "critical_reasons": [
+        "selected_not_minimum_slack",
+        "selected_not_maximum_upward_rank",
+        "ready_queue_congestion",
+        "successor_release_difference",
+        "critical_path_competition"
+      ],
+      "decision_id": "iter16:7e96d9d8cc19292e:MS:0:d000033",
+      "diagnosis_code": "critical_path_or_successor_blocked",
+      "estimator_type": "local_one_step",
+      "quantitative_deltas": {
+        "critical_successor_release_regret": 0.0,
+        "predicted_violation_regret": 0.0,
+        "remaining_critical_path_regret": 0.6747896233391089,
+        "safety_margin_regret": -3.757513915273762
+      },
+      "scenario_id": "MS",
+      "seed": 0,
+      "selected_task_id": 109
+    },
+    {
+      "alternatives": [
+        305,
+        322,
+        323
+      ],
+      "critical_reasons": [
+        "selected_not_minimum_slack",
+        "selected_not_maximum_upward_rank",
+        "close_rule_scores",
+        "ready_queue_congestion",
+        "small_energy_gap_possible_ddl_risk_difference",
+        "critical_path_competition"
+      ],
+      "decision_id": "iter16:7e96d9d8cc19292e:MS:0:d000177",
+      "diagnosis_code": "higher_ddl_risk_choice",
+      "estimator_type": "local_one_step",
+      "quantitative_deltas": {
+        "critical_successor_release_regret": 0.0,
+        "predicted_violation_regret": 0.0,
+        "remaining_critical_path_regret": 0.0,
+        "safety_margin_regret": 0.15632076737006173
+      },
+      "scenario_id": "MS",
+      "seed": 0,
+      "selected_task_id": 319
+    },
+    {
+      "alternatives": [
+        112,
+        108
+      ],
+      "critical_reasons": [
+        "selected_not_minimum_slack",
+        "selected_not_maximum_upward_rank",
+        "close_rule_scores",
+        "ready_queue_congestion",
+        "successor_release_difference",
+        "critical_path_competition"
+      ],
+      "decision_id": "iter16:7e96d9d8cc19292e:MS:1:d000039",
+      "diagnosis_code": "higher_ddl_risk_choice",
+      "estimator_type": "local_one_step",
+      "quantitative_deltas": {
+        "critical_successor_release_regret": 0.0,
+        "predicted_violation_regret": 0.0,
+        "remaining_critical_path_regret": -0.3205257636071792,
+        "safety_margin_regret": 21.193415130601238
+      },
+      "scenario_id": "MS",
+      "seed": 1,
+      "selected_task_id": 110
+    }
+  ],
+  "structure_hash": "7e96d9d8cc19292ef16a7435252e9cfd3511278ee67c168e6766cb8b39a297d9",
+  "summary_version": "counterfactual_feedback_v1",
+  "uncertainty_patterns": []
+}

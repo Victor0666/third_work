@@ -1,0 +1,211 @@
+```python
+import numpy as np
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 0.00015255809669129132,
+            "lower_bound": 1e-6,
+            "upper_bound": 0.1,
+            "semantic_description": "Numerical guard for stable normalization and division.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "ddl_protection_gate_threshold",
+            "initial_value": 0.6620652121348684,
+            "lower_bound": 0.5,
+            "upper_bound": 0.95,
+            "semantic_description": "Fraction of max uncertainty required to activate DDL-protection gate.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_duration_ratio_weight",
+            "initial_value": 1.4190437481378373,
+            "lower_bound": 0.1,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight for energy-per-duration efficiency term.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "successor_bottleneck_coupling",
+            "initial_value": 0.4576468658175758,
+            "lower_bound": 0.0,
+            "upper_bound": 1.5,
+            "semantic_description": "Strength of interaction between duration, remaining_work, and upward_rank for successor-release pressure.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "iqr_low_percentile",
+            "initial_value": 36.50621980265129,
+            "lower_bound": 10.0,
+            "upper_bound": 40.0,
+            "semantic_description": "Lower percentile for IQR-based normalization.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "iqr_high_percentile",
+            "initial_value": 76.29708410547188,
+            "lower_bound": 60.0,
+            "upper_bound": 90.0,
+            "semantic_description": "Upper percentile for IQR-based normalization.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "slack_uncertainty_adaptive_steepness",
+            "initial_value": 4.2,
+            "lower_bound": 0.5,
+            "upper_bound": 8.0,
+            "semantic_description": "Steepness of urgency sigmoid, scaled by local uncertainty ratio to sharpen deadline response under high risk.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "critical_rank_percentile",
+            "initial_value": 0.72,
+            "lower_bound": 0.5,
+            "upper_bound": 0.95,
+            "semantic_description": "Percentile threshold to activate critical-path bonus.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "anti_starvation_exponent",
+            "initial_value": 0.85,
+            "lower_bound": 0.1,
+            "upper_bound": 1.5,
+            "semantic_description": "Exponent for reciprocal wait-time scaling: higher values increase anti-starvation sensitivity.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "anti_starvation_base_time",
+            "initial_value": 2.5,
+            "lower_bound": 0.1,
+            "upper_bound": 10.0,
+            "semantic_description": "Base time scale (seconds) for anti-starvation reciprocal normalization.",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Self-evolved priority rule with three key structural improvements:
+    1. Adaptive urgency steepness: sigmoid steepness dynamically scaled by task-local uncertainty / global max_uncertainty,
+       sharpening deadline response precisely where risk is highest (replaces fixed steepness + linear fallback).
+    2. Deadline-aware critical-path bonus: only activates when both upward_rank is top-percentile AND slack < 0,
+       enforcing DAG-aware prioritization strictly under deadline pressure.
+    3. Robust anti-starvation: uses bounded reciprocal scaling (1/(1+wait/base)^exponent) with tunable base time,
+       providing smooth, monotonic fairness without saturation artifacts or zero-division risk.
+    All normalizations use IQR; no hardcoded constants beyond [-2,-1,0,1,2]; deterministic and finite-valued.
+    """
+    eps = PARAMS["epsilon"]
+    N = len(slack)
+    
+    # Ensure float arrays without mutation
+    min_exec_time = np.asarray(min_exec_time, dtype=float)
+    min_comm_time = np.asarray(min_comm_time, dtype=float)
+    min_incremental_energy = np.asarray(min_incremental_energy, dtype=float)
+    slack = np.asarray(slack, dtype=float)
+    upward_rank = np.asarray(upward_rank, dtype=float)
+    remaining_work = np.asarray(remaining_work, dtype=float)
+    ready_wait_time = np.asarray(ready_wait_time, dtype=float)
+    uncertainty = np.asarray(uncertainty, dtype=float)
+    
+    # Robust IQR-based normalization using declared percentiles
+    def iqr_normalize(x):
+        x = np.copy(x)
+        q_low = np.percentile(x, PARAMS["iqr_low_percentile"])
+        q_high = np.percentile(x, PARAMS["iqr_high_percentile"])
+        iqr = q_high - q_low
+        center = (q_low + q_high) / 2.0
+        denom = iqr if iqr > eps else (np.max(np.abs(x - center)) + eps)
+        return (x - center) / (denom + eps)
+    
+    # Adaptive urgency gate: sigmoid with steepness modulated by local uncertainty ratio
+    # Higher uncertainty → sharper transition near deadline → stronger urgency signal
+    max_uncertainty = np.max(uncertainty) if N > 0 else 1.0
+    uncertainty_ratio = np.clip(uncertainty / (max_uncertainty + eps), 0.0, 1.0)
+    adaptive_steepness = PARAMS["slack_uncertainty_adaptive_steepness"] * (1.0 + uncertainty_ratio)
+    
+    # Sigmoid urgency: maps slack → [0,1], negative slack → high urgency
+    slack_centered = slack - 0.0  # neutral offset for robustness
+    sigmoid_input = -adaptive_steepness * slack_centered
+    finfo = np.finfo(float)
+    sigmoid_input = np.clip(sigmoid_input, -finfo.max, finfo.max)
+    urgency_gate = 1.0 / (1.0 + np.exp(-sigmoid_input))
+    
+    norm_urgency = iqr_normalize(urgency_gate)
+    
+    # Energy efficiency: log-normalized marginal energy per unit duration (J/s)
+    duration = np.maximum(min_exec_time + min_comm_time, eps)
+    energy_per_duration = min_incremental_energy / duration
+    log_energy_eff = np.log1p(energy_per_duration + eps)
+    norm_energy_eff = iqr_normalize(log_energy_eff)
+    
+    # Successor bottleneck coupling: triple interaction + uncertainty amplification
+    bottleneck_pressure = duration * (upward_rank + eps) * (remaining_work + eps) * (1.0 + uncertainty)
+    norm_bottleneck = iqr_normalize(bottleneck_pressure)
+    
+    # Deadline-aware critical-path bonus: only active for critical nodes *under deadline pressure*
+    if N == 1:
+        rank_percentile = np.array([1.0])
+    else:
+        sorted_ranks = np.sort(upward_rank)
+        rank_idx = np.searchsorted(sorted_ranks, upward_rank, side='right')
+        rank_percentile = rank_idx / (N + eps)
+    critical_gate = np.where(
+        (rank_percentile >= PARAMS["critical_rank_percentile"]) & (slack < 0),
+        1.0, 0.0
+    )
+    norm_rank = iqr_normalize(upward_rank)
+    critical_bonus = critical_gate * norm_rank
+    
+    # Robust anti-starvation: bounded reciprocal scaling with tunable base time and exponent
+    # Smoothly prioritizes shorter-waiting tasks without saturation or division-by-zero
+    wait_scaled = ready_wait_time / (PARAMS["anti_starvation_base_time"] + eps)
+    wait_reciprocal = 1.0 / (1.0 + wait_scaled)
+    wait_powered = np.power(wait_reciprocal, PARAMS["anti_starvation_exponent"])
+    norm_wait = iqr_normalize(wait_powered)
+    
+    # DDL-protection gate: activates when uncertainty exceeds threshold fraction of max uncertainty
+    ddl_protection_active = (
+        uncertainty > PARAMS["ddl_protection_gate_threshold"] * max_uncertainty
+    ).astype(float)
+    
+    # Uncertainty-normalized term for amplification under risk, only when DDL at risk
+    norm_uncertainty = iqr_normalize(uncertainty)
+    
+    # Final score: smaller = higher priority
+    # Hierarchy: deadline safety > critical path > bottleneck release > energy efficiency > fairness
+    score = (
+        norm_urgency  # Primary deadline pressure signal (adaptive)
+        + critical_bonus  # Boost critical path nodes only under deadline pressure
+        + PARAMS["successor_bottleneck_coupling"] * norm_bottleneck  # Risk-aware blocking pressure
+        + PARAMS["energy_duration_ratio_weight"] * norm_energy_eff  # Favor energy-efficient durations
+        - norm_wait  # Reward shorter-waiting tasks via robust reciprocal scaling
+        + ddl_protection_active * norm_uncertainty  # Amplify uncertainty only when DDL at risk
+    )
+    
+    # Ensure finite output, no NaN/inf
+    score = np.nan_to_num(score, nan=0.0, posinf=np.finfo(float).max, neginf=np.finfo(float).min)
+    
+    return score.astype(float, copy=False)
+```

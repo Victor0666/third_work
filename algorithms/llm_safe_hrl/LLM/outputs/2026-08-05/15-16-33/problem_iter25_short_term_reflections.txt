@@ -1,0 +1,18 @@
+- Replaced fragile percentile-based IQR normalization with rank-based normalization for cross-scenario robustness and outlier resilience.  
+- Introduced criticality gating that suppresses non-critical-path tasks under tight slack, improving deadline feasibility without energy penalty.  
+- Decoupled energy term to use only `min_incremental_energy` (not duration-normalized), normalized via MAD for stability against execution/communication outliers.
+- **Dominant pre-normalized deadline violation penalty** (`neg_slack`) directly enforces hard DDL feasibility without distortion from normalization—eliminating fragile urgency-bottleneck coupling that caused infeasibility in v1.  
+- **Removal of multiplicative joint-risk terms** (e.g., `norm_neg_slack * norm_uncertainty`) reduces signal interference and restores monotonic priority ordering under uncertainty.  
+- **Reintroduction of bounded sigmoid wait saturation** provides smooth, saturating anti-starvation pressure—more robust than v1’s brittle blended linear/sigmoid mix.
+- Replace rank-based normalization with adaptive min-max normalization to improve congestion robustness and reduce IQR overfitting.  
+- Introduce successor-slack-deficit interaction to directly mitigate successor-release blocking observed in 17 stress states.  
+- Tighten DDL risk gating by requiring uncertainty > median × threshold, not just > median, to prevent unsafe choices under high uncertainty.
+- Replaces dual urgency signals (sigmoid + linear penalty) with a single hard-suppressed urgency term, eliminating conflicting DDL-risk incentives and improving feasibility robustness.  
+- Introduces bounded successor-release pressure: `(upward_rank * remaining_work) / (1 + |slack|)^exponent`, directly coupling critical-path importance with deadline pressure while decaying smoothly as slack increases.  
+- Adds feasibility-gated bottleneck amplification—uncertainty-driven boost only activates when `slack ≥ threshold`, preventing harmful over-amplification under violation risk.
+- **Dominant pre-normalized deadline violation signal (`neg_slack`) eliminates normalization distortion and strengthens DDL enforcement.**  
+- **Removal of inactive parameters (e.g., `slack_feasibility_gate_threshold`, `wait_fairness_blend_weight`) reduces overfitting and improves generalization.**  
+- **Reintroduced bounded sigmoid wait saturation provides robust anti-starvation without fragile blending or branching.**
+- Replace rank-based normalization with adaptive min-max normalization to improve robustness under congestion and reduce IQR overfitting.  
+- Introduce successor-slack-deficit interaction to explicitly penalize tasks whose immediate successors have negative slack, resolving successor-release blocking.  
+- Tighten DDL risk gating by requiring `uncertainty > median_uncertainty * threshold`, preventing unsafe choices under high uncertainty.

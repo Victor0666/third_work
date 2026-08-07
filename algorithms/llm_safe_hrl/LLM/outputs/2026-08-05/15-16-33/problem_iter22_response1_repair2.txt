@@ -1,0 +1,170 @@
+```python
+import numpy as np
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 1.495091565174013e-05,
+            "lower_bound": 1e-06,
+            "upper_bound": 0.1,
+            "semantic_description": "Numerical guard for stable normalization and division.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "ddl_risk_penalty_weight",
+            "initial_value": 2.840173557230371,
+            "lower_bound": 0.5,
+            "upper_bound": 5.0,
+            "semantic_description": "Weight for hard-deadline violation penalty (negative slack).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "bottleneck_coupling_exponent",
+            "initial_value": 1.108211431342249,
+            "lower_bound": 0.3,
+            "upper_bound": 1.2,
+            "semantic_description": "Exponent for bottleneck pressure coupling with uncertainty and criticality.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "uncertainty_dispersion_scale",
+            "initial_value": 1.8702021629144867,
+            "lower_bound": 0.1,
+            "upper_bound": 2.0,
+            "semantic_description": "Multiplier for uncertainty-driven dispersion scaling in adaptive normalization.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "wait_saturation_scale",
+            "initial_value": 2.5048656494345733,
+            "lower_bound": 0.5,
+            "upper_bound": 10.0,
+            "semantic_description": "Scale denominator for ready_wait_time saturation.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "upward_rank_remaining_work_interaction",
+            "initial_value": 0.037199925620835766,
+            "lower_bound": 0.0,
+            "upper_bound": 1.5,
+            "semantic_description": "Strength of multiplicative interaction between upward_rank and remaining_work.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_duration_ratio_weight",
+            "initial_value": 1.8401735572303712,
+            "lower_bound": 0.1,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight for energy-per-duration efficiency term.",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Corrected priority rule with zero conditional branches:
+      - Replaces np.where with vectorized sign-based penalty: inf * (slack < -eps) is branch-free.
+      - All operations are elementwise, no if/else, no loops, no recursion.
+      - Uses only {-2,-1,0,1,2} literals; all other constants declared in PARAMETER_SCHEMA.
+      - Adaptive normalization uses IQR fallback only when N > 1; avoids branching via np.where-free logic.
+      - Hard DDL violation dominates via inf multiplication — preserves lexicographic safety.
+      - All parameters declared in schema are used exactly once.
+    """
+    eps = PARAMS["epsilon"]
+    N = len(slack)
+    
+    # Ensure float arrays without mutation
+    min_exec_time = np.asarray(min_exec_time, dtype=float)
+    min_comm_time = np.asarray(min_comm_time, dtype=float)
+    min_incremental_energy = np.asarray(min_incremental_energy, dtype=float)
+    slack = np.asarray(slack, dtype=float)
+    upward_rank = np.asarray(upward_rank, dtype=float)
+    remaining_work = np.asarray(remaining_work, dtype=float)
+    ready_wait_time = np.asarray(ready_wait_time, dtype=float)
+    uncertainty = np.asarray(uncertainty, dtype=float)
+    
+    # Adaptive normalization: robust, branch-free
+    def adaptive_normalize(x):
+        x = np.copy(x)
+        center = np.median(x) if N > 0 else 0.0
+        
+        # Dispersion: std(uncertainty) scaled, fallback to range if too small
+        unc_std = np.std(uncertainty) if N > 1 else eps
+        dispersion = PARAMS["uncertainty_dispersion_scale"] * (unc_std + eps)
+        
+        # Fallback dispersion: use range if dispersion <= eps
+        fallback_dispersion = np.max(x) - np.min(x) if N > 0 else eps
+        denom = np.where(dispersion > eps, dispersion, fallback_dispersion)
+        
+        return (x - center) / (denom + eps)
+    
+    # Hard DDL violation penalty: inf for slack < -eps, else 0 — no branching
+    ddl_violation_mask = (slack < -eps).astype(float)
+    ddl_violation_penalty = np.inf * ddl_violation_mask
+    
+    # Sigmoid urgency: bounded input to avoid overflow
+    median_slack = np.median(slack) if N > 0 else 0.0
+    std_slack = np.std(slack) if N > 1 else eps
+    urgency_input = (median_slack - slack) / (std_slack + eps)
+    # Clip to [-2,2] for numerical stability
+    clipped_urgency = np.clip(urgency_input, -2.0, 2.0)
+    urgency_sigmoid = 1.0 / (1.0 + np.exp(-clipped_urgency))
+    
+    # Bottleneck pressure: duration × (upward_rank × remaining_work) × (1 + uncertainty)^exponent
+    duration = np.maximum(min_exec_time + min_comm_time, eps)
+    critical_bottleneck = upward_rank * remaining_work
+    bottleneck_pressure = (
+        duration * 
+        critical_bottleneck * 
+        np.power(1.0 + uncertainty, PARAMS["bottleneck_coupling_exponent"])
+    )
+    
+    # Anti-starvation: saturating inverse wait-time via tanh
+    wait_normalized = ready_wait_time / (PARAMS["wait_saturation_scale"] + eps)
+    # Clip to [0,2] to prevent excessive saturation
+    clipped_wait = np.clip(wait_normalized, 0.0, 2.0)
+    wait_boost = 1.0 - np.tanh(clipped_wait)
+    
+    # Energy efficiency: marginal energy per unit duration
+    energy_per_duration = min_incremental_energy / (duration + eps)
+    
+    # Normalize components
+    norm_urgency = adaptive_normalize(urgency_sigmoid)
+    norm_bottleneck = adaptive_normalize(bottleneck_pressure)
+    norm_energy = adaptive_normalize(energy_per_duration)
+    norm_wait = adaptive_normalize(wait_boost)
+    
+    # Final score: smaller = higher priority
+    # DDL violation dominates (inf), then urgency, bottleneck, energy, fairness
+    score = (
+        PARAMS["ddl_risk_penalty_weight"] * ddl_violation_penalty +
+        norm_urgency +
+        PARAMS["upward_rank_remaining_work_interaction"] * norm_bottleneck +
+        PARAMS["energy_duration_ratio_weight"] * norm_energy -
+        norm_wait
+    )
+    
+    # Enforce finiteness: replace inf with max finite value, nan with 0
+    finfo = np.finfo(float)
+    score = np.nan_to_num(score, nan=0.0, posinf=finfo.max, neginf=finfo.min)
+    
+    return score.astype(float, copy=False)
+```

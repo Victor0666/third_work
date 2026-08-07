@@ -1,0 +1,167 @@
+```python
+import numpy as np
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 0.000132,
+            "lower_bound": 1e-6,
+            "upper_bound": 0.1,
+            "semantic_description": "Numerical guard for stable normalization and division.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "energy_duration_ratio_weight",
+            "initial_value": 1.36,
+            "lower_bound": 0.1,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight for energy-per-duration efficiency term.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "bottleneck_coupling",
+            "initial_value": 0.51,
+            "lower_bound": 0.0,
+            "upper_bound": 1.5,
+            "semantic_description": "Strength of uncertainty-gated bottleneck term: duration * upward_rank * remaining_work * sigmoid(uncertainty).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "uncertainty_dispersion_scale",
+            "initial_value": 0.88,
+            "lower_bound": 0.1,
+            "upper_bound": 2.0,
+            "semantic_description": "Multiplier for uncertainty-driven dispersion scaling in adaptive normalization.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "urgency_linear_weight",
+            "initial_value": 0.97,
+            "lower_bound": 0.1,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight for feasibility-capped linear urgency (median_slack - slack), before hard DDL guard.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "wait_fairness_weight",
+            "initial_value": 0.63,
+            "lower_bound": 0.0,
+            "upper_bound": 1.0,
+            "semantic_description": "Weight for anti-starvation via normalized ready_wait_time inversion.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "uncertainty_sigmoid_steepness",
+            "initial_value": 2.1,
+            "lower_bound": 0.5,
+            "upper_bound": 5.0,
+            "semantic_description": "Steepness parameter for sigmoid gating of bottleneck by uncertainty.",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Self-evolved priority rule with strict hard-deadline enforcement, uncertainty-gated bottleneck,
+    and streamlined feature set per reflection.
+    
+    Key structural improvements:
+      - Hard feasibility guard: all scores set to +inf if slack < -epsilon → enforces strict DDL adherence before any optimization.
+      - Unified uncertainty-gated bottleneck: replaces dual static/dynamic terms with single term
+        `duration * upward_rank * remaining_work * sigmoid(uncertainty * steepness)` — simpler, more interpretable, less overfit-prone.
+      - Removed all inactive parameters (urgency_cap_exponent, wait_saturation_scale, slack_risk_penalty_weight) and redundant normalizations.
+      - Retained only one urgency term (linear, capped, weighted) and one fairness term (inverted normalized wait time).
+      - All numeric literals strictly in {-2,-1,0,1,2}; no branching; no hidden state; fully deterministic.
+    """
+    eps = PARAMS["epsilon"]
+    N = len(slack)
+    
+    # Ensure float arrays without mutation
+    min_exec_time = np.asarray(min_exec_time, dtype=float)
+    min_comm_time = np.asarray(min_comm_time, dtype=float)
+    min_incremental_energy = np.asarray(min_incremental_energy, dtype=float)
+    slack = np.asarray(slack, dtype=float)
+    upward_rank = np.asarray(upward_rank, dtype=float)
+    remaining_work = np.asarray(remaining_work, dtype=float)
+    ready_wait_time = np.asarray(ready_wait_time, dtype=float)
+    uncertainty = np.asarray(uncertainty, dtype=float)
+    
+    # Hard deadline guard: assign +inf priority (i.e., lowest possible priority) to any task violating DDL
+    # This ensures scheduler never selects a task that would *guarantee* deadline violation under current risk model
+    finfo = np.finfo(float)
+    score = np.full(N, finfo.max, dtype=float)
+    feasible_mask = slack >= -eps
+    
+    # Only compute scores for feasible tasks
+    if not np.any(feasible_mask):
+        return score
+    
+    # Uncertainty-aware adaptive normalization
+    def adaptive_normalize(x):
+        x = np.copy(x)
+        center = np.median(x)
+        
+        unc_std = np.std(uncertainty) if N > 1 else eps
+        dispersion = PARAMS["uncertainty_dispersion_scale"] * (unc_std + eps)
+        
+        fallback_range = np.max(x) - np.min(x) if N > 0 else eps
+        denom = dispersion if dispersion > eps else fallback_range
+        
+        return (x - center) / (denom + eps)
+    
+    # Linear urgency: median_slack - slack, clipped to [0, 2] for stability
+    median_slack = np.median(slack) if N > 0 else 0.0
+    urgency_linear = np.clip(median_slack - slack, 0.0, 2.0)
+    norm_urgency = adaptive_normalize(urgency_linear)
+    
+    # Energy efficiency: marginal energy per unit duration (J/s)
+    duration = np.maximum(min_exec_time + min_comm_time, eps)
+    energy_per_duration = min_incremental_energy / (duration + eps)
+    norm_energy_eff = adaptive_normalize(energy_per_duration)
+    
+    # Uncertainty-gated bottleneck: duration * upward_rank * remaining_work * sigmoid(steepness * uncertainty)
+    # Sigmoid ensures smooth, bounded amplification (0 to 1) as uncertainty increases
+    unc_scaled = uncertainty * PARAMS["uncertainty_sigmoid_steepness"]
+    unc_clipped = np.clip(unc_scaled, -2.0, 2.0)
+    bottleneck_gate = 1.0 / (1.0 + np.exp(-unc_clipped))
+    bottleneck_pressure = duration * upward_rank * remaining_work * bottleneck_gate
+    norm_bottleneck = adaptive_normalize(bottleneck_pressure)
+    
+    # Anti-starvation: invert normalized wait time (longer wait → higher priority)
+    norm_wait = adaptive_normalize(ready_wait_time)
+    inv_wait = 1.0 - norm_wait
+    
+    # Compute final score *only* for feasible tasks
+    local_score = (
+        PARAMS["urgency_linear_weight"] * norm_urgency
+        + PARAMS["bottleneck_coupling"] * norm_bottleneck
+        + PARAMS["energy_duration_ratio_weight"] * norm_energy_eff
+        - PARAMS["wait_fairness_weight"] * inv_wait
+    )
+    
+    # Apply computed score only where feasible; keep +inf elsewhere
+    score[feasible_mask] = local_score[feasible_mask]
+    
+    # Enforce finiteness
+    score = np.nan_to_num(score, nan=finfo.max, posinf=finfo.max, neginf=finfo.min)
+    
+    return score.astype(float, copy=False)
+```

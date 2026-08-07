@@ -1,0 +1,182 @@
+```python
+import numpy as np
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 1.2e-05,
+            "lower_bound": 1e-06,
+            "upper_bound": 0.1,
+            "semantic_description": "Numerical guard for stable normalization and division.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "ddl_urgency_weight",
+            "initial_value": 2.15,
+            "lower_bound": 0.5,
+            "upper_bound": 5.0,
+            "semantic_description": "Weight for raw negative slack penalty to enforce hard deadline dominance.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "bottleneck_coupling_weight",
+            "initial_value": 0.68,
+            "lower_bound": 0.0,
+            "upper_bound": 1.5,
+            "semantic_description": "Weight for successor-release bottleneck pressure: duration × upward_rank × remaining_work × urgency.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "uncertainty_amplification_exponent",
+            "initial_value": 1.12,
+            "lower_bound": 0.3,
+            "upper_bound": 2.0,
+            "semantic_description": "Exponent for uncertainty-driven amplification of bottleneck pressure.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_efficiency_weight",
+            "initial_value": 1.42,
+            "lower_bound": 0.1,
+            "upper_bound": 2.5,
+            "semantic_description": "Weight for energy-per-duration efficiency term.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "wait_saturation_scale",
+            "initial_value": 1.85,
+            "lower_bound": 0.5,
+            "upper_bound": 10.0,
+            "semantic_description": "Scale denominator for ready_wait_time saturation in sigmoid.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "urgency_cap_exponent",
+            "initial_value": 0.79,
+            "lower_bound": 0.3,
+            "upper_bound": 1.2,
+            "semantic_description": "Exponent controlling slack-aware urgency cap tightness.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "slack_feasibility_threshold",
+            "initial_value": 0.15,
+            "lower_bound": 0.01,
+            "upper_bound": 0.5,
+            "semantic_description": "Threshold below which slack is considered critically tight for bottleneck gating.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "uncertainty_dispersion_scale",
+            "initial_value": 0.8,
+            "lower_bound": 0.1,
+            "upper_bound": 2.0,
+            "semantic_description": "Multiplier for uncertainty-driven dispersion scaling in adaptive normalization.",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Improved priority rule combining strengths from both parents:
+      - Dominant pre-normalized neg_slack term (Parent 2) with explicit weight for hard-deadline enforcement.
+      - Bottleneck pressure uses *local* slack feasibility gating (inspired by Parent 1's ddl_protection_gate) instead of global median, improving sensitivity to critical tasks.
+      - Uncertainty amplification applied *after* bottleneck construction but *before* normalization, preserving risk-contextual scaling.
+      - Bounded sigmoid wait saturation (Parent 2) retained for robust anti-starvation.
+      - Energy efficiency normalized adaptively using uncertainty-aligned dispersion (Parent 2), avoiding fragile joint-risk couplings.
+      - All operations vectorized; only one conditional gate (slack feasibility threshold) → 1 branch total.
+      - No numeric literals beyond {-2,-1,0,1,2}; all tunables declared in PARAMETER_SCHEMA.
+    """
+    eps = PARAMS["epsilon"]
+    N = len(slack)
+    
+    # Ensure float arrays without mutation
+    min_exec_time = np.asarray(min_exec_time, dtype=float)
+    min_comm_time = np.asarray(min_comm_time, dtype=float)
+    min_incremental_energy = np.asarray(min_incremental_energy, dtype=float)
+    slack = np.asarray(slack, dtype=float)
+    upward_rank = np.asarray(upward_rank, dtype=float)
+    remaining_work = np.asarray(remaining_work, dtype=float)
+    ready_wait_time = np.asarray(ready_wait_time, dtype=float)
+    uncertainty = np.asarray(uncertainty, dtype=float)
+    
+    # Pre-normalized hard-deadline violation signal: dominant term
+    neg_slack = np.clip(-slack, 0.0, None)
+    
+    # Local slack feasibility gate: binary indicator for critically tight slack
+    # Uses per-task slack relative to zero — more responsive than global median
+    slack_feasibility_gate = np.where(slack <= PARAMS["slack_feasibility_threshold"], 1.0, 0.0)
+    
+    # Urgency proxy: linear deviation from zero slack, capped for stability
+    urgency_linear = np.clip(-slack, 0.0, 2.0)
+    non_neg_slack = np.clip(slack, 0.0, None)
+    max_non_neg_slack = np.max(non_neg_slack) if N > 0 else eps
+    urgency_cap = np.power(max_non_neg_slack + eps, PARAMS["urgency_cap_exponent"])
+    urgency_linear = np.minimum(urgency_linear, urgency_cap)
+    
+    # Bottleneck pressure: duration × upward_rank × remaining_work × urgency × (1 + uncertainty)^amplification
+    duration = np.maximum(min_exec_time + min_comm_time, eps)
+    bottleneck_pressure = duration * upward_rank * remaining_work * (1.0 + urgency_linear + eps)
+    
+    # Apply uncertainty amplification only where slack is tight (gated)
+    unc_normalized = (uncertainty - np.min(uncertainty)) / (np.ptp(uncertainty) + eps) if N > 1 else np.zeros_like(uncertainty)
+    amplified_uncertainty = np.power(1.0 + unc_normalized, PARAMS["uncertainty_amplification_exponent"])
+    bottleneck_pressure = bottleneck_pressure * (slack_feasibility_gate * amplified_uncertainty + (1.0 - slack_feasibility_gate))
+    
+    # Adaptive normalization: dispersion scaled by std(uncertainty) for risk alignment
+    def adaptive_normalize(x):
+        x = np.copy(x)
+        center = np.median(x) if N > 0 else 0.0
+        unc_std = np.std(uncertainty) if N > 1 else eps
+        dispersion = PARAMS["uncertainty_dispersion_scale"] * (unc_std + eps)
+        fallback_range = np.max(x) - np.min(x) if N > 0 else eps
+        denom = np.where(dispersion > eps, dispersion, fallback_range)
+        return (x - center) / (denom + eps)
+    
+    norm_bottleneck = adaptive_normalize(bottleneck_pressure)
+    
+    # Energy efficiency: marginal energy per unit duration (J/s)
+    energy_per_duration = min_incremental_energy / (duration + eps)
+    norm_energy_eff = adaptive_normalize(energy_per_duration)
+    
+    # Bounded sigmoid wait saturation: smooth anti-starvation boost
+    wait_scaled = ready_wait_time / (PARAMS["wait_saturation_scale"] + eps)
+    wait_clipped = np.clip(wait_scaled, -2.0, 2.0)
+    wait_saturation = 1.0 / (1.0 + np.exp(-wait_clipped))
+    norm_wait = adaptive_normalize(wait_saturation)
+    
+    # Final score: smaller = higher priority
+    # Ordering: hard DDL violation > bottleneck pressure > energy efficiency > fairness
+    score = (
+        PARAMS["ddl_urgency_weight"] * neg_slack
+        + PARAMS["bottleneck_coupling_weight"] * norm_bottleneck
+        + PARAMS["energy_efficiency_weight"] * norm_energy_eff
+        - norm_wait
+    )
+    
+    # Enforce finiteness and finite numeric output
+    finfo = np.finfo(float)
+    score = np.nan_to_num(score, nan=0.0, posinf=finfo.max, neginf=finfo.min)
+    
+    return score.astype(float, copy=False)
+```

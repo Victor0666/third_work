@@ -1,0 +1,241 @@
+```python
+import numpy as np
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 0.00015,
+            "lower_bound": 1e-6,
+            "upper_bound": 0.1,
+            "semantic_description": "Numerical guard for stable normalization and division.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "ddl_protection_gate_threshold",
+            "initial_value": 0.63,
+            "lower_bound": 0.5,
+            "upper_bound": 0.95,
+            "semantic_description": "Fraction of max uncertainty required to activate DDL-protection gate.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_duration_ratio_weight",
+            "initial_value": 1.25,
+            "lower_bound": 0.1,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight for energy-per-duration efficiency term.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "successor_bottleneck_coupling",
+            "initial_value": 0.42,
+            "lower_bound": 0.0,
+            "upper_bound": 1.5,
+            "semantic_description": "Strength of interaction between duration, remaining_work, and upward_rank for successor-release pressure.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "iqr_low_percentile",
+            "initial_value": 36.0,
+            "lower_bound": 10.0,
+            "upper_bound": 40.0,
+            "semantic_description": "Lower percentile for IQR-based normalization.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "iqr_high_percentile",
+            "initial_value": 78.0,
+            "lower_bound": 60.0,
+            "upper_bound": 90.0,
+            "semantic_description": "Upper percentile for IQR-based normalization.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "slack_sigmoid_steepness",
+            "initial_value": 4.8,
+            "lower_bound": 0.5,
+            "upper_bound": 8.0,
+            "semantic_description": "Steepness of sigmoid urgency gate applied to slack (higher = sharper deadline transition).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "slack_sigmoid_offset",
+            "initial_value": 0.65,
+            "lower_bound": -1.0,
+            "upper_bound": 1.0,
+            "semantic_description": "Center shift of sigmoid urgency gate to tune sensitivity to near-zero slack.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "sigmoid_clip_bound",
+            "initial_value": 21.0,
+            "lower_bound": 5.0,
+            "upper_bound": 50.0,
+            "semantic_description": "Absolute bound on sigmoid input to prevent exp overflow.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "bottleneck_uncertainty_coupling",
+            "initial_value": 0.35,
+            "lower_bound": 0.0,
+            "upper_bound": 1.0,
+            "semantic_description": "Multiplicative coupling strength of uncertainty onto bottleneck pressure.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "dynamic_feasibility_threshold_factor",
+            "initial_value": 0.82,
+            "lower_bound": 0.1,
+            "upper_bound": 1.5,
+            "semantic_description": "Multiplier for adaptive feasibility threshold: median_slack + factor * iqr_slack.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "critical_path_interaction_exponent",
+            "initial_value": 1.15,
+            "lower_bound": 0.5,
+            "upper_bound": 2.0,
+            "semantic_description": "Exponent for upward_rank × remaining_work interaction under joint DDL-risk.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "wait_boost_under_ddl_risk",
+            "initial_value": 0.75,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Multiplier to increase anti-starvation priority when slack < 0.",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Hybrid priority rule combining Parent 2's dynamic gating & exponentiated critical-path with Parent 1's robust anti-starvation boost under DDL risk.
+    
+    Key structural improvements:
+      - Retains dynamic feasibility gate (median_slack + factor * IQR(slack)) for workload-adaptive constraint enforcement.
+      - Keeps exponentiated critical-path interaction (upward_rank × remaining_work)^exponent activated only under joint DDL-risk.
+      - Integrates Parent 1's conditional wait boost: scales normalized wait time by (1 + wait_boost_under_ddl_risk) when slack < 0.
+      - Uses unified bottleneck pressure: (duration + comm) × upward_rank × (1 + urgency) × (1 + uncertainty × coupling) × (min_incremental_energy + eps).
+      - All normalizations use robust adaptive_normalize with IQR fallback.
+      - Sigmoid urgency retains bounded input clipping and tunable steepness/offset.
+      - Final score prioritizes: urgency → DDL-risk-amplified critical-path → energy efficiency → fairness (with declared DDL-aware wait boost).
+    """
+    eps = PARAMS["epsilon"]
+    N = len(slack)
+    
+    # Ensure float arrays without mutation
+    min_exec_time = np.asarray(min_exec_time, dtype=float)
+    min_comm_time = np.asarray(min_comm_time, dtype=float)
+    min_incremental_energy = np.asarray(min_incremental_energy, dtype=float)
+    slack = np.asarray(slack, dtype=float)
+    upward_rank = np.asarray(upward_rank, dtype=float)
+    remaining_work = np.asarray(remaining_work, dtype=float)
+    ready_wait_time = np.asarray(ready_wait_time, dtype=float)
+    uncertainty = np.asarray(uncertainty, dtype=float)
+    
+    # Robust adaptive normalization: IQR fallback to min-max when dispersion is low
+    def adaptive_normalize(x):
+        x = np.copy(x)
+        q_low = np.percentile(x, PARAMS["iqr_low_percentile"])
+        q_high = np.percentile(x, PARAMS["iqr_high_percentile"])
+        iqr = q_high - q_low
+        center = np.median(x)
+        
+        # Use min-max if IQR too small (low dispersion), else use IQR
+        if iqr < eps:
+            x_min, x_max = np.min(x), np.max(x)
+            denom = x_max - x_min
+            if denom < eps:
+                return np.zeros_like(x)
+            return (x - x_min) / (denom + eps)
+        else:
+            denom = iqr
+            return (x - center) / (denom + eps)
+    
+    # Sigmoid urgency gate: maps slack → [0, 1] where negative slack → near 1.0 (high urgency)
+    slack_centered = slack - PARAMS["slack_sigmoid_offset"]
+    sigmoid_input = np.clip(-PARAMS["slack_sigmoid_steepness"] * slack_centered,
+                            -PARAMS["sigmoid_clip_bound"],
+                            PARAMS["sigmoid_clip_bound"])
+    urgency = 1.0 / (1.0 + np.exp(sigmoid_input))  # range [0, 1]
+    norm_urgency = adaptive_normalize(urgency)
+    
+    # Unified bottleneck pressure: integrates duration, communication, criticality, risk, and energy
+    duration = min_exec_time + min_comm_time
+    bottleneck_pressure = (
+        duration *
+        upward_rank *
+        (1.0 + urgency) *
+        (1.0 + PARAMS["bottleneck_uncertainty_coupling"] * uncertainty) *
+        (min_incremental_energy + eps)
+    )
+    norm_bottleneck = adaptive_normalize(bottleneck_pressure)
+    
+    # Energy efficiency: marginal energy per unit duration (J/s), normalized
+    duration_safe = np.maximum(duration, eps)
+    energy_per_duration = min_incremental_energy / duration_safe
+    norm_energy_eff = adaptive_normalize(energy_per_duration)
+    
+    # Ready wait time: normalized, then boosted under DDL risk (slack < 0) using declared parameter
+    norm_wait = adaptive_normalize(ready_wait_time)
+    slack_penalty_mask = (slack < 0.0).astype(float)
+    boosted_wait = norm_wait * (1.0 + slack_penalty_mask * PARAMS["wait_boost_under_ddl_risk"])
+    
+    # Dynamic feasibility-aware gating: threshold adapts to slack distribution
+    slack_iqr = np.percentile(slack, PARAMS["iqr_high_percentile"]) - np.percentile(slack, PARAMS["iqr_low_percentile"])
+    dynamic_feasibility_threshold = np.median(slack) + PARAMS["dynamic_feasibility_threshold_factor"] * slack_iqr
+    feasibility_gate = np.where(slack > dynamic_feasibility_threshold, 0.0, 1.0)
+    
+    # Joint DDL-risk gate: activated only when slack is tight AND uncertainty is high
+    median_slack = np.median(slack)
+    max_uncertainty = np.max(uncertainty) if N > 0 else eps
+    ddl_risk_gate = (
+        (slack < median_slack) &
+        (uncertainty > PARAMS["ddl_protection_gate_threshold"] * max_uncertainty)
+    ).astype(float)
+    
+    # Critical-path interaction: upward_rank × remaining_work raised to tunable exponent,
+    # applied *only* under joint DDL-risk — sharpens pressure on high-value successors
+    critical_path_strength = (upward_rank * remaining_work + eps) ** PARAMS["critical_path_interaction_exponent"]
+    norm_critical_path = adaptive_normalize(critical_path_strength)
+    
+    # Final score: smaller = higher priority
+    # Hierarchy: deadline safety (urgency) > risk-amplified critical-path pressure > energy > fairness (with declared DDL-aware wait boost)
+    score = (
+        norm_urgency  # Primary deadline signal
+        + PARAMS["successor_bottleneck_coupling"] * ddl_risk_gate * norm_critical_path  # Sharpened critical-path under joint risk
+        + feasibility_gate * PARAMS["energy_duration_ratio_weight"] * norm_energy_eff  # Energy only when needed
+        - boosted_wait  # Favor long-waiting tasks, amplified under DDL risk
+    )
+    
+    # Ensure finite output, no NaN/inf
+    finfo = np.finfo(float)
+    score = np.nan_to_num(score, nan=0.0, posinf=finfo.max, neginf=finfo.min)
+    
+    return score.astype(float, copy=False)
+```

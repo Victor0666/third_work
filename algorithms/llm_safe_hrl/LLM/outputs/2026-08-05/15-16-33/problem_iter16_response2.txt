@@ -1,0 +1,172 @@
+```python
+import numpy as np
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 0.000119826464751383,
+            "lower_bound": 1e-6,
+            "upper_bound": 0.1,
+            "semantic_description": "Numerical guard for stable normalization and division.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "ddl_protection_gate_threshold",
+            "initial_value": 0.590663072072125,
+            "lower_bound": 0.5,
+            "upper_bound": 0.95,
+            "semantic_description": "Fraction of max uncertainty required to activate DDL-protection gate.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "iqr_low_percentile",
+            "initial_value": 38.17509895590506,
+            "lower_bound": 10.0,
+            "upper_bound": 40.0,
+            "semantic_description": "Lower percentile for IQR-based normalization.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "iqr_high_percentile",
+            "initial_value": 80.83679754111809,
+            "lower_bound": 60.0,
+            "upper_bound": 90.0,
+            "semantic_description": "Upper percentile for IQR-based normalization.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "upward_rank_remaining_work_coupling",
+            "initial_value": 0.8247312918325674,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Strength of multiplicative interaction between upward_rank and remaining_work for critical-path pressure.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "slack_risk_penalty_weight",
+            "initial_value": 1.3729485620127373,
+            "lower_bound": 0.1,
+            "upper_bound": 3.0,
+            "semantic_description": "Weight applied to clipped negative slack to penalize lateness risk directly.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "uncertainty_slack_coupling",
+            "initial_value": 0.25698643006544633,
+            "lower_bound": 0.0,
+            "upper_bound": 1.5,
+            "semantic_description": "Strength of interaction between uncertainty and slack for joint risk amplification.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_normalization_offset",
+            "initial_value": 0.15698643006544633,
+            "lower_bound": 0.0,
+            "upper_bound": 1.0,
+            "semantic_description": "Additive offset to energy term to prevent dominance in low-energy regimes.",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Mutated priority rule incorporating:
+    - Direct clipped negative slack penalty (not sigmoid) for sharper, more interpretable DDL-risk signal
+    - Explicit upward_rank × remaining_work interaction to capture successor-release bottleneck pressure
+    - Joint uncertainty-slack coupling to amplify priority when both deadline risk and execution uncertainty are high
+    - Energy term with additive offset to avoid suppression in low-energy regimes
+    - All normalizations use adaptive IQR→min-max fallback; no unbounded ops or hidden state.
+    - Removed wait ramp and urgency sigmoid: replaced by linear anti-starvation via ready_wait_time scaling
+    """
+    eps = PARAMS["epsilon"]
+    N = len(slack)
+    
+    # Ensure float arrays without mutation
+    min_exec_time = np.asarray(min_exec_time, dtype=float)
+    min_comm_time = np.asarray(min_comm_time, dtype=float)
+    min_incremental_energy = np.asarray(min_incremental_energy, dtype=float)
+    slack = np.asarray(slack, dtype=float)
+    upward_rank = np.asarray(upward_rank, dtype=float)
+    remaining_work = np.asarray(remaining_work, dtype=float)
+    ready_wait_time = np.asarray(ready_wait_time, dtype=float)
+    uncertainty = np.asarray(uncertainty, dtype=float)
+    
+    # Robust adaptive normalization: IQR fallback to min-max when dispersion is low
+    def adaptive_normalize(x):
+        x = np.copy(x)
+        q_low = np.percentile(x, PARAMS["iqr_low_percentile"])
+        q_high = np.percentile(x, PARAMS["iqr_high_percentile"])
+        iqr = q_high - q_low
+        center = np.median(x)
+        
+        # Use min-max if IQR too small (low dispersion), else use IQR
+        if iqr < eps:
+            x_min, x_max = np.min(x), np.max(x)
+            denom = x_max - x_min
+            if denom < eps:
+                return np.zeros_like(x)
+            return (x - x_min) / (denom + eps)
+        else:
+            denom = iqr
+            return (x - center) / (denom + eps)
+    
+    # Direct DDL-risk penalty: clipped negative slack (0 for slack >= 0, |slack| otherwise)
+    # More interpretable and avoids sigmoid saturation artifacts near zero
+    neg_slack = np.clip(-slack, 0.0, None)
+    norm_neg_slack = adaptive_normalize(neg_slack)
+    
+    # Upward-rank × remaining-work bottleneck term: captures computational load on critical path
+    # Strongly supported by counterfactual evidence for critical-path starvation
+    bottleneck_term = upward_rank * remaining_work
+    norm_bottleneck = adaptive_normalize(bottleneck_term)
+    
+    # Joint uncertainty-slack risk coupling: amplifies priority when both are high
+    # Captures 'double-risk' scenarios where uncertain execution meets tight deadlines
+    joint_risk = neg_slack * (uncertainty + eps)
+    norm_joint_risk = adaptive_normalize(joint_risk)
+    
+    # Energy term: normalized incremental energy with additive offset to prevent vanishing gradient
+    # Ensures energy remains relevant even when values are small relative to other terms
+    norm_energy = adaptive_normalize(min_incremental_energy)
+    norm_energy_shifted = norm_energy + PARAMS["energy_normalization_offset"]
+    
+    # Anti-starvation: linear scaling of ready_wait_time, normalized and inverted (longer wait → higher priority)
+    # Simpler and more robust than sigmoid/ramp; avoids parameter bloat
+    norm_wait = adaptive_normalize(ready_wait_time)
+    inv_wait = 1.0 - norm_wait  # invert so longer wait increases priority
+    
+    # Final score: smaller = higher priority
+    # Hierarchy: direct DDL risk > joint risk > bottleneck > energy > fairness
+    score = (
+        PARAMS["slack_risk_penalty_weight"] * norm_neg_slack  # Primary hard-deadline violation signal
+        + PARAMS["uncertainty_slack_coupling"] * norm_joint_risk  # Amplify when both slack and uncertainty are high
+        + PARAMS["upward_rank_remaining_work_coupling"] * norm_bottleneck  # Critical-path release pressure
+        + norm_energy_shifted  # Risk-adjusted energy, stabilized
+        + inv_wait  # Anti-starvation: favor long-waiting tasks
+    )
+    
+    # Ensure finite output, no NaN/inf
+    finfo = np.finfo(float)
+    score = np.nan_to_num(score, nan=0.0, posinf=finfo.max, neginf=finfo.min)
+    
+    return score.astype(float, copy=False)
+```

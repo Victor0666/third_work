@@ -1,38 +1,22 @@
 import numpy as np
+RULE_METADATA = {'structure_hash': '04eb31df9066b2ebe303168329be5f009e699a729fd27d7257b672cb4999204a', 'parameter_schema_hash': 'c11339fe521da1816e9a3d165cac32473c76636c60f316fea9de30e9955d8d33', 'best_parameter_hash': '0bf1ca3fcc7ba5e4e92d6d3365d3fec25974282787417116cc08759650e900bb', 'best_parameters': {'epsilon': 6.656160478222976e-05, 'ddl_protection_gate_threshold': 0.629309588749791, 'energy_duration_ratio_weight': 0.22655759530918307, 'successor_bottleneck_coupling': 0.4357032068684268, 'iqr_low_percentile': 39.575607785202806, 'iqr_high_percentile': 79.8553103729028, 'critical_rank_percentile': 0.7756227527103701, 'successor_delay_upper_bound': 8.193412910222671, 'slack_piecewise_slope_positive': 0.5931912749391846, 'slack_piecewise_slope_negative': 3.6164810480915737, 'slack_zero_crossing_offset': -0.3710203833898216}, 'optimizer_config_hash': '087d89d0b2174a4ef39ab75b5292a4f2a6641d337c4dd6a2bb86ea7b8b713284', 'parameter_diagnostics_hash': '72f1a64c0f9ba1781fa9529334d94169f4b232f992c69ddd0d973c87c9c51c72', 'optimizer_seed': 0, 'training_seeds': [0, 1, 2], 'validation_seeds': [3, 4]}
 
-# 函数名中的 2 由 SeEvo 在生成 Prompt 时替换为目标版本号。
-# 八个输入均为长度 N 的一维数组；相同下标始终指向同一个 ready task。
-# 返回值也必须是长度 N 的一维数组，并遵守“分数越小，优先级越高”。
-def get_task_priority_v2(
-    min_exec_time,
-    min_comm_time,
-    min_incremental_energy,
-    slack,
-    upward_rank,
-    remaining_work,
-    ready_wait_time,
-    uncertainty
-):
-
-    """
-    Self-evolved v2 priority rule: restores hard deadline dominance with crisp urgency gating,
-    eliminates conflicting energy terms, strengthens starvation guard, and unifies risk scaling.
+def get_task_priority_v2(min_exec_time, min_comm_time, min_incremental_energy, slack, upward_rank, remaining_work, ready_wait_time, uncertainty):
+    """Self-evolved priority rule with bounded piecewise-linear slack penalty for strict DDL safety,
+       reinstated robust successor-release delay (no wait scaling), and simplified critical-path gating.
     
-    Key improvements over v1:
-      - Replaces sigmoid urgency with *hard-thresholded urgency* (0/1) to enforce strict DDL compliance:
-        tasks with slack <= 0 get max priority (score=0), no smoothing → eliminates borderline dilution.
-      - Removes energy_dominance term entirely → avoids focus fragmentation; retains only unified
-        energy penalty scaled by urgency to preserve efficiency in safe region.
-      - Strengthens starvation guard: now activated *only* for non-urgent (slack > 0) AND long-waiting
-        (ready_wait_time > 95th percentile) tasks → prevents late-task reward while ensuring fairness.
-      - Uncertainty boost uses *relative slack ratio*: (max(0, median_slack - slack) / (|median_slack| + eps))
-        → robust to negative median, emphasizes risk severity near deadline boundary.
-      - Criticality-energy term simplified to upward_rank / (min_incremental_energy + eps), normalized via
-        *robust min-max with outlier clipping*, not IQR → preserves signal integrity for critical tasks.
-      - All components explicitly bounded, fused via convex combination with weights summing to 1.0;
-        final score clamped and nan-cleaned deterministically.
+    Key improvements:
+      - Replaced hybrid/convex slack scoring with monotonic, bounded piecewise-linear penalty:
+          * Negative slack: linear penalty with steeper slope (higher violation cost)
+          * Positive slack: gentler linear penalty (avoids over-rewarding margin)
+          * Zero-crossing offset shifts sensitivity leftward to trigger earlier intervention
+      - Removed wait-gated critical boost per reflection — eliminates starvation risk and simplifies fairness
+      - Restored original successor_delay formulation (un-scaled) — proven causal bottleneck unblocking
+      - Simplified critical_bonus to percentile-gated only (no wait coupling), improving determinism
+      - All normalizations remain IQR-based with tunable percentiles; no unbounded terms or fragile heuristics
     """
-    eps = 1e-08
+    eps = 6.656160478222976e-05
+    N = len(slack)
     min_exec_time = np.asarray(min_exec_time, dtype=float)
     min_comm_time = np.asarray(min_comm_time, dtype=float)
     min_incremental_energy = np.asarray(min_incremental_energy, dtype=float)
@@ -41,58 +25,37 @@ def get_task_priority_v2(
     remaining_work = np.asarray(remaining_work, dtype=float)
     ready_wait_time = np.asarray(ready_wait_time, dtype=float)
     uncertainty = np.asarray(uncertainty, dtype=float)
-    
-    def robust_minmax_norm(x):
-        """Min-max normalize to [0, 1]; handles constant arrays safely."""
-        x_min, x_max = np.min(x), np.max(x)
-        if x_max - x_min < eps:
-            return np.zeros_like(x)
-        return (x - x_min) / (x_max - x_min + eps)
-    
-    # Hard urgency gate: binary priority for deadline violation risk (slack <= 0 → highest priority)
-    urgency_flag = np.where(slack <= 0, 0.0, 1.0)  # 0.0 = max priority (smallest score)
-    
-    # Criticality per energy: upward_rank / energy, clipped to avoid explosion
-    crit_per_energy = upward_rank / (min_incremental_energy + eps)
-    crit_per_energy = np.clip(crit_per_energy, 1e-6, 1e6)
-    norm_crit_per_energy = robust_minmax_norm(crit_per_energy)
-    
-    # Energy penalty: scaled by urgency_flag to activate only when safe (slack > 0)
-    norm_energy = robust_minmax_norm(min_incremental_energy)
-    energy_penalty = norm_energy * urgency_flag
-    
-    # Latency term: execution + communication, equally weighted
-    norm_exec = robust_minmax_norm(min_exec_time)
-    norm_comm = robust_minmax_norm(min_comm_time)
-    latency_term = 0.5 * norm_exec + 0.5 * norm_comm
-    
-    # Uncertainty boost: relative slack distance, robust to negative median
+
+    def iqr_normalize(x):
+        x = np.copy(x)
+        q_low = np.percentile(x, 39.575607785202806)
+        q_high = np.percentile(x, 79.8553103729028)
+        iqr = q_high - q_low
+        center = np.median(x)
+        denom = iqr if iqr > eps else np.max(np.abs(x - center)) + eps
+        return (x - center) / (denom + eps)
+    shifted_slack = slack - -0.3710203833898216
+    slack_penalty = np.where(shifted_slack < 0, 3.6164810480915737 * shifted_slack, 0.5931912749391846 * shifted_slack)
+    slack_penalty = np.maximum(slack_penalty, 0.0)
+    norm_slack_penalty = iqr_normalize(slack_penalty)
+    duration = min_exec_time + min_comm_time + eps
+    energy_efficiency = min_incremental_energy / duration
+    norm_energy_eff = iqr_normalize(energy_efficiency)
+    raw_successor_delay = remaining_work / (slack + eps)
+    bounded_successor_delay = np.minimum(raw_successor_delay, 8.193412910222671)
+    norm_successor_delay = iqr_normalize(bounded_successor_delay)
+    if N == 1:
+        rank_percentile = np.array([1.0])
+    else:
+        sorted_ranks = np.sort(upward_rank)
+        rank_idx = np.searchsorted(sorted_ranks, upward_rank, side='right')
+        rank_percentile = rank_idx / (N + eps)
+    critical_gate = np.where(rank_percentile >= 0.7756227527103701, 1.0, 0.0)
+    norm_upward_rank = iqr_normalize(upward_rank)
+    critical_bonus = critical_gate * norm_upward_rank
     median_slack = np.median(slack)
-    slack_gap = np.maximum(0.0, median_slack - slack)
-    slack_scale = np.abs(median_slack) + eps
-    uncertainty_risk_score = slack_gap / slack_scale
-    uncertainty_boost = uncertainty * uncertainty_risk_score
-    norm_uncertainty_boost = robust_minmax_norm(uncertainty_boost)
-    
-    # Starvation guard: activates only for non-urgent AND long-waiting tasks
-    wait_thresh = np.percentile(ready_wait_time, 95) + eps
-    starvation_flag = np.where((slack > 0) & (ready_wait_time >= wait_thresh), 1.0, 0.0)
-    wait_boost = starvation_flag * robust_minmax_norm(ready_wait_time)
-    
-    # Final convex combination (weights sum to 1.0)
-    # Base urgency dominates; others refine within safe region
-    score = (
-        0.50 * urgency_flag +                 # Primary DDL enforcement: 0 = urgent, 1 = non-urgent
-        0.18 * energy_penalty +               # Energy cost only when safe
-        0.12 * latency_term +                 # Execution+comm delay
-        0.08 * (1.0 - norm_crit_per_energy) + # Critical tasks with low energy first
-        0.06 * norm_uncertainty_boost +       # Risk amplification near tight deadlines
-        0.04 * wait_boost +                   # Fairness for long-waiting non-urgent tasks
-        0.02 * (1.0 - robust_minmax_norm(uncertainty))  # Prefer low-uncertainty VMs when possible
-    )
-    
-    # Ensure finite output: clamp and clean
-    score = np.clip(score, -1e12, 1e12)
-    score = np.nan_to_num(score, nan=1e12, posinf=1e12, neginf=-1e12)
-    
-    return score
+    ddl_protection_active = ((slack < median_slack) & (rank_percentile > 0.629309588749791)).astype(float)
+    score = norm_slack_penalty + 0.4357032068684268 * norm_successor_delay + 0.22655759530918307 * norm_energy_eff - critical_bonus + ddl_protection_active * norm_upward_rank
+    finfo = np.finfo(float)
+    score = np.nan_to_num(score, nan=0.0, posinf=finfo.max, neginf=finfo.min)
+    return score.astype(float, copy=False)

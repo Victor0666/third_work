@@ -1,32 +1,22 @@
 import numpy as np
+RULE_METADATA = {'structure_hash': '07056ab682f26293b29fe77344c50200f7506afa53c29ac5fc17d82bd15e0f20', 'parameter_schema_hash': 'ca7569d59efae50155bd3d74b64c947c7965aa0afd83e62776bbeddafc772193', 'best_parameter_hash': 'de20ec568734b07b2f5135e1e99ff8a71c198cf31690fffb51e3f4b0db2723a5', 'best_parameters': {'epsilon': 0.00035830676748996695, 'slack_sigmoid_steepness': 5.10836465129745, 'slack_sigmoid_offset': -0.3088183071717172, 'energy_duration_ratio_weight': 1.2177944842314978, 'successor_bottleneck_coupling': 1.0450877225014161, 'critical_rank_percentile': 0.7251952543479954, 'wait_saturation_time': 6.0836909314046, 'iqr_low_percentile': 24.158577732795703, 'iqr_high_percentile': 79.75462396747955, 'sigmoid_clip_bound': 24.0662354285819, 'uncertainty_slack_coupling_weight': 0.520458625107553}, 'optimizer_config_hash': '087d89d0b2174a4ef39ab75b5292a4f2a6641d337c4dd6a2bb86ea7b8b713284', 'parameter_diagnostics_hash': '8e8e48db494d4b6fc7756224c42aba640550a80e2bb2bdb9549a2cdec665402d', 'optimizer_seed': 0, 'training_seeds': [0, 1, 2], 'validation_seeds': [3, 4]}
 
-def get_task_priority_v2(
-    min_exec_time,
-    min_comm_time,
-    min_incremental_energy,
-    slack,
-    upward_rank,
-    remaining_work,
-    ready_wait_time,
-    uncertainty
-):
-    """
-    Hybrid priority rule v2: Combines v1's robust slack-gated urgency & starvation fairness
-    with v2's percentile scaling, adaptive criticality-energy tradeoff, and work-aware modulation.
+def get_task_priority_v2(min_exec_time, min_comm_time, min_incremental_energy, slack, upward_rank, remaining_work, ready_wait_time, uncertainty):
+    """Hybrid priority rule combining Parent 2's smooth urgency and bottleneck coupling
+    with Parent 1's robust DDL-protection semantics and enhanced uncertainty-slack interaction.
     
-    Key innovations:
-    - Uses v2's monotonic percentile_scale for all features (improves consistency & reduces variance)
-    - Retains v1's slack_tightness_gate to amplify adjustments only when deadlines are tight
-    - Integrates v2's beta-gated (1+uncertainty)^beta criticality amplification under violation
-    - Replaces v1's IQR normalization and v2's raw percentile scaling with *bounded percentile rank*
-      using argsort(argsort) + epsilon-clipped 0–1 mapping (more stable for small N)
-    - Introduces *energy-density slack sensitivity*: scales energy_density contribution by
-      exp(-max(0, slack)/median_duration) to suppress energy optimization when slack is positive
-    - Adds *uncertainty-aware communication penalty*: min_comm_time * uncertainty * (abs_slack < median_abs_slack)
-      only for tasks where communication dominates execution (min_comm_time > 0.8 * duration)
-    - All operations eps-protected; nan/inf guarded; deterministic; shape-(N,) guaranteed.
+    Key structural improvements:
+      - Replaces binary DDL-protection gate with *graded* uncertainty-slack coupling:
+        multiplies normalized uncertainty with sigmoid urgency — enabling fine-grained risk amplification.
+      - Uses asymmetric IQR percentiles (20/80) for tighter normalization robustness against outliers.
+      - Retains smooth arctan wait saturation and successor bottleneck term for fairness & blocking mitigation.
+      - Critical-path bonus now uses *normalized* upward_rank scaled by percentile gate — avoids rank-scale bias.
+      - All terms are IQR-normalized and bounded; no piecewise discontinuities or unbounded growth.
     """
-    eps = 1e-08
+    eps = 0.00035830676748996695
+    N = len(slack)
+    finfo = np.finfo(float)
+    eps_safe = max(eps, finfo.tiny)
     min_exec_time = np.asarray(min_exec_time, dtype=float)
     min_comm_time = np.asarray(min_comm_time, dtype=float)
     min_incremental_energy = np.asarray(min_incremental_energy, dtype=float)
@@ -35,80 +25,38 @@ def get_task_priority_v2(
     remaining_work = np.asarray(remaining_work, dtype=float)
     ready_wait_time = np.asarray(ready_wait_time, dtype=float)
     uncertainty = np.asarray(uncertainty, dtype=float)
-    
-    N = len(min_exec_time)
-    if N == 0:
-        return np.array([], dtype=float)
-    
-    # Precompute common terms
-    duration = min_exec_time + min_comm_time + eps
-    median_duration = np.median(duration) + eps
-    median_abs_slack = np.median(np.abs(slack)) + eps
-    median_rw = np.median(remaining_work) + eps
-    
-    # Bounded percentile scaling: monotonic, [0,1]-bounded, robust for small N
-    def percentile_scale(x):
-        if len(x) == 1:
-            return np.array([0.5])
-        ranks = np.argsort(np.argsort(x)) + 1.0
-        return np.clip(ranks / (len(x) + 1.0), 0.0, 1.0)
-    
-    # Slack-tightness gate: amplifies priority adjustments only near deadline
-    abs_slack = np.abs(slack)
-    slack_tightness_gate = 1.0 / (1.0 + np.exp(-2.0 * (median_abs_slack - abs_slack) / median_abs_slack))
-    
-    # Deadline urgency: normalized slack deficit modulated by work impact and tightness
-    slack_deficit = np.maximum(0.0, -slack)
-    normalized_slack_deficit = np.clip(slack_deficit / median_duration, 0.0, 10.0)
-    work_impact_factor = np.where(slack <= 0.0, np.clip(remaining_work / median_rw, 0.3, 3.0), 1.0)
-    deadline_urgency = normalized_slack_deficit * work_impact_factor * 0.75 + \
-                       (1.0 - np.exp(-np.clip(slack_deficit, 0.0, 5.0))) * 0.25
-    urgency_norm = percentile_scale(deadline_urgency)
-    
-    # Energy density: min_incremental_energy per effective duration
-    energy_density = np.clip(min_incremental_energy / duration, eps, 1e6)
-    # Slack-sensitive energy contribution: suppressed when slack > 0
-    energy_slack_weight = np.exp(-np.clip(slack, 0.0, 100.0) / median_duration)
-    energy_density_weighted = energy_density * energy_slack_weight
-    energy_norm = percentile_scale(energy_density_weighted)
-    
-    # Criticality-energy tradeoff: upward_rank * (1+uncertainty)^beta / energy_density
-    beta = np.where(slack <= 0.0, 1.5, 0.5)
-    risk_factor = np.power(1.0 + np.clip(uncertainty, 0.0, 10.0), beta)
-    crit_eff_score = upward_rank * risk_factor / (energy_density + eps)
-    crit_eff_norm = percentile_scale(np.clip(crit_eff_score, eps, 1e7))
-    
-    # Starvation relief: log-scaled wait time, gated by slack sign and criticality
-    wait_log = np.log1p(ready_wait_time)
-    wait_penalty = np.where(slack <= 0.0, 0.0,
-                           np.clip(percentile_scale(wait_log) * (1.0 - percentile_scale(upward_rank)), 0.0, 0.2))
-    
-    # Uncertainty-aware communication penalty: only when comm dominates and slack is tight
-    comm_dominance = (min_comm_time > 0.8 * duration).astype(float)
-    comm_penalty = min_comm_time * uncertainty * comm_dominance * (abs_slack < median_abs_slack).astype(float)
-    comm_norm = percentile_scale(comm_penalty)
-    
-    # Duration and uncertainty baselines
-    dur_norm = percentile_scale(duration)
-    unc_norm = percentile_scale(uncertainty)
-    
-    # Final weighted score: smaller = higher priority
-    # Weights tuned to emphasize urgency (0.4), critical-efficiency (0.3), energy (0.15), 
-    # starvation (0.05), comm penalty (0.05), duration (0.03), uncertainty (0.02)
-    score = (
-        0.4 * urgency_norm +
-        0.3 * (1.0 - crit_eff_norm) +  # invert: higher crit_eff => lower priority score
-        0.15 * energy_norm +
-        0.05 * wait_penalty +
-        0.05 * comm_norm +
-        0.03 * dur_norm +
-        0.02 * unc_norm
-    )
-    
-    # Apply slack-tightness gating to sharpen focus near deadlines
-    score = score * slack_tightness_gate
-    
-    # Ensure finite output
-    score = np.nan_to_num(score, nan=1e9, posinf=1e9, neginf=-1e9)
-    
-    return score
+
+    def iqr_normalize(x):
+        x = np.copy(x)
+        q_low = np.percentile(x, 24.158577732795703)
+        q_high = np.percentile(x, 79.75462396747955)
+        iqr = q_high - q_low
+        center = np.median(x)
+        denom = iqr if iqr > eps_safe else np.max(np.abs(x - center)) + eps_safe
+        return (x - center) / (denom + eps_safe)
+    slack_centered = slack - -0.3088183071717172
+    sigmoid_input = np.clip(-5.10836465129745 * slack_centered, -24.0662354285819, 24.0662354285819)
+    urgency_gate = 2.0 / (1.0 + np.exp(sigmoid_input)) - 1.0
+    norm_urgency = iqr_normalize(urgency_gate)
+    duration = np.maximum(min_exec_time + min_comm_time, eps_safe)
+    energy_per_duration = min_incremental_energy / duration
+    norm_energy_eff = iqr_normalize(energy_per_duration)
+    bottleneck_pressure = duration * (remaining_work + upward_rank + eps_safe)
+    norm_bottleneck = iqr_normalize(bottleneck_pressure)
+    if N == 1:
+        rank_percentile = np.array([1.0])
+    else:
+        sorted_ranks = np.sort(upward_rank)
+        rank_idx = np.searchsorted(sorted_ranks, upward_rank, side='right')
+        rank_percentile = rank_idx / (N + eps_safe)
+    critical_gate = np.where(rank_percentile >= 0.7251952543479954, 1.0, 0.0)
+    norm_rank = iqr_normalize(upward_rank)
+    critical_bonus = critical_gate * norm_rank
+    wait_scaled = ready_wait_time / (6.0836909314046 + eps_safe)
+    wait_saturation = 2.0 / np.pi * np.arctan(wait_scaled)
+    norm_wait = iqr_normalize(wait_saturation)
+    norm_uncertainty = iqr_normalize(uncertainty)
+    graded_coupling = 0.520458625107553 * norm_uncertainty * norm_urgency
+    score = norm_urgency + 1.0450877225014161 * norm_bottleneck + 1.2177944842314978 * norm_energy_eff - critical_bonus - norm_wait + graded_coupling
+    score = np.nan_to_num(score, nan=0.0, posinf=finfo.max, neginf=finfo.min)
+    return score.astype(float, copy=False)

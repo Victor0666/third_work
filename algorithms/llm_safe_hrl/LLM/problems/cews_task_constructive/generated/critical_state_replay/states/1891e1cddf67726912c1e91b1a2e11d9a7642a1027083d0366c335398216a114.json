@@ -1,0 +1,594 @@
+{
+  "archive_priority": [
+    1.0,
+    1.0,
+    22.520527032179075,
+    13.0,
+    1.0,
+    1.0,
+    0.0,
+    0.0
+  ],
+  "auxiliary_risk_categories": [
+    "READY_QUEUE_CONGESTION",
+    "CRITICAL_PATH_STARVATION",
+    "DDL_ENERGY_CONFLICT"
+  ],
+  "confidence": "medium",
+  "config_hash": "173c9d569752f0055d5279cc915466e15009ccf02425b18b772481bb968c52ba",
+  "consecutive_failure_count": 13,
+  "consecutive_success_count": 0,
+  "content_hash": "9b987ae8609e18d39f5a29093f9862ffd12ceff62deeb639bceaeb88a9026344",
+  "counterfactual_comparisons": [
+    {
+      "alternative_outcome": {
+        "communication_time": 17.940380871590243,
+        "ddl_risk": 152.5738691197723,
+        "evidence_quality": "high",
+        "execution_time": 38.847017752967396,
+        "host_id": 0,
+        "host_load_after": 0.4411764705882353,
+        "host_load_before": 0.38235294117647056,
+        "host_load_delta": 0.05882352941176472,
+        "marginal_fuzzy_energy": 94.18887819253445,
+        "modal_finish": 79.45179542352129,
+        "optimistic_finish": 77.33105817204367,
+        "pessimistic_finish": 85.88390211444822,
+        "predicted_finish": 79.4517954235213,
+        "predicted_violation": 0.0,
+        "queue_time": 0.0,
+        "released_critical_successors": 0,
+        "released_successors": 0,
+        "remaining_critical_path": 67.01157233987043,
+        "safety_margin": 789.5256760991184,
+        "server_active_time_extension": 0.0,
+        "task_id": 13,
+        "task_safe_deadline": 875.0879728790203,
+        "uncertainty_low_slack_risk": 0.0,
+        "uncertainty_width": 8.55284394240455,
+        "vm_id": 1,
+        "workflow_id": 0,
+        "workflow_modal_finish": 143.8936093500041,
+        "workflow_optimistic_finish": 134.16326195305686,
+        "workflow_pessimistic_finish": 153.03072489712852
+      },
+      "alternative_task_id": 13,
+      "communication_delta": -1.5269308319753812,
+      "ddl_risk_delta": 22.520527032179075,
+      "decision_id": "iter5:bbd8490a54143086:MS:0:d000004",
+      "dominance": "tradeoff_or_equal",
+      "elapsed_ms": 11.349158943630755,
+      "estimator_type": "local_one_step",
+      "evidence_quality": "high",
+      "marginal_fuzzy_energy_delta": -27.93946047497387,
+      "pessimistic_finish_delta": 22.467250300704606,
+      "predicted_finish_delta": 23.532784930193984,
+      "predicted_violation_delta": 0.0,
+      "released_critical_successor_delta": 0,
+      "released_successor_delta": 0,
+      "remaining_critical_path_delta": 0.0,
+      "safety_margin_delta": 22.520527032179075,
+      "selected_outcome": {
+        "communication_time": 16.41345003961486,
+        "ddl_risk": 175.09439615195137,
+        "evidence_quality": "high",
+        "execution_time": 63.90673351513677,
+        "host_id": 0,
+        "host_load_after": 0.4117647058823529,
+        "host_load_before": 0.38235294117647056,
+        "host_load_delta": 0.02941176470588236,
+        "marginal_fuzzy_energy": 66.24941771756058,
+        "modal_finish": 102.98458035371527,
+        "optimistic_finish": 100.56119399228628,
+        "pessimistic_finish": 108.35115241515282,
+        "predicted_finish": 102.98458035371529,
+        "predicted_violation": 0.0,
+        "queue_time": 0.0,
+        "released_critical_successors": 0,
+        "released_successors": 0,
+        "remaining_critical_path": 67.01157233987043,
+        "safety_margin": 767.0051490669393,
+        "server_active_time_extension": 0.0,
+        "task_id": 11,
+        "task_safe_deadline": 875.0879728790203,
+        "uncertainty_low_slack_risk": 0.0,
+        "uncertainty_width": 7.7899584228665475,
+        "vm_id": 0,
+        "workflow_id": 0,
+        "workflow_modal_finish": 167.42639428019808,
+        "workflow_optimistic_finish": 157.39339777329945,
+        "workflow_pessimistic_finish": 175.4979751978331
+      },
+      "selected_task_id": 11,
+      "state_fingerprint_after": "8c9761126ca04de250821b316789c931b23127d5aecb14e9bea535a96b77cb0d",
+      "state_fingerprint_before": "8c9761126ca04de250821b316789c931b23127d5aecb14e9bea535a96b77cb0d",
+      "uncertainty_risk_delta": 0.0
+    }
+  ],
+  "created_generation": 5,
+  "critical_reasons": [
+    "selected_not_minimum_slack",
+    "selected_not_maximum_upward_rank",
+    "close_rule_scores",
+    "ready_queue_congestion",
+    "critical_path_competition"
+  ],
+  "criticality_score": 10.535912796439689,
+  "current_time": 22.664396798963654,
+  "ddl_evidence": {
+    "max_counterfactual_ddl_regret": 22.520527032179075,
+    "negative_slack": false,
+    "reports": [
+      {
+        "agent_name": "ddl_diagnostic_agent",
+        "confidence": "medium",
+        "decision_id": "iter5:bbd8490a54143086:MS:0:d000004",
+        "diagnosis_code": "higher_ddl_risk_choice",
+        "evidence": {
+          "alternative_pessimistic_finish": 85.88390211444822,
+          "alternative_safety_margin": 789.5256760991184,
+          "alternative_slack": 658.7183209642595,
+          "alternative_upward_rank": 173.70928671982222,
+          "selected_pessimistic_finish": 108.35115241515282,
+          "selected_safety_margin": 767.0051490669393,
+          "selected_slack": 663.1196199047612,
+          "selected_upward_rank": 164.52704264003523
+        },
+        "limitations": [
+          "local one-step evidence is not a long-horizon causal proof"
+        ],
+        "preferred_task": 13,
+        "quantitative_deltas": {
+          "critical_successor_release_regret": 0.0,
+          "predicted_violation_regret": 0.0,
+          "remaining_critical_path_regret": 0.0,
+          "safety_margin_regret": 22.520527032179075
+        },
+        "rejected_task": 11,
+        "scenario_id": "MS",
+        "seed": 0,
+        "severity": "medium",
+        "state_conditions": {
+          "critical_reasons": [
+            "selected_not_minimum_slack",
+            "selected_not_maximum_upward_rank",
+            "close_rule_scores",
+            "ready_queue_congestion",
+            "critical_path_competition"
+          ],
+          "negative_slack_present": false,
+          "queue_size": 17
+        },
+        "suggested_structural_actions": [
+          "add_conditional_ddl_protection_gate"
+        ]
+      }
+    ]
+  },
+  "diagnosis_codes": [
+    "higher_ddl_risk_choice"
+  ],
+  "dominated_task_ids": [
+    11
+  ],
+  "energy_evidence": {
+    "max_energy_regret_within_ddl_class": 0.0,
+    "reports": []
+  },
+  "eviction_reason": null,
+  "exact_signature": "0b568dbebae1686a31b902d055c7f85ff114a8ac349bab011c1bea2ebb52b6fb",
+  "failure_count": 13,
+  "failure_generations": [
+    6,
+    8,
+    9,
+    10,
+    12,
+    13,
+    14,
+    16,
+    17,
+    18,
+    19,
+    35,
+    37
+  ],
+  "last_replayed_generation": 37,
+  "merged_evidence_count": 1,
+  "preferred_task_ids": [
+    13
+  ],
+  "ready_task_features": {
+    "1": {
+      "min_comm_time": 2.552497394523074,
+      "min_exec_time": 8.637422722795979,
+      "min_incremental_energy": 73.94042879550518,
+      "ready_wait_time": 0.0,
+      "remaining_work": 220.20132356545955,
+      "slack": 661.8971636029116,
+      "uncertainty": 0.09789703537754924,
+      "upward_rank": 167.0671140072041
+    },
+    "10": {
+      "min_comm_time": 2.7062792037469294,
+      "min_exec_time": 8.189507709519695,
+      "min_incremental_energy": 72.0828022999724,
+      "ready_wait_time": 0.0,
+      "remaining_work": 216.61800345924928,
+      "slack": 662.2179224954172,
+      "uncertainty": 0.09693892683488309,
+      "upward_rank": 166.41738692959575
+    },
+    "11": {
+      "min_comm_time": 2.0516812549518577,
+      "min_exec_time": 7.988341689392096,
+      "min_incremental_energy": 66.24941771756058,
+      "ready_wait_time": 0.0,
+      "remaining_work": 215.0086752982285,
+      "slack": 663.1196199047612,
+      "uncertainty": 0.08609295564614236,
+      "upward_rank": 164.52704264003523
+    },
+    "13": {
+      "min_comm_time": 4.485095217897561,
+      "min_exec_time": 9.711754438241849,
+      "min_incremental_energy": 94.18887819253445,
+      "ready_wait_time": 0.0,
+      "remaining_work": 228.7959772890265,
+      "slack": 658.7183209642595,
+      "uncertainty": 0.13332153413052683,
+      "upward_rank": 173.70928671982222
+    },
+    "14": {
+      "min_comm_time": 3.565405714088107,
+      "min_exec_time": 8.840128297425052,
+      "min_incremental_energy": 82.25926850424294,
+      "ready_wait_time": 0.0,
+      "remaining_work": 221.82296816249215,
+      "slack": 660.6186775683433,
+      "uncertainty": 0.11391176035706486,
+      "upward_rank": 169.752350669006
+    },
+    "15": {
+      "min_comm_time": 2.9249732190071662,
+      "min_exec_time": 8.516392347881597,
+      "min_incremental_energy": 75.72453973437834,
+      "ready_wait_time": 0.0,
+      "remaining_work": 219.2330805661445,
+      "slack": 661.6373760973735,
+      "uncertainty": 0.10240122103260191,
+      "upward_rank": 167.6225457465521
+    },
+    "16": {
+      "min_comm_time": 4.547678543485608,
+      "min_exec_time": 8.04884433342114,
+      "min_incremental_energy": 83.45488370705338,
+      "ready_wait_time": 0.0,
+      "remaining_work": 215.49269645046084,
+      "slack": 660.4413632859677,
+      "uncertainty": 0.12244933581448407,
+      "upward_rank": 170.1742365209202
+    },
+    "17": {
+      "min_comm_time": 2.7280901013894807,
+      "min_exec_time": 8.206952333627411,
+      "min_incremental_energy": 72.34719714290794,
+      "ready_wait_time": 0.0,
+      "remaining_work": 216.75756045211102,
+      "slack": 662.1763248097782,
+      "uncertainty": 0.09737637864354123,
+      "upward_rank": 166.50410061943217
+    },
+    "18": {
+      "min_comm_time": 2.539096847648541,
+      "min_exec_time": 7.5811369119563405,
+      "min_incremental_energy": 66.96191176553934,
+      "ready_wait_time": 0.0,
+      "remaining_work": 599.4678749643504,
+      "slack": 667.0814176456112,
+      "uncertainty": 0.0902249960351563,
+      "upward_rank": 162.36582558791446
+    },
+    "19": {
+      "min_comm_time": 2.75226056561399,
+      "min_exec_time": 11.013634344917177,
+      "min_incremental_energy": 90.81106782370198,
+      "ready_wait_time": 0.0,
+      "remaining_work": 626.9278544280371,
+      "slack": 663.1663802804485,
+      "uncertainty": 0.11759766162574296,
+      "upward_rank": 170.41892783175163
+    },
+    "2": {
+      "min_comm_time": 2.758545734767737,
+      "min_exec_time": 8.55689191649889,
+      "min_incremental_energy": 74.83884565970094,
+      "ready_wait_time": 0.0,
+      "remaining_work": 219.55707711508285,
+      "slack": 661.7680573900121,
+      "uncertainty": 0.10029250927084087,
+      "upward_rank": 167.3443766195062
+    },
+    "20": {
+      "min_comm_time": 2.4896910919190494,
+      "min_exec_time": 9.925971449382459,
+      "min_incremental_energy": 81.90670561099402,
+      "ready_wait_time": 0.0,
+      "remaining_work": 618.2265512637593,
+      "slack": 664.6111266768326,
+      "uncertainty": 0.10611706385876893,
+      "upward_rank": 167.43632498628912
+    },
+    "21": {
+      "min_comm_time": 3.3299000571391546,
+      "min_exec_time": 11.205881807709378,
+      "min_incremental_energy": 96.0546360640967,
+      "ready_wait_time": 0.0,
+      "remaining_work": 628.4658341303747,
+      "slack": 662.3548469290369,
+      "uncertainty": 0.12727266201594584,
+      "upward_rank": 172.11957364128853
+    },
+    "5": {
+      "min_comm_time": 5.206421558659668,
+      "min_exec_time": 7.552656375615071,
+      "min_incremental_energy": 84.40870081757254,
+      "ready_wait_time": 0.0,
+      "remaining_work": 211.5231927880123,
+      "slack": 660.2853740459825,
+      "uncertainty": 0.1284198528399506,
+      "upward_rank": 170.53331336406143
+    },
+    "6": {
+      "min_comm_time": 3.7227542602834958,
+      "min_exec_time": 8.414665788326745,
+      "min_incremental_energy": 80.54855003342011,
+      "ready_wait_time": 0.0,
+      "remaining_work": 218.41926808970567,
+      "slack": 660.9115531953074,
+      "uncertainty": 0.11316437049998426,
+      "upward_rank": 169.16009893005628
+    },
+    "7": {
+      "min_comm_time": 2.659392605735984,
+      "min_exec_time": 9.536212341337546,
+      "min_incremental_energy": 80.53811511223867,
+      "ready_wait_time": 0.0,
+      "remaining_work": 227.39164051379208,
+      "slack": 660.8185452722,
+      "uncertainty": 0.10579965997810539,
+      "upward_rank": 169.2886267654677
+    },
+    "8": {
+      "min_comm_time": 4.142512466937961,
+      "min_exec_time": 9.334825429387145,
+      "min_incremental_energy": 89.43895269740369,
+      "ready_wait_time": 0.0,
+      "remaining_work": 225.78054521818888,
+      "slack": 659.4823984210024,
+      "uncertainty": 0.12572146034985818,
+      "upward_rank": 172.11991745933688
+    }
+  },
+  "ready_task_ids": [
+    1,
+    2,
+    5,
+    6,
+    7,
+    8,
+    10,
+    11,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21
+  ],
+  "ready_task_scores": {
+    "1": -0.27815620635953653,
+    "10": -0.31509226461696166,
+    "11": -0.5620343823229886,
+    "13": -0.547947178762678,
+    "14": 0.0708103800739531,
+    "15": -0.18554252455342848,
+    "16": 0.044789278213435035,
+    "17": -0.30502815186025467,
+    "18": 1.317699853129782,
+    "19": 2.4442542050036615,
+    "2": -0.2292543152217944,
+    "20": 2.167865934763801,
+    "21": 2.416302291917048,
+    "5": -0.30349993763592803,
+    "6": 0.025896990930015254,
+    "7": -0.06415619666539155,
+    "8": -0.34178599393583037
+  },
+  "replay_count": 18,
+  "replay_outcomes": [
+    {
+      "generation": 6,
+      "replay_status": "VERIFIED_FAILURE",
+      "result_hash": "50fdd1dd0a69dad6ee14f934fd5151a0f1b1c695f94e6b9bd6085cdac1277719",
+      "structure_hash": "fc0b568cd512f3da7d707a80fb84f3b7c7634039401a3960a553da0635c809b6"
+    },
+    {
+      "generation": 7,
+      "replay_status": "UNVERIFIED",
+      "result_hash": "8098fe95d523b6ee944f7699ecd3b1c97630a3eaf7fcaa5d0bdd0da7bd148b34",
+      "structure_hash": "eda906440376e63f978b952bcab14235b193cda3017c47f8d68d56dc15946bf5"
+    },
+    {
+      "generation": 8,
+      "replay_status": "VERIFIED_FAILURE",
+      "result_hash": "e8ce046cc5052ec0322c9e48fa19e85575b3c955452c25d344c5cb15a8add724",
+      "structure_hash": "f1fd552dd0606affeb80635ffb72e8c6459326990401c7524d9a283366ccb1af"
+    },
+    {
+      "generation": 9,
+      "replay_status": "VERIFIED_FAILURE",
+      "result_hash": "669ee61654870f2522f180fcda6424888d079a3466c329fd4504b00e6ef9a095",
+      "structure_hash": "e02677e7e460f4f33322476eb0f3040844bb79ab325ec7f3d292833bcce6d9d3"
+    },
+    {
+      "generation": 10,
+      "replay_status": "VERIFIED_FAILURE",
+      "result_hash": "d47ee886dd34c9386486de74bc6ce19fa1bc04efa0aa1c6953b8fe8896ed0eee",
+      "structure_hash": "926881a9026282587c74da0d263dcb1930fa403189206b0677fa37d6625603a1"
+    },
+    {
+      "generation": 11,
+      "replay_status": "UNVERIFIED",
+      "result_hash": "c70660f303db65872418eccc0890374adce384a17e82a4542ebb013226ca860c",
+      "structure_hash": "a90b2cba69a59af65fe07e1e324d98807dbf83163d55a64de87c90316b5fbfbb"
+    },
+    {
+      "generation": 12,
+      "replay_status": "VERIFIED_FAILURE",
+      "result_hash": "7d438b1d7adab3b2758bf00de30cd61ff47bbf616d8580d9863288e6bbdb9e53",
+      "structure_hash": "b88915c12a7408189eefca78a8770407314898957aa94542ca4d49f3bc168a75"
+    },
+    {
+      "generation": 13,
+      "replay_status": "VERIFIED_FAILURE",
+      "result_hash": "7f44eebea425b32dc4fe424db0cd61bfd4a48c25aa8761fe15cc547e0502e104",
+      "structure_hash": "a29f50f1f47d2c4ca3b7d4ab61a691f395e8be3275ec6e2b9c40cb54670169ab"
+    },
+    {
+      "generation": 14,
+      "replay_status": "VERIFIED_FAILURE",
+      "result_hash": "128e3a226d753a3d88254ac07f21bf24aea7e44baeb5c7b3234ae0bbe09b2d78",
+      "structure_hash": "1ad0f25bc3e337c966bd0258a0ffc57c9cdb0ddbfe183891b5fc0c06a5a96d73"
+    },
+    {
+      "generation": 15,
+      "replay_status": "UNVERIFIED",
+      "result_hash": "c282d4415043048e94b3f107fe2eb56b3ffdb6a596a8d868743f1202d07fab3f",
+      "structure_hash": "01a8e686efdf044f394950772c3cc5827d6f14f3ee0fb73461976fb1880cb09c"
+    },
+    {
+      "generation": 16,
+      "replay_status": "VERIFIED_FAILURE",
+      "result_hash": "642b44f62e41478f2f258a2317b99d82a253d944b8cb4f39d74bab819494a279",
+      "structure_hash": "7e96d9d8cc19292ef16a7435252e9cfd3511278ee67c168e6766cb8b39a297d9"
+    },
+    {
+      "generation": 17,
+      "replay_status": "VERIFIED_FAILURE",
+      "result_hash": "7beaf120e62f3dbddbc33e7ceb9d6f22baac75e5ae102ae81cc3782de42c73bf",
+      "structure_hash": "180af4adff5ca37c8e0c8b9b2c0931e046ee9e3c06bff6b0376c179d474caedd"
+    },
+    {
+      "generation": 18,
+      "replay_status": "VERIFIED_FAILURE",
+      "result_hash": "1df91a1b833f62aaf8debde5f4a9c0abc762d8c4ab2042ecf496efa82e44f56a",
+      "structure_hash": "6a337d8ded12f786264ed78e1d61d9cca8d9b5b9ad66308019002908ad730533"
+    },
+    {
+      "generation": 19,
+      "replay_status": "VERIFIED_FAILURE",
+      "result_hash": "331d88fa7fbc28cd3926039244e57bce54848e7684bd3218fcc9220067b4fd51",
+      "structure_hash": "d5861f349925193f8c226e35ea98f498fc9980b40416e2e63a84359ac543e64a"
+    },
+    {
+      "generation": 20,
+      "replay_status": "UNVERIFIED",
+      "result_hash": "3d19a8260e2d0149c8186b021b6256a9b0d868ea6a0e179a212c7f93d883d0a5",
+      "structure_hash": "99d50efa6f3aff1844cd8c7fa5739fa72006090c6a47e573c17ae600ff8a6e60"
+    },
+    {
+      "generation": 35,
+      "replay_status": "VERIFIED_FAILURE",
+      "result_hash": "7d186153e03f3247a5cab3d5107c4e8ef92fbb86f8ad8535bb62495defdfdc9b",
+      "structure_hash": "8746a50737efb033dc9682b7d720442da7e08af566f27b8e65ef79edba0b002b"
+    },
+    {
+      "generation": 36,
+      "replay_status": "UNVERIFIED",
+      "result_hash": "1024d491c9e8b44a0b2b2f28d50996de1b50f2b4983ff4afd86e3c61c7dbe145",
+      "structure_hash": "f0110ffbac3a4b2a3d1c8ec35547bffe147fc83da0c4ebabf40204fe008fa2d5"
+    },
+    {
+      "generation": 37,
+      "replay_status": "VERIFIED_FAILURE",
+      "result_hash": "f135fbd3d31fb7498f4e8b49462f8f64d17e8d193d0cc406fea334936fc1dddc",
+      "structure_hash": "b444985f5d3e42d64c39de9eb3b7fe04044882cf2d3955c1adb064df309c5ca4"
+    }
+  ],
+  "replay_structure_hashes": [
+    "01a8e686efdf044f394950772c3cc5827d6f14f3ee0fb73461976fb1880cb09c",
+    "180af4adff5ca37c8e0c8b9b2c0931e046ee9e3c06bff6b0376c179d474caedd",
+    "1ad0f25bc3e337c966bd0258a0ffc57c9cdb0ddbfe183891b5fc0c06a5a96d73",
+    "6a337d8ded12f786264ed78e1d61d9cca8d9b5b9ad66308019002908ad730533",
+    "7e96d9d8cc19292ef16a7435252e9cfd3511278ee67c168e6766cb8b39a297d9",
+    "8746a50737efb033dc9682b7d720442da7e08af566f27b8e65ef79edba0b002b",
+    "926881a9026282587c74da0d263dcb1930fa403189206b0677fa37d6625603a1",
+    "99d50efa6f3aff1844cd8c7fa5739fa72006090c6a47e573c17ae600ff8a6e60",
+    "a29f50f1f47d2c4ca3b7d4ab61a691f395e8be3275ec6e2b9c40cb54670169ab",
+    "a90b2cba69a59af65fe07e1e324d98807dbf83163d55a64de87c90316b5fbfbb",
+    "b444985f5d3e42d64c39de9eb3b7fe04044882cf2d3955c1adb064df309c5ca4",
+    "b88915c12a7408189eefca78a8770407314898957aa94542ca4d49f3bc168a75",
+    "d5861f349925193f8c226e35ea98f498fc9980b40416e2e63a84359ac543e64a",
+    "e02677e7e460f4f33322476eb0f3040844bb79ab325ec7f3d292833bcce6d9d3",
+    "eda906440376e63f978b952bcab14235b193cda3017c47f8d68d56dc15946bf5",
+    "f0110ffbac3a4b2a3d1c8ec35547bffe147fc83da0c4ebabf40204fe008fa2d5",
+    "f1fd552dd0606affeb80635ffb72e8c6459326990401c7524d9a283366ccb1af",
+    "fc0b568cd512f3da7d707a80fb84f3b7c7634039401a3960a553da0635c809b6"
+  ],
+  "risk_category": "COUNTERFACTUAL_DOMINATED_CHOICE",
+  "selected_task_id": 11,
+  "selected_task_rank": 1,
+  "selected_task_score": -0.5620343823229886,
+  "semantic_signature": "d18ae0be9ddce0afd6a6a5f72236bb2b95210a01f755805237e246969d870839",
+  "source_decision_index": 4,
+  "source_frozen_rule_hash": "a7535856ad6e1e632d187071c09a069a82cf80f24524debd8a14662b198cff17",
+  "source_generation": 5,
+  "source_parameter_hash": "157bf76f3273309ff4ef5962c46c3a8c3f0df578ba52db775d01f4f9948fb211",
+  "source_run_id": "iter5:bbd8490a54143086:MS:0",
+  "source_scenario_id": "MS",
+  "source_scenarios": [
+    "MS"
+  ],
+  "source_seed": 0,
+  "source_seeds": [
+    0
+  ],
+  "source_structure_hash": "bbd8490a54143086157e337fc0b7e33528fb7c17a9df6133b4989eef91e39327",
+  "source_structures": [
+    "bbd8490a54143086157e337fc0b7e33528fb7c17a9df6133b4989eef91e39327"
+  ],
+  "state_id": "1891e1cddf67726912c1e91b1a2e11d9a7642a1027083d0366c335398216a114",
+  "state_signature": "0b568dbebae1686a31b902d055c7f85ff114a8ac349bab011c1bea2ebb52b6fb",
+  "status": "HARD",
+  "success_count": 0,
+  "success_generations": [],
+  "uncertainty_evidence": {
+    "max_uncertainty_regret": 0.0,
+    "reports": []
+  },
+  "unresolved_count": 18,
+  "unverified_task_ids": [
+    1,
+    2,
+    5,
+    6,
+    7,
+    8,
+    10,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21
+  ],
+  "verified_coverage": 0.11764705882352941,
+  "workflow_id": 0,
+  "workflow_type": "Sipht"
+}

@@ -1,0 +1,6 @@
+- Prioritize conditional DDL-protection gating only when `slack < 0` and `uncertainty > median_uncertainty × threshold`, weighted by `upward_rank`.  
+- Unify bottleneck pressure as `(remaining_work × upward_rank) × (1 + norm_wait × (slack < 0))`, validated across ≥3 replay failures.  
+- Decouple urgency (tanh-based, fairness-coupled) from bottleneck to enforce clean separation of deadline safety vs. critical-path+energy+uncertainty.  
+- Replace all IQR/std-based normalization with adaptive min-max fallback, activated only under near-zero dispersion.  
+- Remove all inactive parameters (`urgency_wait_coupling`, `ddl_risk_activation_threshold`, etc.) — cross-generation evidence shows zero functional impact.  
+- Enforce unconditional fairness term (`−wait_fairness_weight × norm_wait`) — verified 99.85% lateness reduction.

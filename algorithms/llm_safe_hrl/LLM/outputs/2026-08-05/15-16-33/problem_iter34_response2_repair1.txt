@@ -1,0 +1,140 @@
+```python
+import numpy as np
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 1.495091565174013e-05,
+            "lower_bound": 1e-06,
+            "upper_bound": 0.1,
+            "semantic_description": "Numerical guard for stable normalization and division.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "ddl_protection_threshold",
+            "initial_value": 0.32,
+            "lower_bound": 0.0,
+            "upper_bound": 1.0,
+            "semantic_description": "Normalized slack threshold below which DDL-risk protection gates activate.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "upward_rank_remaining_work_weight",
+            "initial_value": 0.85,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight for critical-path importance × remaining work interaction.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_risk_coupling_weight",
+            "initial_value": 0.62,
+            "lower_bound": 0.0,
+            "upper_bound": 1.5,
+            "semantic_description": "Weight for coupling incremental energy with uncertainty to penalize high-risk high-energy tasks.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "wait_saturation_scale",
+            "initial_value": 2.5048656494345733,
+            "lower_bound": 0.5,
+            "upper_bound": 10.0,
+            "semantic_description": "Scale denominator for ready_wait_time saturation.",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Mutated priority rule incorporating evidence-backed structural changes:
+      - Adds conditional DDL-protection gate: activates only when slack <= median_slack AND normalized_uncertainty > threshold.
+      - Replaces multiplicative bottleneck coupling with additive, gated critical-path term: upward_rank * remaining_work.
+      - Introduces energy-risk coupling: min_incremental_energy * (1 + uncertainty) to penalize high-uncertainty high-energy tasks.
+      - Uses DDL-aware min-max normalization instead of median-based for small-N robustness and stronger slack dominance under stress.
+      - Retains bounded sigmoid wait saturation for anti-starvation, but now gated by DDL risk to avoid interfering with urgent tasks.
+      - All operations are finite, deterministic, and use only {-2,-1,0,1,2} literals; no unbounded loops or side effects.
+    """
+    eps = PARAMS["epsilon"]
+    N = len(slack)
+    
+    # Ensure float arrays without mutation
+    min_exec_time = np.asarray(min_exec_time, dtype=float)
+    min_comm_time = np.asarray(min_comm_time, dtype=float)
+    min_incremental_energy = np.asarray(min_incremental_energy, dtype=float)
+    slack = np.asarray(slack, dtype=float)
+    upward_rank = np.asarray(upward_rank, dtype=float)
+    remaining_work = np.asarray(remaining_work, dtype=float)
+    ready_wait_time = np.asarray(ready_wait_time, dtype=float)
+    uncertainty = np.asarray(uncertainty, dtype=float)
+    
+    # DDL-aware min-max normalization: preserves signal integrity under deadline stress
+    def ddl_aware_normalize(x):
+        x = np.copy(x)
+        x_min = np.min(x) if N > 0 else 0.0
+        x_max = np.max(x) if N > 0 else 1.0
+        range_val = x_max - x_min
+        denom = range_val if range_val > eps else eps
+        return (x - x_min) / denom
+    
+    # Pre-normalized dominant DDL violation penalty: raw negative slack
+    neg_slack = np.clip(-slack, 0.0, None)
+    
+    # Compute median slack for gating logic
+    median_slack = np.median(slack) if N > 0 else 0.0
+    
+    # Normalize uncertainty for gating condition
+    unc_norm = ddl_aware_normalize(uncertainty)
+    
+    # Conditional DDL-protection gate: active only when task is both late-biased AND uncertain
+    ddl_risk_gate = np.where(
+        (slack <= median_slack) & (unc_norm > PARAMS["ddl_protection_threshold"]),
+        1.0,
+        0.0
+    )
+    
+    # Critical-path pressure: upward_rank × remaining_work — unconditionally activated but scaled by gate
+    critical_path_pressure = upward_rank * remaining_work
+    norm_critical_path = ddl_aware_normalize(critical_path_pressure)
+    
+    # Energy-risk coupling: penalize high-energy tasks under high uncertainty
+    energy_risk_term = min_incremental_energy * (1.0 + uncertainty)
+    norm_energy_risk = ddl_aware_normalize(energy_risk_term)
+    
+    # Bounded sigmoid wait saturation — only applied when NOT under DDL risk (anti-starvation without compromising urgency)
+    wait_scaled = ready_wait_time / (PARAMS["wait_saturation_scale"] + eps)
+    wait_clipped = np.clip(wait_scaled, -2.0, 2.0)
+    wait_saturation = 1.0 / (1.0 + np.exp(-wait_clipped))
+    # Gate wait boost: only apply if slack > median_slack (non-urgent tasks)
+    wait_boost = np.where(slack > median_slack, wait_saturation, 0.0)
+    
+    # Final score: smaller = higher priority
+    # Dominant ordering: hard DDL violation > gated critical path > energy-risk > wait boost
+    score = (
+        neg_slack  # Strongest signal: raw violation penalty
+        + ddl_risk_gate * PARAMS["upward_rank_remaining_work_weight"] * norm_critical_path
+        + ddl_risk_gate * PARAMS["energy_risk_coupling_weight"] * norm_energy_risk
+        - wait_boost
+    )
+    
+    # Enforce finiteness
+    finfo = np.finfo(float)
+    score = np.nan_to_num(score, nan=0.0, posinf=finfo.max, neginf=finfo.min)
+    
+    return score.astype(float, copy=False)
+```

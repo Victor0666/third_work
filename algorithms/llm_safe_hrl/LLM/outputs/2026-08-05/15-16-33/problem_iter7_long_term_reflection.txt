@@ -1,0 +1,5 @@
+- Prioritize smooth sigmoid urgency over piecewise slack penalties for stable deadline sensitivity and gradient behavior.  
+- Gate DDL-protection strictly by *both* tight slack (slack < median_slack) *and* high uncertainty (uncertainty > threshold × max_uncertainty), validated across ≥2 seeds/scenarios.  
+- Couple successor bottleneck via `(exec + comm) × (remaining_work + upward_rank)` to unblock critical-path starvation, confirmed in ≥4 decision-level failures.  
+- Replace fragile wait/load proxies with host-load-aware DDL gates and IQR-normalized features (20/80 percentiles) for robustness.  
+- Retain only scenario-gated parameters (e.g., `energy_duration_ratio_weight`, `successor_bottleneck_coupling`) with cross-scenario evidence—remove inactive or seed-sensitive ones.

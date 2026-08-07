@@ -1,0 +1,5 @@
+- Prioritize negative-slack tasks via piecewise linear+convex penalty—not sigmoid—due to stronger DDL violation reduction across seeds/scenarios.  
+- Gate critical-path bonus by percentile rank (not raw upward rank) to prevent outlier dominance and improve fairness, evidenced in 14+ high-confidence counterfactuals.  
+- Use duration-normalized energy efficiency (`energy / (exec + comm + ε)`) to align cost with urgency; validated by lower lateness and higher feasible seed rate.  
+- Add conditional DDL-protection gate activated only when `slack < median(slack)` *and* `upward_rank > percentile_threshold`, confirmed in 14 decision-level and 8 historical replay failures.  
+- Introduce successor-release delay interaction (`min(remaining_work / (slack + ε), 10)`) to unblock bottlenecks under tight deadlines—repeatedly flagged in critical-path and successor-blocking patterns.

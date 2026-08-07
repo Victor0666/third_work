@@ -1,0 +1,172 @@
+```python
+import numpy as np
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 1.495091565174013e-05,
+            "lower_bound": 1e-06,
+            "upper_bound": 0.1,
+            "semantic_description": "Numerical guard for stable normalization and division.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "ddl_protection_gate_threshold",
+            "initial_value": 0.32,
+            "lower_bound": 0.05,
+            "upper_bound": 0.8,
+            "semantic_description": "Threshold for activating critical-path pressure under DDL risk.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "upward_rank_remaining_work_weight",
+            "initial_value": 0.87,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight for upward_rank × remaining_work interaction when slack is tight.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "uncertainty_coupling_exponent",
+            "initial_value": 1.15,
+            "lower_bound": 0.5,
+            "upper_bound": 2.0,
+            "semantic_description": "Exponent for uncertainty-driven coupling with slack feasibility.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "wait_decay_power",
+            "initial_value": 0.68,
+            "lower_bound": 0.1,
+            "upper_bound": 1.5,
+            "semantic_description": "Power-law exponent for ready_wait_time decay to prevent starvation.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_normalization_scale",
+            "initial_value": 1.25,
+            "lower_bound": 0.5,
+            "upper_bound": 3.0,
+            "semantic_description": "Scale factor for adaptive energy normalization robustness.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "tight_slack_uncertainty_interaction",
+            "initial_value": 1.4,
+            "lower_bound": 0.5,
+            "upper_bound": 3.0,
+            "semantic_description": "Exponent for joint slack-uncertainty gating term: (neg_slack + eps)^p * (uncertainty_normalized + eps)^q.",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Hybrid priority rule combining Parent 2's conditional DDL gate with Parent 1's unified tight-slack sensitivity:
+      - Retains Parent 2's verified DDL protection gate (slack <= median_slack AND uncertainty_normalized > threshold).
+      - Adds novel *joint slack-uncertainty interaction term*: (neg_slack)^p * (uncertainty_normalized)^q, activated only under DDL risk.
+        This captures synergistic risk amplification missed by additive terms — e.g., high uncertainty *with* negative slack is exponentially worse.
+      - Replaces raw neg_slack dominance with *bounded normalized neg_slack*, preventing outlier skew while preserving hard constraint priority.
+      - Uses adaptive per-term dispersion (std/fallback range) from Parent 2 for energy normalization — more robust than global IQR in small-N cases.
+      - Keeps bounded power-law wait decay and gated critical-path pressure; all operations protected via np.finfo and epsilon guards.
+      - No unbounded loops, no side effects, deterministic, shape-compliant, and uses only {-2,-1,0,1,2} structural literals.
+    """
+    eps = PARAMS["epsilon"]
+    N = len(slack)
+    
+    # Ensure float arrays without mutation
+    min_exec_time = np.asarray(min_exec_time, dtype=float)
+    min_comm_time = np.asarray(min_comm_time, dtype=float)
+    min_incremental_energy = np.asarray(min_incremental_energy, dtype=float)
+    slack = np.asarray(slack, dtype=float)
+    upward_rank = np.asarray(upward_rank, dtype=float)
+    remaining_work = np.asarray(remaining_work, dtype=float)
+    ready_wait_time = np.asarray(ready_wait_time, dtype=float)
+    uncertainty = np.asarray(uncertainty, dtype=float)
+    
+    # Pre-normalized hard-deadline violation signal: bounded and centered
+    neg_slack = np.clip(-slack, 0.0, None)
+    neg_slack_center = np.median(neg_slack) if N > 0 else 0.0
+    neg_slack_dispersion = (np.std(neg_slack) + eps) if N > 1 else eps
+    fallback_neg_range = np.max(neg_slack) - np.min(neg_slack) if N > 0 else eps
+    neg_slack_denom = np.where(neg_slack_dispersion > eps, neg_slack_dispersion, fallback_neg_range)
+    norm_neg_slack = (neg_slack - neg_slack_center) / (neg_slack_denom + eps)
+    
+    # Median-based slack feasibility indicator
+    median_slack = np.median(slack) if N > 0 else 0.0
+    slack_feasible = (slack > median_slack).astype(float)
+    
+    # DDL protection gate: active only when slack is tight AND uncertainty is high
+    uncertainty_normalized = (uncertainty - np.min(uncertainty)) / (np.ptp(uncertainty) + eps) if N > 1 else np.zeros_like(uncertainty)
+    ddl_risk_gate = np.where(
+        (slack <= median_slack) & (uncertainty_normalized > PARAMS["ddl_protection_gate_threshold"]),
+        1.0,
+        0.0
+    )
+    
+    # Critical-path pressure: upward_rank × remaining_work, gated by DDL risk
+    critical_path_pressure = upward_rank * remaining_work
+    gated_critical_pressure = ddl_risk_gate * critical_path_pressure
+    
+    # Uncertainty-coupled slack penalty: (1 + uncertainty)^exponent * neg_slack, but only under risk
+    unc_coupled_penalty = np.power(1.0 + uncertainty_normalized, PARAMS["uncertainty_coupling_exponent"]) * neg_slack
+    gated_unc_penalty = ddl_risk_gate * unc_coupled_penalty
+    
+    # Novel joint slack-uncertainty interaction: captures multiplicative risk synergy
+    joint_risk_interaction = (
+        np.power(neg_slack + eps, PARAMS["tight_slack_uncertainty_interaction"]) *
+        np.power(uncertainty_normalized + eps, PARAMS["tight_slack_uncertainty_interaction"])
+    )
+    gated_joint_risk = ddl_risk_gate * joint_risk_interaction
+    
+    # Energy term: risk-adjusted marginal energy, normalized adaptively
+    duration = np.maximum(min_exec_time + min_comm_time, eps)
+    energy_per_duration = min_incremental_energy / (duration + eps)
+    
+    # Adaptive energy normalization using std of energy_per_duration scaled by energy_normalization_scale
+    energy_center = np.median(energy_per_duration) if N > 0 else 0.0
+    energy_dispersion = PARAMS["energy_normalization_scale"] * (np.std(energy_per_duration) + eps) if N > 1 else eps
+    fallback_energy_range = np.max(energy_per_duration) - np.min(energy_per_duration) if N > 0 else eps
+    energy_denom = np.where(energy_dispersion > eps, energy_dispersion, fallback_energy_range)
+    norm_energy = (energy_per_duration - energy_center) / (energy_denom + eps)
+    
+    # Bounded power-law wait decay: prevents starvation without unbounded boost
+    max_wait = np.max(ready_wait_time) if N > 0 else eps
+    wait_ratio = np.clip(ready_wait_time / (max_wait + eps), 0.0, 1.0)
+    wait_decay = np.power(wait_ratio + eps, PARAMS["wait_decay_power"])
+    
+    # Final score: smaller = higher priority
+    # Dominant ordering: normalized neg_slack > gated joint risk > gated unc penalty > gated critical pressure > energy > wait decay
+    score = (
+        norm_neg_slack
+        + gated_joint_risk
+        + gated_unc_penalty
+        + PARAMS["upward_rank_remaining_work_weight"] * gated_critical_pressure
+        + norm_energy
+        - wait_decay
+    )
+    
+    # Enforce finiteness and finite numeric output
+    finfo = np.finfo(float)
+    score = np.nan_to_num(score, nan=0.0, posinf=finfo.max, neginf=finfo.min)
+    
+    return score.astype(float, copy=False)
+```

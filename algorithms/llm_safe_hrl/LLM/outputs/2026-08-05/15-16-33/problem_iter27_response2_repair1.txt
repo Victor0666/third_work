@@ -1,0 +1,185 @@
+```python
+import numpy as np
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 1.495091565174013e-05,
+            "lower_bound": 1e-06,
+            "upper_bound": 0.1,
+            "semantic_description": "Numerical guard for stable normalization and division.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "ddl_risk_amplification",
+            "initial_value": 2.1,
+            "lower_bound": 0.5,
+            "upper_bound": 5.0,
+            "semantic_description": "Exponent for slack-based DDL risk penalty to enforce hard constraint dominance.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "tight_slack_threshold_factor",
+            "initial_value": 0.8,
+            "lower_bound": 0.1,
+            "upper_bound": 1.0,
+            "semantic_description": "Factor scaling median slack to define 'tight' regime for conditional gating.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "critical_path_coupling",
+            "initial_value": 0.85,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight for upward_rank × remaining_work interaction under tight slack.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_normalization_scale",
+            "initial_value": 1.2,
+            "lower_bound": 0.1,
+            "upper_bound": 2.0,
+            "semantic_description": "Scale factor for robust IQR-based energy term normalization.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "wait_decay_exponent",
+            "initial_value": 0.4,
+            "lower_bound": 0.1,
+            "upper_bound": 1.0,
+            "semantic_description": "Exponent for power-law wait-time decay to avoid premature saturation.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "bottleneck_uncertainty_amplification",
+            "initial_value": 1.35,
+            "lower_bound": 0.5,
+            "upper_bound": 3.0,
+            "semantic_description": "Exponent for uncertainty-driven amplification of bottleneck pressure.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "iqr_percentile_high",
+            "initial_value": 75.0,
+            "lower_bound": 50.0,
+            "upper_bound": 95.0,
+            "semantic_description": "Upper percentile for IQR computation (e.g., 75th).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "iqr_percentile_low",
+            "initial_value": 25.0,
+            "lower_bound": 5.0,
+            "upper_bound": 50.0,
+            "semantic_description": "Lower percentile for IQR computation (e.g., 25th).",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Self-evolved priority rule with unified tight-slack gating and global IQR normalization:
+      - Replaces per-term MAD with *single global IQR-based scaling* for all normalized terms → reduces noise in small N.
+      - All scenario-sensitive components (critical path, energy, bottleneck) now gated by *same* tight-slack condition: slack <= median_slack * threshold_factor.
+      - Removes urgency tanh and successor-risk terms to restore strict DDL-risk dominance and improve feasibility stability.
+      - Bottleneck pressure uses uncertainty-amplified duration × critical-path product, scaled globally.
+      - Wait decay remains power-law but now normalized *relative to global IQR scale*, ensuring consistent anti-starvation strength.
+      - All operations protected against NaN/inf/zero; deterministic; only {-2,-1,0,1,2} as structural literals.
+    """
+    eps = PARAMS["epsilon"]
+    N = len(slack)
+    
+    # Ensure float arrays without mutation
+    min_exec_time = np.asarray(min_exec_time, dtype=float)
+    min_comm_time = np.asarray(min_comm_time, dtype=float)
+    min_incremental_energy = np.asarray(min_incremental_energy, dtype=float)
+    slack = np.asarray(slack, dtype=float)
+    upward_rank = np.asarray(upward_rank, dtype=float)
+    remaining_work = np.asarray(remaining_work, dtype=float)
+    ready_wait_time = np.asarray(ready_wait_time, dtype=float)
+    uncertainty = np.asarray(uncertainty, dtype=float)
+    
+    # Global IQR-based dispersion measure for robust normalization across all terms
+    def global_iqr_scale(x):
+        if N <= 1:
+            return eps
+        q_high = np.percentile(x, PARAMS["iqr_percentile_high"])
+        q_low = np.percentile(x, PARAMS["iqr_percentile_low"])
+        iqr = q_high - q_low
+        range_val = np.max(x) - np.min(x)
+        return np.where(iqr > eps, iqr, range_val) + eps
+    
+    # Compute global scale once for all normalized terms
+    global_scale = global_iqr_scale(np.concatenate([
+        min_exec_time + min_comm_time,
+        upward_rank * remaining_work,
+        min_incremental_energy,
+        ready_wait_time
+    ]))
+    
+    # DDL risk penalty: power-law penalty on negative slack, zero otherwise
+    neg_slack = np.clip(-slack, 0.0, None)
+    ddl_risk_penalty = np.power(neg_slack + eps, PARAMS["ddl_risk_amplification"])
+    
+    # Unified tight-slack gating: same condition for all deadline-sensitive terms
+    median_slack = np.median(slack) if N > 0 else 0.0
+    tight_slack_mask = (slack <= median_slack * PARAMS["tight_slack_threshold_factor"]).astype(float)
+    
+    # Critical-path coupling: only active under unified tight-slack gate
+    critical_path_pressure = tight_slack_mask * upward_rank * remaining_work
+    norm_critical_path = (critical_path_pressure - np.median(critical_path_pressure)) / global_scale
+    
+    # Energy term: marginal energy per duration, scaled globally
+    duration = np.maximum(min_exec_time + min_comm_time, eps)
+    energy_per_duration = min_incremental_energy / (duration + eps)
+    norm_energy = (energy_per_duration - np.median(energy_per_duration)) / global_scale * PARAMS["energy_normalization_scale"]
+    
+    # Bottleneck pressure: uncertainty-amplified critical-path duration product
+    base_bottleneck = duration * upward_rank * remaining_work
+    bottleneck_pressure = base_bottleneck * (1.0 + np.power(uncertainty + eps, PARAMS["bottleneck_uncertainty_amplification"]))
+    norm_bottleneck = (bottleneck_pressure - np.median(bottleneck_pressure)) / global_scale
+    
+    # Bounded power-law wait decay, normalized using same global scale
+    max_wait = np.max(ready_wait_time) if N > 0 else eps
+    wait_ratio = np.clip(ready_wait_time / (max_wait + eps), 0.0, 1.0)
+    wait_decay = np.power(wait_ratio + eps, PARAMS["wait_decay_exponent"])
+    wait_priority = 1.0 - wait_decay  # invert so longer wait → higher priority (smaller score)
+    norm_wait = (wait_priority - np.median(wait_priority)) / global_scale
+    
+    # Final score: smaller = higher priority
+    # Dominance order: DDL risk > critical path > bottleneck > energy > fairness
+    score = (
+        ddl_risk_penalty +
+        norm_critical_path * PARAMS["critical_path_coupling"] +
+        norm_bottleneck +
+        norm_energy -
+        norm_wait
+    )
+    
+    # Enforce finiteness and shape compliance
+    finfo = np.finfo(float)
+    score = np.nan_to_num(score, nan=0.0, posinf=finfo.max, neginf=finfo.min)
+    
+    # Ensure shape (N,) even for N=1
+    return score.astype(float, copy=False)
+```

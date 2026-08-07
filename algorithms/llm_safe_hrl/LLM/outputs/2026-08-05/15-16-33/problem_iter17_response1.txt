@@ -1,0 +1,198 @@
+```python
+import numpy as np
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 0.000135,
+            "lower_bound": 1e-6,
+            "upper_bound": 0.1,
+            "semantic_description": "Numerical guard for stable normalization and division.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "energy_duration_ratio_weight",
+            "initial_value": 1.38,
+            "lower_bound": 0.1,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight for energy-per-duration efficiency term.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "successor_bottleneck_coupling",
+            "initial_value": 0.49,
+            "lower_bound": 0.0,
+            "upper_bound": 1.5,
+            "semantic_description": "Strength of interaction between duration, remaining_work, and upward_rank for successor-release pressure.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "uncertainty_dispersion_scale",
+            "initial_value": 0.87,
+            "lower_bound": 0.1,
+            "upper_bound": 2.0,
+            "semantic_description": "Multiplier for uncertainty-driven dispersion scaling in adaptive normalization.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "urgency_cap_exponent",
+            "initial_value": 0.75,
+            "lower_bound": 0.3,
+            "upper_bound": 1.2,
+            "semantic_description": "Exponent controlling slack-aware urgency cap tightness.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "wait_saturation_scale",
+            "initial_value": 2.1,
+            "lower_bound": 0.5,
+            "upper_bound": 10.0,
+            "semantic_description": "Scale denominator for ready_wait_time saturation.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "bottleneck_uncertainty_amplification",
+            "initial_value": 1.28,
+            "lower_bound": 0.5,
+            "upper_bound": 3.0,
+            "semantic_description": "Exponent for uncertainty-driven amplification of successor bottleneck pressure.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "slack_risk_penalty_weight",
+            "initial_value": 1.42,
+            "lower_bound": 0.1,
+            "upper_bound": 3.0,
+            "semantic_description": "Weight applied to clipped negative slack to penalize lateness risk directly.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "upward_rank_remaining_work_coupling",
+            "initial_value": 0.85,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Strength of multiplicative interaction between upward_rank and remaining_work for critical-path pressure.",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Hybrid priority rule combining Parent 2's uncertainty-aware normalization and feasibility-preserving urgency cap
+    with Parent 1's direct clipped negative slack penalty and explicit upward_rank × remaining_work bottleneck term.
+    
+    Key structural improvements:
+      - Dual-risk signal: combines clipped negative slack (hard DDL violation) AND feasibility-capped urgency (soft deadline proximity)
+      - Unified bottleneck term: additive composition of (upward_rank × remaining_work) + (duration × upward_rank × remaining_work × (1+urgency))
+        to capture both static critical-path importance and dynamic release pressure
+      - Uncertainty-weighted normalization applied consistently across all terms
+      - Anti-starvation via wait_saturation (sigmoid) AND linear inversion of normalized wait time (Parent 1's inv_wait), weighted separately
+      - All operations guarded against NaN/inf/zero; no unbounded logic or hidden state.
+    """
+    eps = PARAMS["epsilon"]
+    N = len(slack)
+    
+    # Ensure float arrays without mutation
+    min_exec_time = np.asarray(min_exec_time, dtype=float)
+    min_comm_time = np.asarray(min_comm_time, dtype=float)
+    min_incremental_energy = np.asarray(min_incremental_energy, dtype=float)
+    slack = np.asarray(slack, dtype=float)
+    upward_rank = np.asarray(upward_rank, dtype=float)
+    remaining_work = np.asarray(remaining_work, dtype=float)
+    ready_wait_time = np.asarray(ready_wait_time, dtype=float)
+    uncertainty = np.asarray(uncertainty, dtype=float)
+    
+    # Uncertainty-aware adaptive normalization: dispersion scaled by std(uncertainty) to reflect risk context
+    def adaptive_normalize(x):
+        x = np.copy(x)
+        center = np.median(x)
+        
+        # Base dispersion: use std(uncertainty) as risk-aligned scaling factor
+        unc_std = np.std(uncertainty) if N > 1 else eps
+        dispersion = PARAMS["uncertainty_dispersion_scale"] * (unc_std + eps)
+        
+        # Fallback to range if dispersion too small
+        fallback_range = np.max(x) - np.min(x) if N > 0 else eps
+        denom = dispersion if dispersion > eps else fallback_range
+        
+        return (x - center) / (denom + eps)
+    
+    # Direct DDL-risk penalty: clipped negative slack (0 for slack >= 0, |slack| otherwise)
+    neg_slack = np.clip(-slack, 0.0, None)
+    norm_neg_slack = adaptive_normalize(neg_slack)
+    
+    # Feasibility-preserving urgency cap: (median_slack - slack) bounded by max non-negative slack^exponent
+    median_slack = np.median(slack) if N > 0 else 0.0
+    urgency_linear = np.clip(median_slack - slack, 0.0, 2.0)
+    non_neg_slack = np.clip(slack, 0.0, None)
+    max_non_neg_slack = np.max(non_neg_slack) if N > 0 else eps
+    urgency_cap = np.power(max_non_neg_slack + eps, PARAMS["urgency_cap_exponent"])
+    urgency_linear = np.minimum(urgency_linear, urgency_cap)
+    norm_urgency = adaptive_normalize(urgency_linear)
+    
+    # Static bottleneck: upward_rank × remaining_work (critical-path load)
+    static_bottleneck = upward_rank * remaining_work
+    norm_static_bottleneck = adaptive_normalize(static_bottleneck)
+    
+    # Dynamic bottleneck: duration × upward_rank × remaining_work × (1 + urgency_linear)
+    duration = np.maximum(min_exec_time + min_comm_time, eps)
+    dynamic_bottleneck = duration * upward_rank * remaining_work * (1.0 + urgency_linear + eps)
+    
+    # Uncertainty amplification of dynamic bottleneck
+    unc_normalized = adaptive_normalize(uncertainty)
+    dynamic_bottleneck = dynamic_bottleneck * np.power(1.0 + unc_normalized, 
+                                                        PARAMS["bottleneck_uncertainty_amplification"])
+    norm_dynamic_bottleneck = adaptive_normalize(dynamic_bottleneck)
+    
+    # Energy efficiency: marginal energy per unit duration (J/s)
+    energy_per_duration = min_incremental_energy / (duration + eps)
+    norm_energy_eff = adaptive_normalize(energy_per_duration)
+    
+    # Ready wait saturation: bounded sigmoid
+    wait_scaled = ready_wait_time / (PARAMS["wait_saturation_scale"] + eps)
+    wait_clipped = np.clip(wait_scaled, -2.0, 2.0)
+    wait_saturation = 1.0 / (1.0 + np.exp(-wait_clipped))
+    norm_wait_sat = adaptive_normalize(wait_saturation)
+    
+    # Linear anti-starvation: inverted normalized wait time (longer wait → higher priority)
+    norm_wait_linear = adaptive_normalize(ready_wait_time)
+    inv_wait_linear = 1.0 - norm_wait_linear
+    
+    # Final score: smaller = higher priority
+    # Hierarchy: hard DDL violation > soft urgency > static bottleneck > dynamic bottleneck > energy > fairness
+    score = (
+        PARAMS["slack_risk_penalty_weight"] * norm_neg_slack  # Primary hard-deadline violation signal
+        + norm_urgency  # Soft deadline proximity, capped and feasible
+        + PARAMS["upward_rank_remaining_work_coupling"] * norm_static_bottleneck  # Critical-path load
+        + PARAMS["successor_bottleneck_coupling"] * norm_dynamic_bottleneck  # Release pressure amplified by uncertainty
+        + PARAMS["energy_duration_ratio_weight"] * norm_energy_eff  # Efficiency
+        - norm_wait_sat  # Sigmoid-based fairness
+        - inv_wait_linear  # Linear anti-starvation
+    )
+    
+    # Enforce finiteness
+    finfo = np.finfo(float)
+    score = np.nan_to_num(score, nan=0.0, posinf=finfo.max, neginf=finfo.min)
+    
+    return score.astype(float, copy=False)
+```

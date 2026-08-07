@@ -1,0 +1,7 @@
+- Prioritize smooth sigmoid slack mapping over linear urgency for stable gradient-based deadline sensitivity and reduced clipping instability.  
+- Gate DDL protection strictly by joint condition: tight slack (slack < median_slack) *and* high uncertainty (uncertainty > median_uncertainty), validated across ≥2 seeds/scenarios.  
+- Couple successor bottleneck via `(duration × upward_rank × (1 + sigmoid(slack)))` to amplify critical-path pressure under deadline stress, confirmed in ≥4 decision-level failures.  
+- Replace IQR-only normalization with adaptive min-max fallback when dispersion is low, improving robustness to near-constant feature values.  
+- Introduce host-load–aware energy inflation via `(1 + host_load_sensitivity × uncertainty)` without new inputs, eliminating brittle load proxies.  
+- Unify risk coupling into multiplicative `urgency × uncertainty`, activated only under joint deadline pressure and high uncertainty—empirically more robust than sum-based variants.  
+- Retain only scenario-gated parameters (e.g., `successor_bottleneck_coupling`) with cross-scenario evidence; remove inactive or seed-sensitive ones.

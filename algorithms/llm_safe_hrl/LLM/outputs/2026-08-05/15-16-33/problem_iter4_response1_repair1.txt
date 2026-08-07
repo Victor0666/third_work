@@ -1,0 +1,172 @@
+```python
+import numpy as np
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 0.00015255809669129132,
+            "lower_bound": 1e-6,
+            "upper_bound": 0.1,
+            "semantic_description": "Numerical guard for stable normalization and division.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "ddl_protection_gate_threshold",
+            "initial_value": 0.6620652121348684,
+            "lower_bound": 0.5,
+            "upper_bound": 0.95,
+            "semantic_description": "Fraction of max uncertainty required to activate DDL-protection gate.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_duration_ratio_weight",
+            "initial_value": 1.4190437481378373,
+            "lower_bound": 0.1,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight for energy-per-duration efficiency term.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "successor_bottleneck_coupling",
+            "initial_value": 0.4576468658175758,
+            "lower_bound": 0.0,
+            "upper_bound": 1.5,
+            "semantic_description": "Strength of interaction between duration, remaining_work, and upward_rank for successor-release pressure.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "iqr_low_percentile",
+            "initial_value": 36.50621980265129,
+            "lower_bound": 10.0,
+            "upper_bound": 40.0,
+            "semantic_description": "Lower percentile for IQR-based normalization.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "iqr_high_percentile",
+            "initial_value": 76.29708410547188,
+            "lower_bound": 60.0,
+            "upper_bound": 90.0,
+            "semantic_description": "Upper percentile for IQR-based normalization.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "critical_rank_percentile",
+            "initial_value": 0.7531477826533415,
+            "lower_bound": 0.5,
+            "upper_bound": 0.95,
+            "semantic_description": "Percentile threshold to activate critical-path bonus.",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Mutated priority rule emphasizing deadline safety via piecewise linear+convex slack penalty,
+    critical-path gating by percentile rank (not raw value), duration-normalized energy efficiency,
+    conditional DDL-protection gate, and successor-release delay interaction.
+    
+    Key mutations from prior version:
+      - Replaced sigmoid urgency with robust piecewise linear + convex penalty on slack (stronger DDL violation reduction)
+      - Critical-path bonus gated by percentile rank (prevents outlier dominance, improves fairness)
+      - Energy efficiency computed as min_incremental_energy / (exec + comm + eps) — aligns cost with urgency
+      - DDL-protection gate activated only when (slack < median(slack)) AND (upward_rank > percentile_threshold)
+      - Successor-release delay: min(remaining_work / (slack + eps), 10) to unblock bottlenecks under tight deadlines
+      - Removed wait-time saturation and uncertainty amplification terms — evidence shows they were inactive or fragile
+      - All normalizations use IQR with tunable percentiles; no hard thresholds or unbounded growth
+    """
+    eps = PARAMS["epsilon"]
+    N = len(slack)
+    
+    # Ensure float arrays without mutation
+    min_exec_time = np.asarray(min_exec_time, dtype=float)
+    min_comm_time = np.asarray(min_comm_time, dtype=float)
+    min_incremental_energy = np.asarray(min_incremental_energy, dtype=float)
+    slack = np.asarray(slack, dtype=float)
+    upward_rank = np.asarray(upward_rank, dtype=float)
+    remaining_work = np.asarray(remaining_work, dtype=float)
+    ready_wait_time = np.asarray(ready_wait_time, dtype=float)
+    uncertainty = np.asarray(uncertainty, dtype=float)
+    
+    # Robust IQR-based normalization using declared percentiles
+    def iqr_normalize(x):
+        x = np.copy(x)
+        q_low = np.percentile(x, PARAMS["iqr_low_percentile"])
+        q_high = np.percentile(x, PARAMS["iqr_high_percentile"])
+        iqr = q_high - q_low
+        center = np.median(x)
+        denom = iqr if iqr > eps else (np.max(np.abs(x - center)) + eps)
+        return (x - center) / (denom + eps)
+    
+    # Piecewise linear + convex slack penalty: stronger penalty for negative slack
+    # Maps slack → [0, ∞): zero at slack=0, linear rise for positive slack, quadratic penalty for negative slack
+    slack_penalty = np.where(
+        slack >= 0,
+        slack,  # linear penalty for lateness risk even above zero
+        slack**2  # convex penalty for actual deadline violation (negative slack)
+    )
+    norm_slack_penalty = iqr_normalize(slack_penalty)
+    
+    # Duration-normalized energy efficiency: J / (s + eps) — prioritizes tasks with low marginal energy per time unit
+    duration = min_exec_time + min_comm_time + eps
+    energy_efficiency = min_incremental_energy / duration
+    norm_energy_eff = iqr_normalize(energy_efficiency)
+    
+    # Successor-release delay interaction: how much remaining work is blocked per unit slack
+    # Bounded to prevent explosion under very small slack
+    successor_release_delay = np.minimum(remaining_work / (slack + eps), 10.0)
+    norm_successor_delay = iqr_normalize(successor_release_delay)
+    
+    # Critical-path bonus: activated only for top percentile of upward_rank (percentile-based gating)
+    if N == 1:
+        rank_percentile = np.array([1.0])
+    else:
+        sorted_ranks = np.sort(upward_rank)
+        rank_idx = np.searchsorted(sorted_ranks, upward_rank, side='right')
+        rank_percentile = rank_idx / (N + eps)
+    critical_gate = np.where(rank_percentile >= PARAMS["critical_rank_percentile"], 1.0, 0.0)
+    norm_upward_rank = iqr_normalize(upward_rank)
+    critical_bonus = critical_gate * norm_upward_rank
+    
+    # DDL-protection gate: activates only when slack is tight AND upward_rank is high
+    median_slack = np.median(slack)
+    ddl_protection_active = (
+        (slack < median_slack) &
+        (rank_percentile > PARAMS["ddl_protection_gate_threshold"])
+    ).astype(float)
+    
+    # Final score: smaller = higher priority
+    # Hierarchy: deadline safety (slack penalty) > bottleneck release > energy > critical path
+    score = (
+        norm_slack_penalty  # Primary DDL safety signal — convex penalty dominates for violations
+        + PARAMS["successor_bottleneck_coupling"] * norm_successor_delay  # Unblock successors early
+        + PARAMS["energy_duration_ratio_weight"] * norm_energy_eff  # Favor energy-efficient execution
+        - critical_bonus  # Boost truly critical-path tasks (gated by percentile)
+        + ddl_protection_active * norm_upward_rank  # Amplify critical rank only when DDL at risk
+    )
+    
+    # Ensure finite output, no NaN/inf
+    finfo = np.finfo(float)
+    score = np.nan_to_num(score, nan=0.0, posinf=finfo.max, neginf=finfo.min)
+    
+    return score.astype(float, copy=False)
+```

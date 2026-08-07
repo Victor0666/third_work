@@ -1,0 +1,313 @@
+{
+  "archive_priority": [
+    1.0,
+    1.0,
+    3.21702315679795,
+    0.0,
+    1.0,
+    1.0,
+    0.0,
+    2.7030574207061733
+  ],
+  "auxiliary_risk_categories": [
+    "CRITICAL_PATH_STARVATION"
+  ],
+  "confidence": "medium",
+  "config_hash": "173c9d569752f0055d5279cc915466e15009ccf02425b18b772481bb968c52ba",
+  "consecutive_failure_count": 0,
+  "consecutive_success_count": 2,
+  "content_hash": "fbf18a337aa0433ca4b96f434fa8bd08820deab7e73b0a534f10e3c46949e5f5",
+  "counterfactual_comparisons": [
+    {
+      "alternative_outcome": {
+        "communication_time": 38.95917220577558,
+        "ddl_risk": 630.0850896529315,
+        "evidence_quality": "high",
+        "execution_time": 72.4201932349591,
+        "host_id": 0,
+        "host_load_after": 0.4117647058823529,
+        "host_load_before": 0.38235294117647056,
+        "host_load_delta": 0.02941176470588236,
+        "marginal_fuzzy_energy": 85.53547101620087,
+        "modal_finish": 467.40008369028374,
+        "optimistic_finish": 436.6522726068149,
+        "pessimistic_finish": 568.3307161537317,
+        "predicted_finish": 467.4000836902837,
+        "predicted_violation": 0.0,
+        "queue_time": 54.7372088906032,
+        "released_critical_successors": 1,
+        "released_successors": 5,
+        "remaining_critical_path": 66.80090512237224,
+        "safety_margin": 2111.51954407076,
+        "server_active_time_extension": 4.003670358167142,
+        "task_id": 135,
+        "task_safe_deadline": 2674.803728601319,
+        "uncertainty_low_slack_risk": 0.0,
+        "uncertainty_width": 131.6784435469168,
+        "vm_id": 5,
+        "workflow_id": 5,
+        "workflow_modal_finish": 529.5206323042144,
+        "workflow_optimistic_finish": 493.45187728417983,
+        "workflow_pessimistic_finish": 635.3779558291799
+      },
+      "alternative_task_id": 135,
+      "communication_delta": 1.7868215344026552,
+      "ddl_risk_delta": 3.2170231567978362,
+      "decision_id": "iter3:c3cffd93707cfe03:MS:1:d000063",
+      "dominance": "alternative_dominates",
+      "elapsed_ms": 53.95561794284731,
+      "estimator_type": "local_one_step",
+      "evidence_quality": "high",
+      "marginal_fuzzy_energy_delta": 2.7030574207061733,
+      "pessimistic_finish_delta": 4.0722079192067895,
+      "predicted_finish_delta": 3.494522411194964,
+      "predicted_violation_delta": 0.0,
+      "released_critical_successor_delta": 0,
+      "released_successor_delta": -3,
+      "remaining_critical_path_delta": -0.8263004870084956,
+      "safety_margin_delta": 3.21702315679795,
+      "selected_outcome": {
+        "communication_time": 40.745993740178235,
+        "ddl_risk": 633.3021128097294,
+        "evidence_quality": "high",
+        "execution_time": 74.1278941117514,
+        "host_id": 0,
+        "host_load_after": 0.4117647058823529,
+        "host_load_before": 0.38235294117647056,
+        "host_load_delta": 0.02941176470588236,
+        "marginal_fuzzy_energy": 88.23852843690705,
+        "modal_finish": 470.89460610147864,
+        "optimistic_finish": 439.9696452652896,
+        "pessimistic_finish": 572.4029240729385,
+        "predicted_finish": 470.89460610147864,
+        "predicted_violation": 0.0,
+        "queue_time": 54.7372088906032,
+        "released_critical_successors": 1,
+        "released_successors": 8,
+        "remaining_critical_path": 65.97460463536375,
+        "safety_margin": 2108.302520913962,
+        "server_active_time_extension": 7.498192769362049,
+        "task_id": 146,
+        "task_safe_deadline": 2675.6300290883273,
+        "uncertainty_low_slack_risk": 0.0,
+        "uncertainty_width": 132.4332788076489,
+        "vm_id": 5,
+        "workflow_id": 5,
+        "workflow_modal_finish": 532.2491073491578,
+        "workflow_optimistic_finish": 496.0656203337479,
+        "workflow_pessimistic_finish": 638.6206920444962
+      },
+      "selected_task_id": 146,
+      "state_fingerprint_after": "92349236314185b414004ea8f46b0b0cf8d81ec2626d7a8dda525cb52e581b10",
+      "state_fingerprint_before": "92349236314185b414004ea8f46b0b0cf8d81ec2626d7a8dda525cb52e581b10",
+      "uncertainty_risk_delta": 0.0
+    }
+  ],
+  "created_generation": 3,
+  "critical_reasons": [
+    "selected_not_minimum_slack",
+    "selected_not_maximum_upward_rank",
+    "small_energy_gap_possible_ddl_risk_difference",
+    "successor_release_difference",
+    "critical_path_competition"
+  ],
+  "criticality_score": 11.44636131784182,
+  "current_time": 301.2835093589458,
+  "ddl_evidence": {
+    "max_counterfactual_ddl_regret": 3.21702315679795,
+    "negative_slack": false,
+    "reports": [
+      {
+        "agent_name": "ddl_diagnostic_agent",
+        "confidence": "medium",
+        "decision_id": "iter3:c3cffd93707cfe03:MS:1:d000063",
+        "diagnosis_code": "higher_ddl_risk_choice",
+        "evidence": {
+          "alternative_pessimistic_finish": 568.3307161537317,
+          "alternative_safety_margin": 2111.51954407076,
+          "alternative_slack": 2188.755785680688,
+          "alternative_upward_rank": 167.9755142614227,
+          "selected_pessimistic_finish": 572.4029240729385,
+          "selected_safety_margin": 2108.302520913962,
+          "selected_slack": 2191.2021469985298,
+          "selected_upward_rank": 167.24825537189886
+        },
+        "limitations": [
+          "local one-step evidence is not a long-horizon causal proof"
+        ],
+        "preferred_task": 135,
+        "quantitative_deltas": {
+          "critical_successor_release_regret": 0.0,
+          "predicted_violation_regret": 0.0,
+          "remaining_critical_path_regret": -0.8263004870084956,
+          "safety_margin_regret": 3.21702315679795
+        },
+        "rejected_task": 146,
+        "scenario_id": "MS",
+        "seed": 1,
+        "severity": "medium",
+        "state_conditions": {
+          "critical_reasons": [
+            "selected_not_minimum_slack",
+            "selected_not_maximum_upward_rank",
+            "small_energy_gap_possible_ddl_risk_difference",
+            "successor_release_difference",
+            "critical_path_competition"
+          ],
+          "negative_slack_present": false,
+          "queue_size": 2
+        },
+        "suggested_structural_actions": [
+          "add_conditional_ddl_protection_gate"
+        ]
+      }
+    ]
+  },
+  "diagnosis_codes": [
+    "avoidable_marginal_energy_or_load_cost",
+    "higher_ddl_risk_choice"
+  ],
+  "dominated_task_ids": [
+    146
+  ],
+  "energy_evidence": {
+    "max_energy_regret_within_ddl_class": 2.7030574207061733,
+    "reports": [
+      {
+        "agent_name": "energy_diagnostic_agent",
+        "confidence": "medium",
+        "decision_id": "iter3:c3cffd93707cfe03:MS:1:d000063",
+        "diagnosis_code": "avoidable_marginal_energy_or_load_cost",
+        "evidence": {
+          "alternative_active_time_extension": 4.003670358167142,
+          "alternative_energy": 85.53547101620087,
+          "alternative_host_load_after": 0.4117647058823529,
+          "ddl_priority_applied": true,
+          "relative_energy_difference": 0.03063352787709887,
+          "selected_active_time_extension": 7.498192769362049,
+          "selected_energy": 88.23852843690705,
+          "selected_host_load_after": 0.4117647058823529
+        },
+        "limitations": [
+          "marginal energy and active-time extension are local proxies"
+        ],
+        "preferred_task": 135,
+        "quantitative_deltas": {
+          "communication_regret": 1.7868215344026552,
+          "host_load_delta_difference": 0.0,
+          "marginal_fuzzy_energy_regret": 2.7030574207061733,
+          "predicted_violation_regret": 0.0
+        },
+        "rejected_task": 146,
+        "scenario_id": "MS",
+        "seed": 1,
+        "severity": "medium",
+        "state_conditions": {
+          "host_load_maximum": 0.42857142857142855,
+          "queue_size": 2
+        },
+        "suggested_structural_actions": [
+          "add_host_load_conditional_gate",
+          "add_load_successor_release_interaction"
+        ]
+      }
+    ]
+  },
+  "eviction_reason": null,
+  "exact_signature": "7a43cd554ee1a481e58de0b19897062c082126987dc0871cef9b1b304cf1a6ba",
+  "failure_count": 0,
+  "failure_generations": [],
+  "last_replayed_generation": 5,
+  "merged_evidence_count": 1,
+  "preferred_task_ids": [
+    135
+  ],
+  "ready_task_features": {
+    "135": {
+      "min_comm_time": 4.8698965257219475,
+      "min_exec_time": 9.052524154369888,
+      "min_incremental_energy": 85.53547101620087,
+      "ready_wait_time": 0.0,
+      "remaining_work": 988.6384244006705,
+      "slack": 2188.755785680688,
+      "uncertainty": 0.22749415837675724,
+      "upward_rank": 167.9755142614227
+    },
+    "146": {
+      "min_comm_time": 5.093249217522279,
+      "min_exec_time": 9.265986763968925,
+      "min_incremental_energy": 88.23852843690705,
+      "ready_wait_time": 0.0,
+      "remaining_work": 1448.4726642559806,
+      "slack": 2191.2021469985298,
+      "uncertainty": 0.23395645943467241,
+      "upward_rank": 167.24825537189886
+    }
+  },
+  "ready_task_ids": [
+    135,
+    146
+  ],
+  "ready_task_scores": {
+    "135": 3.6662138763230097,
+    "146": -4.3959458499883555
+  },
+  "replay_count": 2,
+  "replay_outcomes": [
+    {
+      "generation": 4,
+      "replay_status": "VERIFIED_SUCCESS",
+      "result_hash": "566f4460f8c37f3a1a29ece175c7627a43cfbf3a35db47f8a5a2fd8798ba8e39",
+      "structure_hash": "71d5e5a01810f55691f93bd50613f0873a994429f9096418dd4b49da63ddd8b2"
+    },
+    {
+      "generation": 5,
+      "replay_status": "VERIFIED_SUCCESS",
+      "result_hash": "5cfb88a2aa0a91fcae754a6436389a165ef3d16e1c6292fbd5c9dfb2c845bc0a",
+      "structure_hash": "bbd8490a54143086157e337fc0b7e33528fb7c17a9df6133b4989eef91e39327"
+    }
+  ],
+  "replay_structure_hashes": [
+    "71d5e5a01810f55691f93bd50613f0873a994429f9096418dd4b49da63ddd8b2",
+    "bbd8490a54143086157e337fc0b7e33528fb7c17a9df6133b4989eef91e39327"
+  ],
+  "risk_category": "COUNTERFACTUAL_DOMINATED_CHOICE",
+  "selected_task_id": 146,
+  "selected_task_rank": 1,
+  "selected_task_score": -4.3959458499883555,
+  "semantic_signature": "6f379e0ebc8e3dadc0afb64828d3eda5772036dceb3fea06611d309a7b320cf9",
+  "source_decision_index": 63,
+  "source_frozen_rule_hash": "ba932a4cc1fee8546bd2f342bbeaf2f0c8806795958b3d7cb460d18dbc5d8eea",
+  "source_generation": 3,
+  "source_parameter_hash": "a84a7159ec0b55ff6417b63171dce0dedf9a6b46d1fbcee745f0b908936bede5",
+  "source_run_id": "iter3:c3cffd93707cfe03:MS:1",
+  "source_scenario_id": "MS",
+  "source_scenarios": [
+    "MS"
+  ],
+  "source_seed": 1,
+  "source_seeds": [
+    1
+  ],
+  "source_structure_hash": "c3cffd93707cfe0376549941c998af05149e4194e3be32fa3e307a136562c3e3",
+  "source_structures": [
+    "c3cffd93707cfe0376549941c998af05149e4194e3be32fa3e307a136562c3e3"
+  ],
+  "state_id": "f7cb028996dfa4514a98e441bc89081ca14d5edac572f0c405b8b0af3af30a77",
+  "state_signature": "7a43cd554ee1a481e58de0b19897062c082126987dc0871cef9b1b304cf1a6ba",
+  "status": "ACTIVE",
+  "success_count": 2,
+  "success_generations": [
+    4,
+    5
+  ],
+  "uncertainty_evidence": {
+    "max_uncertainty_regret": 0.0,
+    "reports": []
+  },
+  "unresolved_count": 0,
+  "unverified_task_ids": [],
+  "verified_coverage": 1.0,
+  "workflow_id": 5,
+  "workflow_type": "CyberShake"
+}

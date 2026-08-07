@@ -1,0 +1,18 @@
+- Replaced fragile sigmoid urgency with stable linear slack mapping, eliminating clipping-induced decision instability.  
+- Unified bottleneck term into `(duration × upward_rank × remaining_work)` to jointly capture criticality and load pressure more reliably than sum-based variants.  
+- Dropped inactive features (critical-rank gate, feasibility guard, release cap) confirmed redundant by cross-generation inactivity signals.
+- Replaced brittle sigmoid urgency with monotonic linear urgency gating, improving deadline pressure sensitivity and reducing overfitting.  
+- Introduced host-load–aware energy normalization via `(1 + host_load_sensitivity * uncertainty)`, directly modeling congestion-induced energy inflation without new inputs.  
+- Unified risk coupling into a single multiplicative `urgency × uncertainty` term activated only under joint deadline pressure and high uncertainty—cleaner, hierarchy-preserving, and empirically more robust.
+- Replace piecewise-linear urgency gate with sigmoid slack mapping (smoother gradient, better deadline sensitivity)  
+- Use log-normalized energy/duration ratio to compress dynamic range and prevent dominance by outliers  
+- Introduce anti-starvation term via inverse wait-time saturation (prioritizes fairness without sacrificing deadline urgency)
+- Replaces brittle IQR-only normalization with adaptive min-max fallback when dispersion is low, improving robustness to near-constant feature values.  
+- Uses smooth sigmoid urgency (vs. hard binary gate) for stable gradient-based optimization and better slack sensitivity near deadlines.  
+- Introduces multiplicative DDL-protection gating (slack < 0 ∧ uncertainty high), eliminating spurious amplification under safe conditions.
+- Replace hard `ddl_critical_mask` binary gating with smooth sigmoid urgency to improve deadline-feasibility gradient and reduce brittle threshold sensitivity.  
+- Introduce `successor_bottleneck_coupling` term (`duration * (remaining_work + upward_rank)`) to jointly prioritize tasks blocking critical-path successors under resource contention.  
+- Add conditional DDL-protection gate activated only when both slack is tight *and* uncertainty exceeds scenario-normalized threshold—validated by repeated cross-scenario counterfactual evidence.
+- Replace `remaining_work`-based bottleneck coupling with a bounded `(exec+comm) * upward_rank * (1 + sigmoid(slack))` interaction to amplify critical-path pressure under deadline stress.  
+- Introduce a conditional DDL-protection gate that multiplies urgency only when `slack < 0` AND `uncertainty > median(uncertainty)`, eliminating fragile percentile thresholds.  
+- Use log-clipped `ready_wait_time` (not arctan) with hard upper bound to ensure anti-starvation remains bounded and monotonic across queue lengths.

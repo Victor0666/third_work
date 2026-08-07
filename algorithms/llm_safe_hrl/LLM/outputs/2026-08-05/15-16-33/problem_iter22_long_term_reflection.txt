@@ -1,0 +1,5 @@
+- Enforce hard DDL guard (`+inf` priority for `slack < -eps`) as structural safety net.  
+- Unify bottleneck pressure as `(duration × upward_rank × remaining_work) × sigmoid(uncertainty)` with tunable IQR normalization.  
+- Gate urgency and bottleneck amplification by verified DDL risk—not just uncertainty—validated across ≥19 replay failures.  
+- Replace fairness with saturating inverse wait-time: `1.0 − tanh(ready_wait_time / wait_saturation_scale)`.  
+- Introduce energy-duration efficiency term: `min_incremental_energy / (min_exec_time + min_comm_time + eps)`.

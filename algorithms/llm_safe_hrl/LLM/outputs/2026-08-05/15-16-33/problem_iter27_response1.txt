@@ -1,0 +1,197 @@
+```python
+import numpy as np
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 1.2e-05,
+            "lower_bound": 1e-06,
+            "upper_bound": 0.1,
+            "semantic_description": "Numerical guard for stable normalization and division.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "ddl_protection_gate_threshold",
+            "initial_value": -0.15,
+            "lower_bound": -5.0,
+            "upper_bound": 0.0,
+            "semantic_description": "Slack threshold below which non-critical-path tasks are deprioritized via hard gate.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_duration_ratio_weight",
+            "initial_value": 1.4,
+            "lower_bound": 0.1,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight for energy-per-duration efficiency term.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "upward_rank_remaining_work_coupling",
+            "initial_value": 0.92,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Strength of multiplicative interaction between upward_rank and remaining_work for critical-path pressure.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "urgency_cap_exponent",
+            "initial_value": 0.78,
+            "lower_bound": 0.3,
+            "upper_bound": 1.2,
+            "semantic_description": "Exponent controlling slack-aware urgency cap tightness.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "successor_release_pressure_exponent",
+            "initial_value": 0.97,
+            "lower_bound": 0.5,
+            "upper_bound": 1.5,
+            "semantic_description": "Exponent for slack-normalized successor-release pressure: 1/(1 + |slack|)^exponent.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "wait_saturation_scale",
+            "initial_value": 2.1,
+            "lower_bound": 0.5,
+            "upper_bound": 10.0,
+            "semantic_description": "Scale denominator for ready_wait_time saturation.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "successor_bottleneck_coupling",
+            "initial_value": 0.49,
+            "lower_bound": 0.0,
+            "upper_bound": 1.5,
+            "semantic_description": "Strength of interaction between duration, remaining_work, and upward_rank for successor-release pressure.",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Self-evolved priority rule with one bounded structural improvement:
+      - Replaced all normalization with *pure median-based adaptive scaling* (no MAD/range fallback),
+        using fixed epsilon-guarded range only when N==1 to avoid degenerate variance — improves stability
+        under sparse or singleton ready sets while preserving monotonicity and interpretability.
+      - Restored wait_saturation_scale and successor_bottleneck_coupling as conditionally activated features,
+        gated by deadline pressure (slack < median_slack) to retain anti-starvation and bottleneck signals
+        only when needed — avoids spurious pressure in slack-rich regimes.
+      - Removed all inactive parameters (ddl_risk_amplification, bottleneck_uncertainty_amplification,
+        critical_path_violation_penalty) per reflection to reduce overfitting and sharpen signal fidelity.
+      - Simplified final score composition: removed redundant coupling terms and unified pressure activation.
+    """
+    eps = PARAMS["epsilon"]
+    N = len(slack)
+    
+    # Ensure float arrays without mutation
+    min_exec_time = np.asarray(min_exec_time, dtype=float)
+    min_comm_time = np.asarray(min_comm_time, dtype=float)
+    min_incremental_energy = np.asarray(min_incremental_energy, dtype=float)
+    slack = np.asarray(slack, dtype=float)
+    upward_rank = np.asarray(upward_rank, dtype=float)
+    remaining_work = np.asarray(remaining_work, dtype=float)
+    ready_wait_time = np.asarray(ready_wait_time, dtype=float)
+    uncertainty = np.asarray(uncertainty, dtype=float)
+    
+    # Pure median-based adaptive scaling: uses (x - median) / (IQR + eps) for N>2, 
+    # falls back to (x - median) / (max-min + eps) for N<=2 to avoid zero IQR; always bounded.
+    def median_adaptive_normalize(x):
+        x = np.copy(x)
+        if N == 0:
+            return np.zeros_like(x)
+        center = np.median(x)
+        if N <= 2:
+            denom = np.max(x) - np.min(x) + eps
+        else:
+            q75 = np.percentile(x, 75)
+            q25 = np.percentile(x, 25)
+            denom = q75 - q25 + eps
+        return (x - center) / denom
+    
+    # Dominant hard-deadline violation signal: raw negative slack (unnormalized, unbounded penalty)
+    neg_slack = np.clip(-slack, 0.0, None)
+    
+    # Median slack for relative pressure gating
+    median_slack = np.median(slack) if N > 0 else 0.0
+    deadline_pressure_mask = (slack < median_slack).astype(float)
+    
+    # Linear urgency: deficit from median slack, capped by slack-rich regime scale
+    urgency_linear = np.clip(median_slack - slack, 0.0, None)
+    max_non_neg_slack = np.max(np.clip(slack, 0.0, None)) if N > 0 else eps
+    urgency_cap = np.power(max_non_neg_slack + eps, PARAMS["urgency_cap_exponent"])
+    urgency_capped = np.minimum(urgency_linear, urgency_cap)
+    norm_urgency = median_adaptive_normalize(urgency_capped)
+    
+    # Energy efficiency: marginal energy per unit duration (J/s)
+    duration = np.maximum(min_exec_time + min_comm_time, eps)
+    energy_per_duration = min_incremental_energy / (duration + eps)
+    norm_energy_eff = median_adaptive_normalize(energy_per_duration)
+    
+    # Bottleneck pressure: duration × upward_rank × remaining_work × (1 + urgency_capped), conditionally activated
+    bottleneck_pressure = duration * upward_rank * remaining_work * (1.0 + urgency_capped + eps)
+    norm_bottleneck = median_adaptive_normalize(bottleneck_pressure) * deadline_pressure_mask
+    
+    # Successor-release pressure: upward_rank × remaining_work × decay factor based on |slack|
+    slack_abs = np.abs(slack) + eps
+    release_decay = np.power(1.0 + slack_abs, -PARAMS["successor_release_pressure_exponent"])
+    successor_release_pressure = upward_rank * remaining_work * release_decay
+    norm_successor_release = median_adaptive_normalize(successor_release_pressure) * deadline_pressure_mask
+    
+    # Bounded sigmoid wait saturation: smooth anti-starvation boost, conditionally activated
+    wait_scaled = ready_wait_time / (PARAMS["wait_saturation_scale"] + eps)
+    wait_clipped = np.clip(wait_scaled, -2.0, 2.0)
+    wait_saturation = 1.0 / (1.0 + np.exp(-wait_clipped))
+    norm_wait = median_adaptive_normalize(wait_saturation) * deadline_pressure_mask
+    
+    # Critical-path coupling: pure structural importance
+    cp_coupling = upward_rank * remaining_work
+    norm_cp_coupling = median_adaptive_normalize(cp_coupling)
+    
+    # Hard DDL protection gate: suppress non-critical-path tasks when slack is critically negative
+    median_upward_rank = np.median(upward_rank) if N > 0 else 0.0
+    critical_path_gate = np.where(
+        (slack < PARAMS["ddl_protection_gate_threshold"]) & (upward_rank < median_upward_rank),
+        0.0,
+        1.0
+    )
+    
+    # Final score: smaller = higher priority
+    # Ordering: hard DDL violation > urgency > (conditional) successor-release > (conditional) bottleneck > 
+    #           energy > (conditional) wait boost > CP coupling
+    score = (
+        neg_slack
+        + norm_urgency
+        + PARAMS["successor_bottleneck_coupling"] * norm_successor_release
+        + PARAMS["successor_bottleneck_coupling"] * norm_bottleneck
+        + PARAMS["energy_duration_ratio_weight"] * norm_energy_eff
+        - norm_wait
+        + PARAMS["upward_rank_remaining_work_coupling"] * norm_cp_coupling
+        + (1.0 - critical_path_gate) * 1e6  # Fixed hard penalty (not tunable) for clarity and stability
+    )
+    
+    # Enforce finiteness
+    finfo = np.finfo(float)
+    score = np.nan_to_num(score, nan=0.0, posinf=finfo.max, neginf=finfo.min)
+    
+    return score.astype(float, copy=False)
+```

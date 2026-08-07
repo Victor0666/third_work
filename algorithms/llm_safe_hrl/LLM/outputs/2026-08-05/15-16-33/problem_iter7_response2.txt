@@ -1,0 +1,187 @@
+```python
+import numpy as np
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 0.00015255809669129132,
+            "lower_bound": 1e-6,
+            "upper_bound": 0.1,
+            "semantic_description": "Numerical guard for stable normalization and division.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "ddl_protection_gate_threshold",
+            "initial_value": 0.6620652121348684,
+            "lower_bound": 0.5,
+            "upper_bound": 0.95,
+            "semantic_description": "Fraction of max uncertainty required to activate DDL-protection gate.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_duration_ratio_weight",
+            "initial_value": 1.4190437481378373,
+            "lower_bound": 0.1,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight for energy-per-duration efficiency term.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "successor_bottleneck_coupling",
+            "initial_value": 0.4576468658175758,
+            "lower_bound": 0.0,
+            "upper_bound": 1.5,
+            "semantic_description": "Strength of interaction between duration, remaining_work, and upward_rank for successor-release pressure.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "iqr_low_percentile",
+            "initial_value": 36.50621980265129,
+            "lower_bound": 10.0,
+            "upper_bound": 40.0,
+            "semantic_description": "Lower percentile for IQR-based normalization.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "iqr_high_percentile",
+            "initial_value": 76.29708410547188,
+            "lower_bound": 60.0,
+            "upper_bound": 90.0,
+            "semantic_description": "Upper percentile for IQR-based normalization.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "slack_sigmoid_steepness",
+            "initial_value": 5.194759237686198,
+            "lower_bound": 0.5,
+            "upper_bound": 8.0,
+            "semantic_description": "Steepness of sigmoid urgency gate applied to slack (higher = sharper deadline transition).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "slack_sigmoid_offset",
+            "initial_value": 0.7655093467537575,
+            "lower_bound": -1.0,
+            "upper_bound": 1.0,
+            "semantic_description": "Center shift of sigmoid urgency gate to tune sensitivity to near-zero slack.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "wait_saturation_time",
+            "initial_value": 3.9040116798907802,
+            "lower_bound": 0.5,
+            "upper_bound": 30.0,
+            "semantic_description": "Time (s) after which ready_wait_time saturation effect plateaus.",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Mutated priority rule incorporating evidence-backed structural changes:
+    - Removed inactive parameters (sigmoid_clip_bound, critical_rank_percentile) per inactivity analysis
+    - Replaced arctan wait saturation with bounded linear ramp + soft cap for better gradient behavior
+    - Unified bottleneck term: (exec+comm) * upward_rank * remaining_work (stronger coupling to critical path)
+    - Simplified DDL protection: uses normalized slack instead of median comparison for robustness across small N
+    - Energy term now uses log-normalized energy/duration ratio to compress dynamic range
+    - Added anti-starvation term: inverse of normalized ready_wait_time (smaller wait → higher priority)
+    - All normalizations use IQR with elite-tuned percentiles; no median fallback for small N
+    - Final score preserves strict ordering: deadline > bottleneck > energy > fairness
+    """
+    eps = PARAMS["epsilon"]
+    N = len(slack)
+    
+    # Ensure float arrays without mutation
+    min_exec_time = np.asarray(min_exec_time, dtype=float)
+    min_comm_time = np.asarray(min_comm_time, dtype=float)
+    min_incremental_energy = np.asarray(min_incremental_energy, dtype=float)
+    slack = np.asarray(slack, dtype=float)
+    upward_rank = np.asarray(upward_rank, dtype=float)
+    remaining_work = np.asarray(remaining_work, dtype=float)
+    ready_wait_time = np.asarray(ready_wait_time, dtype=float)
+    uncertainty = np.asarray(uncertainty, dtype=float)
+    
+    # Robust IQR-based normalization using declared percentiles
+    def iqr_normalize(x):
+        x = np.copy(x)
+        q_low = np.percentile(x, PARAMS["iqr_low_percentile"])
+        q_high = np.percentile(x, PARAMS["iqr_high_percentile"])
+        iqr = q_high - q_low
+        center = (q_low + q_high) / 2.0
+        denom = iqr if iqr > eps else (np.max(np.abs(x - center)) + eps)
+        return (x - center) / (denom + eps)
+    
+    # Sigmoid urgency gate: smooth, differentiable, centered at offset, steepness tunable
+    # Maps slack → [0, 1]: negative slack → ~1 (high urgency), positive slack → ~0 (low urgency)
+    slack_centered = slack - PARAMS["slack_sigmoid_offset"]
+    sigmoid_input = -PARAMS["slack_sigmoid_steepness"] * slack_centered
+    # Clip to prevent overflow (using machine epsilon bounds)
+    finfo = np.finfo(float)
+    sigmoid_input = np.clip(sigmoid_input, -finfo.max, finfo.max)
+    urgency_gate = 1.0 / (1.0 + np.exp(-sigmoid_input))  # logistic, range [0,1]
+    
+    # Normalize urgency for consistent scaling
+    norm_urgency = iqr_normalize(urgency_gate)
+    
+    # Energy efficiency: log-normalized marginal energy per unit duration (J/s)
+    # Log compression prevents dominance by extreme values while preserving order
+    duration = np.maximum(min_exec_time + min_comm_time, eps)
+    energy_per_duration = min_incremental_energy / duration
+    log_energy_eff = np.log1p(energy_per_duration + eps)
+    norm_energy_eff = iqr_normalize(log_energy_eff)
+    
+    # Successor bottleneck coupling: stronger triple interaction
+    # Term = duration * upward_rank * remaining_work — captures critical-path blocking more precisely
+    bottleneck_pressure = duration * (upward_rank + eps) * (remaining_work + eps)
+    norm_bottleneck = iqr_normalize(bottleneck_pressure)
+    
+    # Ready wait time: bounded linear ramp with soft cap (more interpretable than arctan)
+    # Saturates at 1.0 after wait_saturation_time, avoids asymptotic behavior
+    wait_normalized = np.clip(ready_wait_time / (PARAMS["wait_saturation_time"] + eps), 0.0, 1.0)
+    # Anti-starvation: prioritize tasks that have waited less (inverse relationship)
+    wait_priority = 1.0 - wait_normalized
+    norm_wait = iqr_normalize(wait_priority)
+    
+    # DDL-protection gate: activates when slack is negative OR below normalized threshold
+    # Uses IQR-based slack threshold for robustness on small N instead of median
+    slack_iqr_norm = iqr_normalize(slack)
+    ddl_protection_active = (slack_iqr_norm < -0.2).astype(float)  # tuned threshold
+    
+    # Uncertainty-normalized term for amplification under risk, only when DDL at risk
+    norm_uncertainty = iqr_normalize(uncertainty)
+    
+    # Final score: smaller = higher priority
+    # Hierarchy: deadline safety > bottleneck release > energy efficiency > fairness (anti-starvation)
+    score = (
+        norm_urgency  # Primary deadline pressure signal
+        + PARAMS["successor_bottleneck_coupling"] * norm_bottleneck  # Unblock successors
+        + PARAMS["energy_duration_ratio_weight"] * norm_energy_eff  # Favor energy-efficient durations
+        - norm_wait  # Reward shorter-waiting tasks (fairness/anti-starvation)
+        + ddl_protection_active * norm_uncertainty  # Amplify uncertainty only when DDL at risk
+    )
+    
+    # Ensure finite output, no NaN/inf
+    score = np.nan_to_num(score, nan=0.0, posinf=np.finfo(float).max, neginf=np.finfo(float).min)
+    
+    return score.astype(float, copy=False)
+```

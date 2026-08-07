@@ -1,0 +1,189 @@
+```python
+import numpy as np
+
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 0.001,
+            "lower_bound": 1e-6,
+            "upper_bound": 0.1,
+            "semantic_description": "Numerical guard for stable normalization and division.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "slack_penalty_exponent",
+            "initial_value": 2.0,
+            "lower_bound": 1.0,
+            "upper_bound": 4.0,
+            "semantic_description": "Exponent for nonlinear penalty on negative slack (risk of deadline violation).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "criticality_boost",
+            "initial_value": 1.5,
+            "lower_bound": 0.5,
+            "upper_bound": 3.0,
+            "semantic_description": "Multiplier amplifying priority when upward_rank is above median and slack is tight.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_efficiency_scale",
+            "initial_value": 0.7,
+            "lower_bound": 0.1,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight scaling normalized marginal energy to balance against deadline pressure.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "duration_uncertainty_coupling",
+            "initial_value": 0.6,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Strength of interaction between normalized duration and uncertainty.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "wait_saturation_threshold",
+            "initial_value": 5.0,
+            "lower_bound": 0.1,
+            "upper_bound": 20.0,
+            "semantic_description": "Ready wait time (s) beyond which starvation mitigation saturates.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "uncertainty_slack_gate",
+            "initial_value": 0.8,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Modulates how strongly uncertainty amplifies slack-based risk penalty.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "rank_normalization_offset",
+            "initial_value": 0.1,
+            "lower_bound": 0.0,
+            "upper_bound": 0.5,
+            "semantic_description": "Small offset to prevent rank dominance when upward_rank is near zero.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "quantile_low",
+            "initial_value": 0.25,
+            "lower_bound": 0.01,
+            "upper_bound": 0.49,
+            "semantic_description": "Lower quantile for robust IQR-based normalization.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "quantile_high",
+            "initial_value": 0.75,
+            "lower_bound": 0.51,
+            "upper_bound": 0.99,
+            "semantic_description": "Upper quantile for robust IQR-based normalization.",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Corrected priority rule with all numeric constants declared in PARAMETER_SCHEMA.
+    
+    Replaces hardcoded 0.25/0.75 quantiles with tunable parameters.
+    All other numeric literals are now restricted to {-2, -1, 0, 1, 2}.
+    Uses np.finfo for immutable safeguards instead of hidden epsilons.
+    """
+    eps = PARAMS["epsilon"]
+    finfo = np.finfo(float)
+    eps_safe = max(eps, finfo.tiny)
+
+    # Robust normalization: use tunable quantiles
+    def robust_normalize(x):
+        x = np.asarray(x, dtype=float)
+        q1 = np.quantile(x, PARAMS["quantile_low"])
+        q3 = np.quantile(x, PARAMS["quantile_high"])
+        iqr = q3 - q1
+        center = np.median(x)
+        scale = iqr if iqr > eps_safe else eps_safe
+        return (x - center) / scale
+
+    # Duration: exec + comm, normalized robustly
+    duration = min_exec_time + min_comm_time
+    norm_duration = robust_normalize(duration)
+
+    # Slack: signed, asymmetric penalty — convex for negative, linear for positive
+    slack_penalty = np.where(
+        slack < 0,
+        -np.abs(slack) ** PARAMS["slack_penalty_exponent"],
+        slack
+    )
+    norm_slack = robust_normalize(slack_penalty)
+
+    # Upward rank: normalized with small offset
+    norm_rank = robust_normalize(upward_rank + PARAMS["rank_normalization_offset"])
+
+    # Criticality gate: only activates boost when both rank is high *and* slack is tight (< median slack)
+    median_slack = np.median(slack)
+    is_critical_and_at_risk = (
+        (upward_rank > np.median(upward_rank)) &
+        (slack < median_slack)
+    ).astype(float)
+    criticality_boost = is_critical_and_at_risk * PARAMS["criticality_boost"]
+
+    # Energy: normalized marginal fuzzy energy — lower energy → better → subtract
+    norm_energy = robust_normalize(min_incremental_energy)
+
+    # Uncertainty-duration coupling: penalize long + uncertain tasks
+    coupled_uncertainty = np.clip(
+        norm_duration * uncertainty * PARAMS["duration_uncertainty_coupling"],
+        -2.0, 2.0
+    )
+
+    # Ready wait time: smooth saturation via arctan (bounded, monotonic, differentiable)
+    wait_scaled = ready_wait_time / (PARAMS["wait_saturation_threshold"] + eps_safe)
+    norm_wait = (2.0 / np.pi) * np.arctan(wait_scaled)  # maps [0,∞) → [0,1]
+
+    # Uncertainty-slack interaction: amplify slack penalty under high uncertainty
+    slack_uncertainty_amplifier = np.where(
+        slack < 0,
+        uncertainty * PARAMS["uncertainty_slack_gate"],
+        0.0
+    )
+    norm_slack_uncertainty = robust_normalize(slack_uncertainty_amplifier)
+
+    # Final score: smaller = higher priority
+    score = (
+        norm_slack
+        + norm_slack_uncertainty
+        + criticality_boost * norm_rank
+        - PARAMS["energy_efficiency_scale"] * norm_energy
+        + coupled_uncertainty
+        - norm_wait
+    )
+
+    # Ensure finite output and shape compliance
+    score = np.nan_to_num(score, nan=0.0, posinf=finfo.max, neginf=finfo.min)
+    return score.astype(float, copy=False)
+```

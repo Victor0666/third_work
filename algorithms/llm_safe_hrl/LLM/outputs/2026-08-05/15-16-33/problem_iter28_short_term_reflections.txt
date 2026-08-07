@@ -1,0 +1,18 @@
+- Replace adaptive normalization with robust rank-based normalization (as in v2) to improve generalization under skewed distributions.  
+- Introduce scenario-aware activation gates for energy and bottleneck terms using `slack_sensitivity_threshold` and `uncertainty_activation_threshold`.  
+- Remove inactive parameters (`ddl_protection_gate_threshold`, `critical_path_violation_penalty`, `urgency_cap_exponent`) to reduce overfitting and improve CMA-ES convergence.
+- Hard DDL protection gate: suppresses non-critical-path tasks under critical slack (evidence: repeated `COUNTERFACTUAL_DOMINATED_CHOICE` + `cross_generation_evidence.stable_signals` support across 23+ states).  
+- Conditional activation of bottleneck & successor-release pressure only when `slack < median_slack`: avoids spurious urgency inflation in safe regimes (evidence: high-confidence `add_conditional_ddl_protection_gate` + `add_successor_release_interaction` co-occurring in 23 decision IDs).  
+- Simplified adaptive normalization using fixed-range fallback (no MAD/uncertainty dependency): improves generalization and eliminates fragile risk-context coupling (evidence: `critical_state_replay_feedback` shows reduced `CRITICAL_PATH_STARVATION` failures after removal of uncertainty-slack coupling).
+- Replace adaptive min-max normalization with robust MAD-based normalization to improve stability under small-N or outlier-prone ready sets.  
+- Introduce conditional critical-path coupling—activate `upward_rank × remaining_work` only when `slack ≤ median_slack`—to avoid over-prioritizing non-urgent bottlenecks.  
+- Use power-law wait decay (`(wait_ratio)^p`) instead of linear/tanh fairness to smoothly boost long-waiting tasks without premature saturation.
+- Hard deadline guard with finite `ddl_hard_guard_weight` enforces strict feasibility before optimization, reducing lateness from 8.83s to 0.45s.  
+- Uncertainty-gated terms (`uncertainty_activation_threshold`, `uncertainty_sigmoid_steepness`) activate only under risk, improving robustness without over-penalizing.  
+- Rank-based normalization replaces MAD/mean-centering, enhancing discriminability for small-N ready sets and avoiding outlier sensitivity.
+- Replaces unbounded wait-time saturation with bounded linear wait boost, reducing starvation without over-prioritizing aged tasks.  
+- Introduces conditional DDL risk gate (`slack < threshold × median_slack`) to activate urgency only under tight deadlines, improving feasibility focus.  
+- Adds explicit `upward_rank × remaining_work` interaction gated by DDL risk, strengthening critical-path pressure where it matters most.
+- Replace multiplicative joint-risk couplings (e.g., `norm_neg_slack * norm_uncertainty`) with additive, conditionally gated terms to eliminate fragile interactions and restore signal clarity.  
+- Introduce a hard-deadline protection gate: activate `upward_rank × remaining_work` only when `slack ≤ median_slack ∧ uncertainty > threshold`, per cross-generation replay evidence of successor-release blocking.  
+- Use pre-normalized `neg_slack` as dominant additive term—preserves feasibility-first ranking without distortion from normalization or amplification artifacts.

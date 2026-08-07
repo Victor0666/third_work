@@ -1,28 +1,23 @@
 import numpy as np
+RULE_METADATA = {'structure_hash': '4a920ef274262d34ed0b5e1ce687a553a96dd5bd4745bdb1e37dc0b0e2de7c63', 'parameter_schema_hash': '2fdbb35ef5c020f90b0ba6418cb01db70a2dece0145e4ce64b23b9bcc410375a', 'best_parameter_hash': '56aec8eb729861dc4b39f445bf9a73ad9a318b2cf8fe15f00290e33c30717338', 'best_parameters': {'epsilon': 0.0006857670771070205, 'ddl_protection_gate_threshold': 0.6317307251383608, 'successor_bottleneck_coupling': 0.12432104542176146, 'iqr_low_percentile': 39.56821103767055, 'iqr_high_percentile': 72.38967627234202, 'wait_boost_under_ddl_risk': 0.0006968782233498802, 'critical_rank_activation_threshold': 0.7787320299225031, 'energy_uncertainty_coupling': 0.933093732318587}, 'optimizer_config_hash': '087d89d0b2174a4ef39ab75b5292a4f2a6641d337c4dd6a2bb86ea7b8b713284', 'parameter_diagnostics_hash': '83ea9bd013a8f7c3da874c085f91813a148afa7472011a59cb92cedf7b140426', 'optimizer_seed': 0, 'training_seeds': [0, 1, 2], 'validation_seeds': [3, 4]}
 
-def get_task_priority_v2(
-    min_exec_time,
-    min_comm_time,
-    min_incremental_energy,
-    slack,
-    upward_rank,
-    remaining_work,
-    ready_wait_time,
-    uncertainty
-):
-    """
-    Self-evolved priority rule v2: Deadline-robust critical-path leverage + adaptive risk-energy coupling + starvation-aware fairness.
+def get_task_priority_v2(min_exec_time, min_comm_time, min_incremental_energy, slack, upward_rank, remaining_work, ready_wait_time, uncertainty):
+    """Improved priority rule combining strengths from both parents:
     
-    Key integrations & improvements:
-    - Combines Parent 2's robust trimmed-mean centrality and slack-aware energy scaling with Parent 1's monotonic deadline penalty and critical-path leverage ratio.
-    - Replaces sigmoid urgency with strictly monotonic linear urgency (Parent 1) for ordering stability, but retains Parent 2's trimmed-mean normalization for robustness.
-    - Uses critical-path leverage = upward_rank / (remaining_work + eps) as primary CP importance metric (Parent 1), scaled by lateness pressure (Parent 2).
-    - Introduces *risk-weighted energy efficiency*: min_incremental_energy / (task_duration * (1 + uncertainty)) — directly penalizes high-uncertainty high-energy tasks.
-    - Fairness via *adaptive wait boost*: activated only when task is both non-urgent (slack >= 0) AND wait_per_work > median + 1.5*MAD (more robust than std).
-    - All normalizations use bounded robust_minmax with trimming; all divisions guarded; NaN/inf handled deterministically.
-    - Final score is convex combination of interpretable, monotonic, deadline-respecting components.
+    Key structural improvements:
+      - Retains Parent 2's unified bottleneck (duration+comm)*upward_rank*(1+urgency)*(1+uncertainty)*(energy+eps)
+        but adds explicit energy-uncertainty coupling via tunable multiplier, decoupling it from bottleneck scaling.
+      - Introduces critical-path bonus (from Parent 1) activated only above percentile threshold on normalized upward_rank,
+        applied additively to urgency signal — preserves deadline primacy while boosting top-critical tasks.
+      - Replaces Parent 2's slack-median-based DDL gate with robust joint condition: (slack < median_slack) AND
+        (uncertainty > threshold * max_uncertainty), avoiding sensitivity to zero/median artifacts.
+      - Uses clipped tanh urgency [0,1] (Parent 2) but computes scale as median(|slack| + eps) for stability.
+      - Anti-starvation uses normalized wait time boosted under DDL risk, same as Parent 2.
+      - All normalizations use adaptive IQR with tunable percentiles; no fallbacks or clipping beyond bounds.
+      - Critical bonus subtracted (since lower score = higher priority) to directly elevate critical tasks.
     """
-    eps = 1e-08
+    eps = 0.0006857670771070205
+    N = len(slack)
     min_exec_time = np.asarray(min_exec_time, dtype=float)
     min_comm_time = np.asarray(min_comm_time, dtype=float)
     min_incremental_energy = np.asarray(min_incremental_energy, dtype=float)
@@ -31,66 +26,40 @@ def get_task_priority_v2(
     remaining_work = np.asarray(remaining_work, dtype=float)
     ready_wait_time = np.asarray(ready_wait_time, dtype=float)
     uncertainty = np.asarray(uncertainty, dtype=float)
-    N = len(min_exec_time)
-    if N == 0:
-        return np.array([], dtype=float)
-    
-    def robust_minmax(x):
-        if x.size == 0:
-            return np.zeros_like(x)
-        x_sorted = np.sort(x)
-        trim_n = max(1, int(0.1 * len(x_sorted)))
-        x_trimmed = x_sorted[trim_n:-trim_n] if len(x_sorted) > 2 * trim_n else x_sorted
-        x_min, x_max = np.min(x_trimmed), np.max(x_trimmed)
-        rng = x_max - x_min + eps
-        return np.clip((x - x_min) / rng, 0.0, 1.0)
-    
-    def robust_mad(x):
-        if x.size == 0:
-            return eps
-        med = np.median(x)
-        abs_dev = np.abs(x - med)
-        mad = np.median(abs_dev)
-        return mad if mad > eps else np.mean(abs_dev) + eps
-    
-    # Core metrics
-    task_duration = min_exec_time + min_comm_time + eps
-    neg_slack = np.maximum(-slack, 0.0)
-    uncertainty_factor = 1.0 + 0.8 * np.clip(uncertainty, 0.0, 3.0)
-    deadline_penalty = neg_slack * uncertainty_factor  # monotonic, Parent 1 style
-    
-    # Critical-path leverage: impact per unit work (Parent 1), scaled by lateness pressure (Parent 2)
-    cp_leverage = upward_rank / (remaining_work + eps)
-    cp_leverage_pressure = cp_leverage * (1.0 + np.clip(neg_slack / (np.median(task_duration) + eps), 0.0, 3.0))
-    
-    # Risk-weighted energy efficiency: lower is better; penalized by duration & uncertainty
-    energy_efficiency = min_incremental_energy / (task_duration * (1.0 + np.clip(uncertainty, 0.0, 2.0)) + eps)
-    
-    # Starvation fairness: only for non-urgent tasks, using MAD-based robust z-score
-    wait_per_work = ready_wait_time / (remaining_work + eps)
-    wait_median = np.median(wait_per_work)
-    wait_mad = robust_mad(wait_per_work)
-    wait_z_threshold = wait_median + 1.5 * wait_mad
-    is_starvable = (slack >= 0.0) & (wait_per_work > wait_z_threshold)
-    starvation_boost = np.where(is_starvable, ready_wait_time, 0.0)
-    
-    # Normalize components
-    norm_deadline = robust_minmax(deadline_penalty)
-    norm_cp = robust_minmax(cp_leverage_pressure)
-    norm_energy = robust_minmax(energy_efficiency)
-    norm_starvation = robust_minmax(starvation_boost)
-    
-    # Final convex combination: prioritize deadline compliance first, then CP impact, then energy, then fairness
-    # Coefficients sum to 1.0 and reflect objective hierarchy: DDL hard constraint > critical path > energy > fairness
-    score = (
-        0.48 * norm_deadline + 
-        0.22 * (1.0 - norm_cp) +  # higher cp_leverage_pressure → lower score (priority)
-        0.18 * norm_energy + 
-        0.12 * norm_starvation
-    )
-    
-    # Ensure finite output and correct shape
-    score = np.nan_to_num(score, nan=1e12, posinf=1e12, neginf=-1e12)
-    score = np.clip(score, -1e12, 1e12)
-    assert score.shape == (N,), f'Expected shape (N,)={N}, got {score.shape}'
-    return score
+
+    def adaptive_normalize(x):
+        x = np.copy(x)
+        q_low = np.percentile(x, 39.56821103767055)
+        q_high = np.percentile(x, 72.38967627234202)
+        iqr = q_high - q_low + eps
+        center = np.median(x)
+        return (x - center) / (iqr + eps)
+    abs_slack = np.abs(slack)
+    scale = np.median(abs_slack) + eps
+    tanh_urgency = np.tanh(-slack / scale)
+    urgency = np.clip((tanh_urgency + 1.0) / 2.0, 0.0, 1.0)
+    norm_urgency = adaptive_normalize(urgency)
+    norm_rank = adaptive_normalize(upward_rank)
+    if N == 1:
+        rank_percentile = np.array([1.0])
+    else:
+        sorted_norm_ranks = np.sort(norm_rank)
+        rank_idx = np.searchsorted(sorted_norm_ranks, norm_rank, side='right')
+        rank_percentile = rank_idx / (N + eps)
+    critical_gate = np.where(rank_percentile >= 0.7787320299225031, 1.0, 0.0)
+    critical_bonus = critical_gate * norm_rank
+    duration = min_exec_time + min_comm_time
+    coupled_energy = min_incremental_energy * (1.0 + 0.933093732318587 * uncertainty + eps)
+    bottleneck_pressure = duration * upward_rank * (1.0 + urgency) * (1.0 + uncertainty) * (coupled_energy + eps)
+    norm_bottleneck = adaptive_normalize(bottleneck_pressure)
+    norm_wait = adaptive_normalize(ready_wait_time)
+    slack_penalty_mask = (slack < 0.0).astype(float)
+    boosted_wait = norm_wait * (1.0 + slack_penalty_mask * 0.0006968782233498802)
+    max_uncertainty = np.max(uncertainty) if N > 0 else eps
+    median_slack = np.median(slack)
+    ddl_risk_gate = ((slack < median_slack) & (uncertainty > 0.6317307251383608 * max_uncertainty)).astype(float)
+    ddl_risk_amplification = ddl_risk_gate * norm_rank
+    score = norm_urgency - critical_bonus + 0.12432104542176146 * norm_bottleneck + ddl_risk_amplification - boosted_wait
+    finfo = np.finfo(float)
+    score = np.nan_to_num(score, nan=0.0, posinf=finfo.max, neginf=finfo.min)
+    return score.astype(float, copy=False)
