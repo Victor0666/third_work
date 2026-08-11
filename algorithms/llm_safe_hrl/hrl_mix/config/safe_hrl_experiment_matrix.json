@@ -240,6 +240,27 @@
         "uncertainty"
       ],
       "llm_rule_outputs": ["ready_task_priority_scores"]
+    },
+    "fuzzy_irws": {
+      "manager_inputs": ["eight_ready_task_features"],
+      "host_inputs": [],
+      "vm_inputs": ["global_vm_observation", "legal_vm_mask"],
+      "llm_rule_inputs": [],
+      "llm_rule_outputs": []
+    },
+    "fuzzy_marl": {
+      "manager_inputs": [],
+      "host_inputs": ["legacy_host_observation", "legal_host_mask"],
+      "vm_inputs": ["legacy_local_vm_observation", "legal_vm_mask"],
+      "llm_rule_inputs": [],
+      "llm_rule_outputs": []
+    },
+    "fuzzy_pd3qn": {
+      "manager_inputs": [],
+      "host_inputs": [],
+      "vm_inputs": ["global_vm_observation", "legal_vm_mask"],
+      "llm_rule_inputs": [],
+      "llm_rule_outputs": []
     }
   },
   "methods": [
@@ -458,6 +479,99 @@
         "llm_demonstration_pretraining": false,
         "training_seed_mode": "not_applicable",
         "information_contract_id": "traditional_heuristic_only"
+      }
+    },
+    {
+      "method_id": "fuzzy_irws",
+      "description": "IRWS learns ready-task ranking and a masked PPO global VM policy under the shared fuzzy protocol.",
+      "execution_adapter": "fuzzy_irws_runner",
+      "components": {
+        "policy_family": "irws",
+        "manager_policy": "trainable_task_ranker",
+        "manager_observation": "eight_ready_task_features",
+        "task_ordering": "learned_irws_ranking",
+        "heuristic_candidate_set": "not_applicable",
+        "fixed_heuristic_id": null,
+        "llm_enabled": false,
+        "llm_rule_mode": "none",
+        "llm_host_vm_access": false,
+        "host_policy": "implicit_in_global_vm_action",
+        "vm_policy": "masked_ppo",
+        "safe_rl": false,
+        "safety_cost_recording": false,
+        "safety_value_network": false,
+        "safety_shield": false,
+        "task_level_safety_deadline": false,
+        "fallback_controller": false,
+        "empty_safe_action_behavior": "hard_legal_vm_mask",
+        "lagrange_mode": "none",
+        "lambda_value": null,
+        "demonstration_pretraining": false,
+        "llm_demonstration_pretraining": false,
+        "training_seed_mode": "multi_seed",
+        "information_contract_id": "fuzzy_irws"
+      }
+    },
+    {
+      "method_id": "fuzzy_marl",
+      "description": "MARL uses FCFS task order, a global Host A2C policy and a shared VM actor with Host-specific critics.",
+      "execution_adapter": "fuzzy_marl_runner",
+      "components": {
+        "policy_family": "marl",
+        "manager_policy": "fixed_fcfs",
+        "manager_observation": "not_applicable",
+        "task_ordering": "fixed_fcfs",
+        "heuristic_candidate_set": "FCFS",
+        "fixed_heuristic_id": "traditional_fcfs",
+        "llm_enabled": false,
+        "llm_rule_mode": "none",
+        "llm_host_vm_access": false,
+        "host_policy": "global_masked_a2c",
+        "vm_policy": "shared_actor_host_specific_critic_a2c",
+        "safe_rl": false,
+        "safety_cost_recording": false,
+        "safety_value_network": false,
+        "safety_shield": false,
+        "task_level_safety_deadline": false,
+        "fallback_controller": false,
+        "empty_safe_action_behavior": "hard_legal_host_vm_masks",
+        "lagrange_mode": "none",
+        "lambda_value": null,
+        "demonstration_pretraining": false,
+        "llm_demonstration_pretraining": false,
+        "training_seed_mode": "multi_seed",
+        "information_contract_id": "fuzzy_marl"
+      }
+    },
+    {
+      "method_id": "fuzzy_pd3qn",
+      "description": "PD3QN uses FCFS task order and the existing Double-Dueling DQN with prioritized replay for global VM selection.",
+      "execution_adapter": "fuzzy_pd3qn_runner",
+      "components": {
+        "policy_family": "pd3qn",
+        "manager_policy": "fixed_fcfs",
+        "manager_observation": "not_applicable",
+        "task_ordering": "fixed_fcfs",
+        "heuristic_candidate_set": "FCFS",
+        "fixed_heuristic_id": "traditional_fcfs",
+        "llm_enabled": false,
+        "llm_rule_mode": "none",
+        "llm_host_vm_access": false,
+        "host_policy": "implicit_in_global_vm_action",
+        "vm_policy": "per_double_dueling_dqn",
+        "safe_rl": false,
+        "safety_cost_recording": false,
+        "safety_value_network": false,
+        "safety_shield": false,
+        "task_level_safety_deadline": false,
+        "fallback_controller": false,
+        "empty_safe_action_behavior": "hard_legal_vm_mask",
+        "lagrange_mode": "none",
+        "lambda_value": null,
+        "demonstration_pretraining": false,
+        "llm_demonstration_pretraining": false,
+        "training_seed_mode": "multi_seed",
+        "information_contract_id": "fuzzy_pd3qn"
       }
     }
   ],

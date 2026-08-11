@@ -30,6 +30,9 @@ EXPERIMENT_MATRIX_SCHEMA_VERSION = 1
 EXPERIMENT_MANIFEST_SCHEMA_VERSION = 1
 
 REQUIRED_METHOD_IDS = (
+    'fuzzy_irws',
+    'fuzzy_marl',
+    'fuzzy_pd3qn',
     "original_hrl",
     "original_hrl_plus_llm",
     "safe_hrl_without_llm",
@@ -130,6 +133,9 @@ COMPONENT_KEYS = frozenset(
 # manifest marks them fail-closed until a dedicated adapter is implemented.
 IMPLEMENTED_EXECUTION_ADAPTERS = frozenset(
     {
+        'fuzzy_irws_runner',
+        'fuzzy_marl_runner',
+        'fuzzy_pd3qn_runner',
         "original_hrl_train_runner",
         "safe_hrl_train_runner",
     }

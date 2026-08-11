@@ -80,7 +80,7 @@ class ExperimentMatrixTests(unittest.TestCase):
 
     def test_all_runs_share_fixtures_evaluation_and_metrics(self):
         manifest = build_experiment_manifest(CONFIG)
-        self.assertEqual(len(manifest["runs"]), 14)
+        self.assertEqual(len(manifest["runs"]), 17)
         self.assertEqual(
             manifest["generator"]["module"],
             "hrl_mix.experiment_matrix",
@@ -208,6 +208,9 @@ class ExperimentMatrixTests(unittest.TestCase):
             [],
         )
         self.assertTrue(runs["original_hrl"]["execution_ready"])
+        self.assertTrue(runs["fuzzy_irws"]["execution_ready"])
+        self.assertTrue(runs["fuzzy_marl"]["execution_ready"])
+        self.assertTrue(runs["fuzzy_pd3qn"]["execution_ready"])
         self.assertFalse(
             runs["safe_hrl_without_llm"]["execution_ready"]
         )

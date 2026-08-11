@@ -1,0 +1,158 @@
+"""Command-line entry point for fuzzy IRWS, MARL and PD3QN baselines."""
+
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+from typing import Any
+
+from algorithms.comparisons.fuzzy_common.evaluation import make_environment
+from algorithms.comparisons.fuzzy_common.protocol import (
+    FuzzyComparisonProtocol,
+    load_protocol_config,
+    protocol_from_config,
+)
+from algorithms.comparisons.fuzzy_common.training import train_baseline
+from algorithms.comparisons.irws import IRWSPolicy
+from algorithms.comparisons.marl import MARLPolicy
+from algorithms.comparisons.pd3qn import PD3QNPolicy
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_CONFIG = (
+    Path(__file__).resolve().parent / "config" / "fuzzy_baselines.json"
+)
+
+
+def _policy(
+    method: str,
+    env,
+    device: str,
+    method_config: dict[str, Any] | None = None,
+):
+    factories = {
+        "irws": IRWSPolicy,
+        "marl": MARLPolicy,
+        "pd3qn": PD3QNPolicy,
+    }
+    key = str(method).strip().lower()
+    if key not in factories:
+        raise ValueError("method must be irws, marl or pd3qn")
+    return factories[key](
+        env,
+        device=device,
+        **dict(method_config or {}),
+    )
+
+
+def _smoke_protocol(
+    protocol: FuzzyComparisonProtocol,
+    smoke: dict[str, Any],
+) -> FuzzyComparisonProtocol:
+    return FuzzyComparisonProtocol(
+        scenario=protocol.scenario,
+        ddl_setting=protocol.ddl_setting,
+        train_seeds=tuple(smoke.get("train_seeds", (1,))),
+        validation_seeds=tuple(smoke.get("validation_seeds", (101,))),
+        test_seeds=tuple(smoke.get("final_test_seeds", (201,))),
+        workflows_per_episode=int(smoke.get("workflows_per_episode", 1)),
+        fuzzy_delta1=protocol.fuzzy_delta1,
+        fuzzy_delta2=protocol.fuzzy_delta2,
+        fuzzy_energy_uncertainty_weight=(
+            protocol.fuzzy_energy_uncertainty_weight
+        ),
+        fuzzy_deadline_eta=protocol.fuzzy_deadline_eta,
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Train one fuzzy comparison baseline",
+    )
+    parser.add_argument("--method", required=True, choices=("irws", "marl", "pd3qn"))
+    parser.add_argument("--scenario", default="SS")
+    parser.add_argument("--ddl", default="T")
+    parser.add_argument("--episodes", type=int, default=None)
+    parser.add_argument("--validation-interval", type=int, default=None)
+    parser.add_argument("--workflows-per-episode", type=int, default=None)
+    parser.add_argument("--device", default="cpu")
+    parser.add_argument("--optimizer-seed", type=int, default=0)
+    parser.add_argument("--smoke", action="store_true")
+    parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
+    parser.add_argument("--output", type=Path, default=None)
+    args = parser.parse_args(argv)
+
+    config = load_protocol_config(args.config)
+    protocol = protocol_from_config(
+        config,
+        scenario=args.scenario,
+        ddl=args.ddl,
+        workflows_per_episode=args.workflows_per_episode,
+    )
+    training = dict(config.get("training", {}))
+    if args.smoke:
+        smoke = dict(config.get("smoke", {}))
+        protocol = _smoke_protocol(protocol, smoke)
+        episodes = int(args.episodes or smoke.get("episodes", 1))
+        validation_interval = int(args.validation_interval or 1)
+    else:
+        episodes = int(args.episodes or training.get("episodes", 600))
+        validation_interval = int(
+            args.validation_interval
+            or training.get("validation_interval", 25)
+        )
+    output = (
+        args.output.resolve()
+        if args.output is not None
+        else (
+            PROJECT_ROOT
+            / "out"
+            / "fuzzy_comparisons"
+            / args.method
+            / f"{protocol.scenario}_{protocol.ddl_setting.lower()}"
+        ).resolve()
+    )
+    prototype = make_environment(
+        protocol,
+        protocol.train_seeds[0],
+        reward_config=dict(config.get("reward", {})),
+    )
+    algorithm_parameters = dict(config.get("algorithm_parameters", {}))
+    policy = _policy(
+        args.method,
+        prototype,
+        args.device,
+        dict(algorithm_parameters.get(args.method, {})),
+    )
+    result = train_baseline(
+        protocol,
+        policy,
+        output_dir=output,
+        episodes=episodes,
+        validation_interval=validation_interval,
+        reward_config=dict(config.get("reward", {})),
+        max_assignment_steps=int(
+            training.get("max_assignment_steps", 1_000_000)
+        ),
+        optimizer_seed=int(args.optimizer_seed),
+    )
+    print(
+        json.dumps(
+            {
+                "method": args.method,
+                "scenario": protocol.scenario,
+                "ddl": protocol.ddl_setting,
+                "checkpoint": result.checkpoint_path,
+                "manifest": result.manifest_path,
+                "best_validation": result.best_validation,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
