@@ -70,6 +70,14 @@ class ExperimentMatrixTests(unittest.TestCase):
             set(matrix["ablations"]),
             set(REQUIRED_ABLATION_IDS),
         )
+        self.assertEqual(
+            matrix["methods"]["fcfs_fcfs"]["display_name"],
+            "FCFS-FCFS",
+        )
+        self.assertEqual(
+            matrix["methods"]["fcfs_fixed"]["display_name"],
+            "FCFS-Fixed",
+        )
         fuzzy = matrix["shared_protocol"]["fuzzy"]
         self.assertEqual(fuzzy["energy_lambda"], 1.0)
         self.assertEqual(fuzzy["deadline_eta"], 0.95)
@@ -80,7 +88,7 @@ class ExperimentMatrixTests(unittest.TestCase):
 
     def test_all_runs_share_fixtures_evaluation_and_metrics(self):
         manifest = build_experiment_manifest(CONFIG)
-        self.assertEqual(len(manifest["runs"]), 17)
+        self.assertEqual(len(manifest["runs"]), 18)
         self.assertEqual(
             manifest["generator"]["module"],
             "hrl_mix.experiment_matrix",
@@ -211,6 +219,8 @@ class ExperimentMatrixTests(unittest.TestCase):
         self.assertTrue(runs["fuzzy_irws"]["execution_ready"])
         self.assertTrue(runs["fuzzy_marl"]["execution_ready"])
         self.assertTrue(runs["fuzzy_pd3qn"]["execution_ready"])
+        self.assertTrue(runs["fcfs_fcfs"]["execution_ready"])
+        self.assertTrue(runs["fcfs_fixed"]["execution_ready"])
         self.assertFalse(
             runs["safe_hrl_without_llm"]["execution_ready"]
         )

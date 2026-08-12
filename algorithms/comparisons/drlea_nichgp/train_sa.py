@@ -15,7 +15,9 @@ def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
     result.add_argument("--scenario", default="SS")
     result.add_argument("--ddl", default="T")
-    result.add_argument("--seed", type=int, default=0)
+    result.add_argument(
+        "--algorithm-seed", dest="algorithm_seed", type=int, default=0
+    )
     result.add_argument("--ra-checkpoint", required=True)
     result.add_argument("--rules-file", required=True)
     result.add_argument("--episodes", type=int)
@@ -28,7 +30,7 @@ def main(argv=None):
     config = build_config(
         args.scenario,
         args.ddl,
-        args.seed,
+        args.algorithm_seed,
         sa_episodes=args.episodes or 200,
         smoke=args.smoke,
     )

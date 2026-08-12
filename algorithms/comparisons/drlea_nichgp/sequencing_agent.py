@@ -151,7 +151,7 @@ def train_sequencing(
     started_cpu = time.process_time()
     output = prepare_output(config)
     path = Path(checkpoint_path or output / "sa.pt")
-    agent = SequencingAgent.create(config, config.seed + 1)
+    agent = SequencingAgent.create(config, config.algorithm_seed + 1)
     best_key = None
     history = []
     interaction_count = 0

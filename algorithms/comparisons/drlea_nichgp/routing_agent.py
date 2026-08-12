@@ -124,7 +124,7 @@ def train_routing(
     started_cpu = time.process_time()
     output = prepare_output(config)
     path = Path(checkpoint_path or output / "ra.pt")
-    agent = RoutingAgent.create(config, config.seed)
+    agent = RoutingAgent.create(config, config.algorithm_seed)
     best_key = None
     history = []
     interaction_count = 0

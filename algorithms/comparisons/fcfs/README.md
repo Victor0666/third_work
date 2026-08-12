@@ -1,10 +1,20 @@
-# Legacy FCFS comparison
+# FCFS baselines
 
-本目录保存历史 FCFS 对比实现：
+Both formal FCFS baselines use `FuzzyBaselineEnv`, the shared comparison
+protocol, and final-test seeds `201, 202, 203`.
 
-- `env_fcfs.py`：FCFS 环境；
-- `train_fcfs.py`：训练/运行入口。
+- `fcfs_fcfs` (`FCFS-FCFS`) orders ready tasks by
+  `(ready_time, workflow_arrival_time, workflow_id, task_id)` and selects the
+  legal VM with minimum `(vm_available_at, vm_id)`.
+- `fcfs_fixed` (`FCFS-Fixed`) uses the identical task order and delegates VM
+  selection to the environment's shared `select_vm_deterministic()` rule.
 
-旧导入 `baseline_fcfs.env_fcfs` 由项目根目录兼容包转发到这里。后续若修改该基线，
-应直接修改本目录文件，并单独记录其配置和测试结果。
+Run the methods independently:
 
+```powershell
+python -m algorithms.comparisons.fcfs.run_fcfs_fcfs --scenario SS --ddl T
+python -m algorithms.comparisons.fcfs.run_fcfs_fixed --scenario SS --ddl T
+```
+
+The historical `env_fcfs.py` is retained for source compatibility, but formal
+evaluation does not import or instantiate it.

@@ -120,7 +120,7 @@ class ComparisonConfig:
     schema_version: int
     scenario: str
     ddl: str
-    seed: int
+    algorithm_seed: int
     train_seeds: tuple[int, ...]
     validation_seeds: tuple[int, ...]
     test_seeds: tuple[int, ...]
@@ -163,7 +163,7 @@ class ComparisonConfig:
             / "out"
             / "comparisons"
             / METHOD_ID
-            / f"{self.scenario}_{short_ddl}_s{self.seed}"
+            / f"{self.scenario}_{short_ddl}_a{self.algorithm_seed}"
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -187,7 +187,7 @@ def normalize_ddl(value: str) -> str:
 def build_config(
     scenario: str = "SS",
     ddl: str = "T",
-    seed: int = 0,
+    algorithm_seed: int = 0,
     *,
     workflows_per_episode: int = 50,
     ra_episodes: int = 200,
@@ -257,16 +257,16 @@ def build_config(
         sequencing = AgentConfig()
         gp_config = GPConfig()
 
-    seed = int(seed)
+    algorithm_seed = int(algorithm_seed)
     config = ComparisonConfig(
         method_id=METHOD_ID,
         schema_version=SCHEMA_VERSION,
         scenario=scenario,
         ddl=ddl_name,
-        seed=seed,
-        train_seeds=(seed,),
-        validation_seeds=(seed + 100,),
-        test_seeds=(seed + 200,),
+        algorithm_seed=algorithm_seed,
+        train_seeds=(1, 2, 3, 4, 5),
+        validation_seeds=(101, 102, 103),
+        test_seeds=(201, 202, 203),
         workflows_per_episode=int(workflows_per_episode),
         ra_episodes=int(ra_episodes),
         sa_episodes=int(sa_episodes),

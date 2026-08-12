@@ -4022,7 +4022,8 @@ manifest；`resource_seed` 仍单独记录。training 使用 seed 1--5，validat
 | `llm_augmented_safe_hrl` | 完整安全 HRL，Manager 可选传统和 admitted SeEvo 规则 | 已配置；当前无 admitted LLM 且示范 manifest 缺失 |
 | `seevo_best_heuristic_only` | 固定最佳 admitted SeEvo ready-task 规则 + 现有固定 VM 资源规则 | 已配置；当前无 admitted LLM 且缺少统一 baseline adapter |
 | `edf_baseline` | 固定 EDF ready-task 排序 + 现有固定 VM 资源规则 | 已配置；缺少统一 baseline adapter |
-| `fcfs_baseline` | 固定 FCFS ready-task 排序 + 现有固定 VM 资源规则 | 已配置；缺少统一 baseline adapter |
+| `fcfs_fcfs` | 固定 FCFS ready-task 排序 + 最早可用合法 VM | 已配置；独立共享模糊环境 runner 可达 |
+| `fcfs_fixed` | 固定 FCFS ready-task 排序 + 现有确定性 fixed VM 规则 | 已配置；独立共享模糊环境 runner 可达 |
 
 这里“已配置”不等于“已训练”。manifest 对未实现 adapter、无 admitted LLM 或缺失
 示范数据逐项写入 `blocking_reasons` 并设置 `execution_ready=false`，不会默默切换

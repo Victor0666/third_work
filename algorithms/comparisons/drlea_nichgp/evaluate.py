@@ -22,17 +22,6 @@ from .sequencing_agent import (
 )
 
 
-def parse_seeds(value: str):
-    seeds = tuple(
-        int(part.strip())
-        for part in str(value).split(",")
-        if part.strip()
-    )
-    if not seeds:
-        raise ValueError("at least one test seed is required")
-    return seeds
-
-
 def evaluate_frozen(
     config,
     routing,
@@ -100,8 +89,9 @@ def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
     result.add_argument("--scenario", default="SS")
     result.add_argument("--ddl", default="T")
-    result.add_argument("--seed", type=int, default=0)
-    result.add_argument("--seeds", required=True)
+    result.add_argument(
+        "--algorithm-seed", dest="algorithm_seed", type=int, default=0
+    )
     result.add_argument("--ra-checkpoint", required=True)
     result.add_argument("--sa-checkpoint", required=True)
     result.add_argument("--rules-file", required=True)
@@ -114,7 +104,7 @@ def main(argv=None):
     config = build_config(
         args.scenario,
         args.ddl,
-        args.seed,
+        args.algorithm_seed,
         smoke=args.smoke,
     )
     metrics = evaluate_frozen(
@@ -122,7 +112,7 @@ def main(argv=None):
         RoutingAgent.load(args.ra_checkpoint),
         SequencingAgent.load(args.sa_checkpoint),
         load_rules(args.rules_file),
-        parse_seeds(args.seeds),
+        config.test_seeds,
     )
     print(portable_path(config.output_dir / "eval.json"))
     print(tuple(metrics["comparison_key"]))

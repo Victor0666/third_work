@@ -182,7 +182,7 @@ def evolve_niching_gp(
     started_cpu = time.process_time()
     output = prepare_output(config)
     path = Path(rules_path or output / "rules.json")
-    rng = np.random.default_rng(config.seed + 2)
+    rng = np.random.default_rng(config.algorithm_seed + 2)
     population = [
         GPIndividual(
             random_program(
@@ -319,7 +319,7 @@ def evolve_niching_gp(
         "method_id": config.method_id,
         "scenario": config.scenario,
         "ddl": config.ddl,
-        "seed": config.seed,
+        "algorithm_seed": config.algorithm_seed,
         "source_hash": source_hash(),
         "routing_agent": {
             "seed": int(routing_agent.seed),

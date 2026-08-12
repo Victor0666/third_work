@@ -55,6 +55,9 @@ from counterfactual_feedback import (
 
 
 DEFAULT_CONFIG_PATH = LLM_ROOT / "cfg" / "problem" / "cews_task_constructive.yaml"
+LLM_EVOLUTION_FORBIDDEN_SEEDS = frozenset(
+    {101, 102, 103, 201, 202, 203}
+)
 
 
 def load_problem_config(config_path: str | Path = DEFAULT_CONFIG_PATH) -> dict:
@@ -772,12 +775,20 @@ def evaluate_candidate(
 def _resolve_seeds(config: dict, dataset_mode: str, cases) -> list[int]:
     """解析评价种子：命令行 --cases 优先，否则读取 YAML 的 train/test 划分。"""
     if cases:
-        return [int(case) for case in cases]
-    key = "test_seeds" if dataset_mode == "test" else "train_seeds"
-    seeds = config["dataset"].get(key, [])
+        seeds = [int(case) for case in cases]
+    else:
+        key = "test_seeds" if dataset_mode == "test" else "train_seeds"
+        seeds = [int(seed) for seed in config["dataset"].get(key, [])]
     if not seeds:
         raise ValueError(f"No seeds configured for dataset mode {dataset_mode!r}.")
-    return [int(seed) for seed in seeds]
+    if dataset_mode != "test":
+        forbidden = LLM_EVOLUTION_FORBIDDEN_SEEDS.intersection(seeds)
+        if forbidden:
+            raise ValueError(
+                "LLM rule generation/CMA-ES cannot use reserved comparison "
+                f"validation or final-test seeds: {sorted(forbidden)}"
+            )
+    return seeds
 
 
 def parse_args(argv=None):

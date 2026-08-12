@@ -39,7 +39,8 @@ REQUIRED_METHOD_IDS = (
     "llm_augmented_safe_hrl",
     "seevo_best_heuristic_only",
     "edf_baseline",
-    "fcfs_baseline",
+    "fcfs_fcfs",
+    "fcfs_fixed",
 )
 
 REQUIRED_ABLATION_IDS = (
@@ -136,6 +137,8 @@ IMPLEMENTED_EXECUTION_ADAPTERS = frozenset(
         'fuzzy_irws_runner',
         'fuzzy_marl_runner',
         'fuzzy_pd3qn_runner',
+        "fcfs_fcfs_evaluator",
+        "fcfs_fixed_evaluator",
         "original_hrl_train_runner",
         "safe_hrl_train_runner",
     }

@@ -81,7 +81,9 @@ def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
     result.add_argument("--scenario", default="SS")
     result.add_argument("--ddl", default="T")
-    result.add_argument("--seed", type=int, default=0)
+    result.add_argument(
+        "--algorithm-seed", dest="algorithm_seed", type=int, default=0
+    )
     result.add_argument("--smoke", action="store_true")
     return result
 
@@ -92,7 +94,7 @@ def main(argv=None):
         build_config(
             args.scenario,
             args.ddl,
-            args.seed,
+            args.algorithm_seed,
             smoke=args.smoke,
         )
     )

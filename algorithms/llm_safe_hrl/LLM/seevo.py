@@ -57,6 +57,9 @@ from counterfactual_feedback import (
 
 
 RESULT_JSON_PREFIX = "RESULT_JSON="
+LLM_EVOLUTION_FORBIDDEN_SEEDS = frozenset(
+    {101, 102, 103, 201, 202, 203}
+)
 
 
 def parse_result_json(stdout_text: str) -> dict:
@@ -801,6 +804,14 @@ class SeEvo:
             int(seed) for seed in dataset.get("validation_seeds", [])
         ]
         final_test = [int(seed) for seed in dataset.get("test_seeds", [])]
+        forbidden = LLM_EVOLUTION_FORBIDDEN_SEEDS.intersection(
+            {*train, *validation}
+        )
+        if forbidden:
+            raise ValueError(
+                "LLM rule generation/CMA-ES cannot use reserved comparison "
+                f"validation or final-test seeds: {sorted(forbidden)}"
+            )
         return train, validation, final_test
 
     def _optimization_scenario_ids(self) -> list[str]:

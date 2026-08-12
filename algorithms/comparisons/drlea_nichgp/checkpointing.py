@@ -107,7 +107,7 @@ def experiment_manifest(
         "schema_version": config.schema_version,
         "scenario": config.scenario,
         "ddl": config.ddl,
-        "seed": config.seed,
+        "algorithm_seed": config.algorithm_seed,
         "stage": str(stage),
         "source_hash": source_hash(),
         "train_seeds": list(config.train_seeds),

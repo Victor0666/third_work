@@ -13,7 +13,9 @@ def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
     result.add_argument("--scenario", default="SS")
     result.add_argument("--ddl", default="T")
-    result.add_argument("--seed", type=int, default=0)
+    result.add_argument(
+        "--algorithm-seed", dest="algorithm_seed", type=int, default=0
+    )
     result.add_argument("--episodes", type=int)
     result.add_argument("--reward-mode", default="deadline_energy")
     result.add_argument("--smoke", action="store_true")
@@ -25,7 +27,7 @@ def main(argv=None):
     config = build_config(
         args.scenario,
         args.ddl,
-        args.seed,
+        args.algorithm_seed,
         ra_episodes=args.episodes or 200,
         reward_mode=args.reward_mode,
         smoke=args.smoke,
