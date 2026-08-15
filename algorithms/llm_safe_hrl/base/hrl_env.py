@@ -92,6 +92,12 @@ from base.heuristic_admission import (
     workflow_families_from_dax_files,
 )
 from base.safety_shield import FuzzyDDLSafetyShield
+try:
+    from scenario_registry import deterministic_workload_sequence
+except ModuleNotFoundError:
+    from algorithms.llm_safe_hrl.scenario_registry import (
+        deterministic_workload_sequence,
+    )
 
 
 def _safe_div(a, b, eps=1e-9):
@@ -326,6 +332,7 @@ class HrlHeftEnv(gym.Env):
         safe_rl_state_recent_record_window=100,
         manager_mode=LEGACY_RULE_WEIGHT_MODE,
         manager_heuristic_library_path=None,
+        experiment_protocol_identity=None,
         manager_heuristic_recent_window=20,
         scenario_code=None,
         task_code=None,
@@ -380,6 +387,11 @@ class HrlHeftEnv(gym.Env):
             None
             if manager_heuristic_library_path is None
             else str(manager_heuristic_library_path)
+        )
+        self.experiment_protocol_identity = (
+            None
+            if experiment_protocol_identity is None
+            else dict(experiment_protocol_identity)
         )
         self.manager_heuristic_recent_window = int(
             manager_heuristic_recent_window
@@ -543,6 +555,7 @@ class HrlHeftEnv(gym.Env):
             if probs.sum() <= 0:
                 probs[:] = 1.0
             self.dax_probs = probs / probs.sum()
+        self._episode_dax_paths = self._build_episode_dax_paths()
 
         # 分别使用云端和边缘端配置创建主机及其 VM
         self.hosts, self.vms = create_cluster(
@@ -668,6 +681,9 @@ class HrlHeftEnv(gym.Env):
                     self.manager_heuristic_library_path,
                     runtime_context=(
                         self.manager_heuristic_runtime_context
+                    ),
+                    expected_protocol_identity=(
+                        self.experiment_protocol_identity
                     ),
                 )
             )
@@ -5007,6 +5023,7 @@ class HrlHeftEnv(gym.Env):
     def reset(self, *, seed=None, options=None):
         """重置环境状态、到达序列、Manager 权重和阶段缓存"""
         super().reset(seed=seed)
+        self._episode_dax_paths = self._build_episode_dax_paths()
         self._reset_internal_buffers()
 
         rs = np.random.RandomState(12345)
@@ -5159,6 +5176,42 @@ class HrlHeftEnv(gym.Env):
         self._cur_tid = None
         self._cur_host_id = None
 
+    def _build_episode_dax_paths(self) -> tuple[str, ...]:
+        """Build the cache-compatible category sequence without env RNG."""
+        if not self.task_code or self.workflows_per_episode is None:
+            return tuple()
+        by_name = {
+            os.path.basename(str(path)).lower(): str(path)
+            for path in self.dax_paths
+        }
+        names = deterministic_workload_sequence(
+            self.task_code,
+            self.random_seed,
+            self.workflows_per_episode,
+        )
+        missing = sorted({name for name in names if name.lower() not in by_name})
+        if missing:
+            if getattr(self, "deadline_mode", None) == "none":
+                return tuple()
+            raise ValueError(
+                "registered workload DAX files are missing from dax_paths: "
+                f"{missing}"
+            )
+        return tuple(by_name[name.lower()] for name in names)
+
+    @property
+    def episode_dax_sequence(self) -> tuple[str, ...]:
+        """Return immutable DAX basenames selected for this episode."""
+        return tuple(os.path.basename(path) for path in self._episode_dax_paths)
+
+    def _dax_path_for_arrival(self, arrival_index: int) -> str:
+        index = int(arrival_index)
+        if self._episode_dax_paths:
+            return self._episode_dax_paths[index]
+        if self.dax_probs is None:
+            return self.dax_paths[self.rng.randint(len(self.dax_paths))]
+        sampled = self.rng.choice(len(self.dax_paths), p=self.dax_probs)
+        return self.dax_paths[int(sampled)]
     def _no_more_arrivals(self):
         """判断本轮预生成的工作流是否已全部到达"""
         return self.next_arrival_idx >= len(self.arrival_times)
@@ -5172,11 +5225,7 @@ class HrlHeftEnv(gym.Env):
         ):
             arr_t = self.arrival_times[self.next_arrival_idx]
 
-            if self.dax_probs is None:
-                idx = self.rng.randint(len(self.dax_paths))
-            else:
-                idx = self.rng.choice(len(self.dax_paths), p=self.dax_probs)
-            path = self.dax_paths[idx]
+            path = self._dax_path_for_arrival(self.next_arrival_idx)
 
             G, tasks = load_workflow_from_dax(
                 path,
@@ -6292,11 +6341,18 @@ class HrlFcfsCacheEnv(HrlHeftEnv):
         if dax_name is not None:
             names = rec.get("wf_dax_names", None)
             if isinstance(names, list) and wf_id < len(names):
-                if str(names[wf_id]) != str(dax_name):
-                    print(
-                        f"WARNING: [deadline-cache] seed={episode_seed} wf_id={wf_id} dax mismatch: "
-                        f"runtime={dax_name} cache={names[wf_id]}"
+                if str(names[wf_id]).casefold() != str(dax_name).casefold():
+                    msg = (
+                        f"[deadline-cache] seed={episode_seed} wf_id={wf_id} "
+                        f"dax mismatch: runtime={dax_name} "
+                        f"cache={names[wf_id]}"
                     )
+                    if self.deadline_cache_strict:
+                        raise ValueError(
+                            msg + "; regenerate the FCFS cache with the "
+                            "current exact workload-category registry"
+                        )
+                    print("WARNING:", msg)
 
         return float(ms_list[wf_id])
 
@@ -6428,11 +6484,7 @@ class HrlFcfsCacheEnv(HrlHeftEnv):
         ):
             arr_t = self.arrival_times[self.next_arrival_idx]
 
-            if self.dax_probs is None:
-                idx = self.rng.randint(len(self.dax_paths))
-            else:
-                idx = self.rng.choice(len(self.dax_paths), p=self.dax_probs)
-            path = self.dax_paths[idx]
+            path = self._dax_path_for_arrival(self.next_arrival_idx)
             dax_name = os.path.basename(str(path))
 
             G, tasks = load_workflow_from_dax(

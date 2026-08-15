@@ -2,18 +2,15 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
-from algorithms.llm_safe_hrl.hrl_mix.train_config import (
-    CLOUD_BW_TIERS,
-    CLOUD_PC_TIERS,
-    EDGE_BW_TIERS,
-    EDGE_PC_TIERS,
-    RESOURCE_CONFIG,
-    SIZE_FULL,
-    TASK_DAX_FILES,
+from algorithms.llm_safe_hrl.scenario_registry import (
+    FINAL_TEST_SEEDS,
+    ExperimentProtocolContext,
+    SCENARIO_REGISTRY,
+    resolve_experiment_protocol,
 )
 from project_paths import PROJECT_ROOT
 
@@ -50,6 +47,12 @@ def ensure_disjoint_seeds(
         set(map(int, validation_seeds)),
         set(map(int, test_seeds)),
     ]
+    reserved_leak = (groups[0] | groups[1]) & set(FINAL_TEST_SEEDS)
+    if reserved_leak:
+        raise ValueError(
+            "paper final-test seeds 201-230 are reserved for frozen "
+            f"evaluation: {sorted(reserved_leak)}"
+        )
     if (
         groups[0] & groups[1]
         or groups[0] & groups[2]
@@ -124,9 +127,15 @@ class ComparisonConfig:
     train_seeds: tuple[int, ...]
     validation_seeds: tuple[int, ...]
     test_seeds: tuple[int, ...]
+    protocol: str
+    source_scenario: str | None
+    resource_scale: str
+    training_scenarios: tuple[str, ...]
+    test_scenarios: tuple[str, ...]
     workflows_per_episode: int
     ra_episodes: int
     sa_episodes: int
+    validation_interval: int
     allow_busy_vm_queueing: bool
     arrival_lambda: float
     horizon: float
@@ -158,21 +167,68 @@ class ComparisonConfig:
     @property
     def output_dir(self) -> Path:
         short_ddl = self.ddl[0].upper()
-        return (
-            PROJECT_ROOT
-            / "out"
-            / "comparisons"
-            / METHOD_ID
-            / f"{self.scenario}_{short_ddl}_a{self.algorithm_seed}"
-        )
+        if self.protocol == "legacy":
+            namespace = Path(f"{self.scenario}_{short_ddl}_a{self.algorithm_seed}")
+        else:
+            parent = "main_single" if self.protocol == "single" else "enhancement_multi"
+            group = self.source_scenario if self.protocol == "single" else self.resource_scale
+            namespace = Path(parent) / str(group) / f"{short_ddl}_a{self.algorithm_seed}"
+        return PROJECT_ROOT / "out" / "comparisons" / METHOD_ID / namespace
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
+PROTOCOL_ARTIFACT_FIELDS = (
+    "protocol",
+    "source_scenario",
+    "resource_scale",
+    "training_scenarios",
+    "test_scenarios",
+    "train_seeds",
+    "validation_seeds",
+    "test_seeds",
+    "ddl",
+    "algorithm_seed",
+)
+
+
+def protocol_artifact_identity(config: ComparisonConfig) -> dict[str, Any]:
+    """Return the immutable training/evaluation identity for DRL-EA artifacts."""
+    return {
+        "protocol": str(config.protocol),
+        "source_scenario": config.source_scenario,
+        "resource_scale": str(config.resource_scale),
+        "training_scenarios": list(config.training_scenarios),
+        "test_scenarios": list(config.test_scenarios),
+        "train_seeds": list(config.train_seeds),
+        "validation_seeds": list(config.validation_seeds),
+        "test_seeds": list(config.test_seeds),
+        "ddl": str(config.ddl),
+        "algorithm_seed": int(config.algorithm_seed),
+    }
+
+
+def validate_protocol_artifact_identity(expected, actual, *, artifact_name: str) -> dict:
+    """Reject legacy, cross-protocol, cross-scenario, or cross-seed artifacts."""
+    if not isinstance(actual, dict):
+        raise ValueError(f"{artifact_name} is missing protocol identity")
+    missing = [name for name in PROTOCOL_ARTIFACT_FIELDS if name not in actual]
+    if missing:
+        raise ValueError(f"{artifact_name} protocol identity is missing {missing}")
+    mismatches = [
+        name for name in PROTOCOL_ARTIFACT_FIELDS
+        if actual[name] != expected[name]
+    ]
+    if mismatches:
+        raise ValueError(
+            f"{artifact_name} protocol identity mismatch: {', '.join(mismatches)}"
+        )
+    return {name: actual[name] for name in PROTOCOL_ARTIFACT_FIELDS}
+
 def normalize_scenario(value: str) -> str:
     value = str(value).strip().upper()
-    if len(value) != 2 or any(code not in SIZE_FULL for code in value):
+    if value not in SCENARIO_REGISTRY:
         raise ValueError("scenario must be one of SS through LL")
     return value
 
@@ -190,22 +246,32 @@ def build_config(
     algorithm_seed: int = 0,
     *,
     workflows_per_episode: int = 50,
-    ra_episodes: int = 200,
-    sa_episodes: int = 200,
+    ra_episodes: int = 300,
+    sa_episodes: int = 300,
     reward_mode: str = "deadline_energy",
     smoke: bool = False,
+    protocol: str = "single",
+    source_scenario: str | None = None,
+    resource_scale: str | None = None,
 ) -> ComparisonConfig:
     """Build a comparison config from the current project's scenario tables."""
 
+    protocol_context = None
+    if str(protocol).strip().lower() != "legacy":
+        protocol_context = resolve_experiment_protocol(
+            protocol,
+            source_scenario=(source_scenario or scenario if protocol == "single" else None),
+            resource_scale=resource_scale,
+            train_seeds=(1, 2, 3),
+            validation_seeds=(4, 5),
+        )
+        scenario = protocol_context.training_scenarios[0]
     scenario = normalize_scenario(scenario)
     ddl_name = normalize_ddl(ddl)
-    task_code, resource_code = scenario
-    task_size = SIZE_FULL[task_code]
-    resource_size = SIZE_FULL[resource_code]
-    resources = RESOURCE_CONFIG[resource_code]
+    spec = SCENARIO_REGISTRY[scenario]
     dax_paths = tuple(
         (Path("data") / "dax" / name).as_posix()
-        for name in TASK_DAX_FILES[task_code]
+        for name in spec.dax_files
     )
     missing = [
         path
@@ -219,7 +285,7 @@ def build_config(
         / "deadlines"
         / "fcfs"
         / (
-            f"fcfs_{task_size}Task_{resource_size}Res_"
+            f"fcfs_{spec.task_size}Task_{spec.resource_size}Res_"
             "seed0-1000.json"
         )
     )
@@ -266,10 +332,24 @@ def build_config(
         algorithm_seed=algorithm_seed,
         train_seeds=(1, 2, 3, 4, 5),
         validation_seeds=(101, 102, 103),
-        test_seeds=(201, 202, 203),
+        test_seeds=tuple(range(201, 231)),
+        protocol=(protocol_context.protocol if protocol_context is not None else "legacy"),
+        source_scenario=(
+            protocol_context.source_scenario if protocol_context is not None else scenario
+        ),
+        resource_scale=(
+            protocol_context.resource_scale if protocol_context is not None else scenario[1]
+        ),
+        training_scenarios=(
+            protocol_context.training_scenarios if protocol_context is not None else (scenario,)
+        ),
+        test_scenarios=(
+            protocol_context.test_scenarios if protocol_context is not None else (scenario,)
+        ),
         workflows_per_episode=int(workflows_per_episode),
         ra_episodes=int(ra_episodes),
         sa_episodes=int(sa_episodes),
+        validation_interval=25,
         allow_busy_vm_queueing=False,
         arrival_lambda=0.03,
         horizon=1e9,
@@ -282,14 +362,14 @@ def build_config(
         deadline_alpha_small_prob=DDL_SMALL_PROBABILITY[ddl_name],
         dax_paths=dax_paths,
         deadline_cache_path=cache_path.as_posix(),
-        num_cloud_hosts=int(resources[0]),
-        num_edge_hosts=int(resources[1]),
-        cloud_vms_per_host=tuple(resources[2]),
-        edge_vms_per_host=tuple(resources[3]),
-        cloud_pc_tiers=tuple(CLOUD_PC_TIERS),
-        edge_pc_tiers=tuple(EDGE_PC_TIERS),
-        cloud_bw_tiers=tuple(CLOUD_BW_TIERS),
-        edge_bw_tiers=tuple(EDGE_BW_TIERS),
+        num_cloud_hosts=int(spec.num_cloud_hosts),
+        num_edge_hosts=int(spec.num_edge_hosts),
+        cloud_vms_per_host=tuple(spec.cloud_vms_per_host),
+        edge_vms_per_host=tuple(spec.edge_vms_per_host),
+        cloud_pc_tiers=tuple(spec.cloud_pc_tiers),
+        edge_pc_tiers=tuple(spec.edge_pc_tiers),
+        cloud_bw_tiers=tuple(spec.cloud_bw_tiers),
+        edge_bw_tiers=tuple(spec.edge_bw_tiers),
         routing=routing,
         sequencing=sequencing,
         gp=gp_config,
@@ -301,3 +381,27 @@ def build_config(
         config.test_seeds,
     )
     return config
+
+
+def config_for_scenario(config: ComparisonConfig, scenario: str) -> ComparisonConfig:
+    """Switch only environment inputs while retaining frozen algorithm state."""
+    target = build_config(
+        scenario,
+        config.ddl,
+        config.algorithm_seed,
+        workflows_per_episode=config.workflows_per_episode,
+        ra_episodes=config.ra_episodes,
+        sa_episodes=config.sa_episodes,
+        reward_mode=config.reward.mode,
+        protocol="legacy",
+    )
+    environment_fields = (
+        "scenario", "dax_paths", "deadline_cache_path", "num_cloud_hosts",
+        "num_edge_hosts", "cloud_vms_per_host", "edge_vms_per_host",
+        "cloud_pc_tiers", "edge_pc_tiers", "cloud_bw_tiers", "edge_bw_tiers",
+    )
+    return replace(
+        config,
+        training_scenarios=(target.scenario,),
+        **{name: getattr(target, name) for name in environment_fields},
+    )

@@ -16,6 +16,13 @@ from dataclasses import asdict, dataclass, is_dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+try:
+    from scenario_registry import validate_protocol_identity
+except ModuleNotFoundError:  # Package-style imports used by some test runners.
+    from algorithms.llm_safe_hrl.scenario_registry import (
+        validate_protocol_identity,
+    )
+
 from base.safe_replay import (
     SAFE_REPLAY_BUFFER_SCHEMA_VERSION,
     SAFE_REPLAY_TRANSITION_SCHEMA_VERSION,
@@ -25,6 +32,18 @@ from base.safe_replay import (
 MODEL_SELECTION_SCHEMA_VERSION = 1
 BEST_CHECKPOINT_MANIFEST_SCHEMA_VERSION = 1
 CONFIG_SNAPSHOT_SCHEMA_VERSION = 1
+
+_PROTOCOL_IDENTITY_FIELDS = (
+    "protocol",
+    "source_scenario",
+    "training_scenarios",
+    "test_scenarios",
+    "llm_train_seeds",
+    "llm_validation_seeds",
+    "safe_hrl_train_seeds",
+    "safe_hrl_validation_seeds",
+    "final_test_seeds",
+)
 
 MODEL_COMPARISON_FIELDS = (
     "deadline_violation_rate",
@@ -402,6 +421,71 @@ def build_config_snapshot(config: Any) -> dict[str, Any]:
     }
 
 
+def protocol_identity_from_config_snapshot(
+    config_snapshot: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    """Extract a complete protocol identity from a config snapshot."""
+    if not isinstance(config_snapshot, Mapping):
+        raise ValueError("config_snapshot must be a mapping")
+    config = config_snapshot.get("config")
+    if not isinstance(config, Mapping):
+        raise ValueError("config_snapshot config must be a mapping")
+    nested = config.get("experiment_protocol")
+    present = [field for field in _PROTOCOL_IDENTITY_FIELDS if field in config]
+    if nested is None and str(config.get("protocol", "")).strip().lower() == "legacy":
+        return None
+    if nested is None and "protocol" not in config:
+        return None
+    if nested is not None:
+        normalized = validate_protocol_identity(
+            nested,
+            nested,
+            artifact_name="config snapshot protocol",
+        )
+        if present:
+            if len(present) != len(_PROTOCOL_IDENTITY_FIELDS):
+                raise ValueError(
+                    "config snapshot has incomplete protocol identity"
+                )
+            validate_protocol_identity(
+                normalized,
+                {field: config[field] for field in _PROTOCOL_IDENTITY_FIELDS},
+                artifact_name="config snapshot protocol",
+            )
+        return normalized
+    if len(present) != len(_PROTOCOL_IDENTITY_FIELDS):
+        raise ValueError("config snapshot has incomplete protocol identity")
+    identity = {field: config[field] for field in _PROTOCOL_IDENTITY_FIELDS}
+    return validate_protocol_identity(
+        identity,
+        identity,
+        artifact_name="config snapshot protocol",
+    )
+
+
+def _resolve_checkpoint_protocol_identity(
+    config_snapshot: Mapping[str, Any],
+    experiment_protocol,
+    *,
+    artifact_name: str,
+) -> dict[str, Any] | None:
+    snapshot_identity = protocol_identity_from_config_snapshot(config_snapshot)
+    explicit_identity = None
+    if experiment_protocol is not None:
+        explicit_identity = validate_protocol_identity(
+            experiment_protocol,
+            experiment_protocol,
+            artifact_name=artifact_name,
+        )
+    if snapshot_identity is not None and explicit_identity is not None:
+        validate_protocol_identity(
+            explicit_identity,
+            snapshot_identity,
+            artifact_name="config snapshot protocol",
+        )
+    return explicit_identity or snapshot_identity
+
+
 def build_heuristic_library_version(
     env: Any,
     *,
@@ -433,6 +517,7 @@ def build_heuristic_library_version(
             else None
         ),
         "manifest_revision": None,
+        "experiment_protocol": None,
         "admitted_heuristic_ids": [],
     }
     if manager_mode == "legacy_rule_weight_mode":
@@ -467,6 +552,15 @@ def build_heuristic_library_version(
             "manifest_revision": payload.get(
                 "manifest_revision"
             ),
+            "experiment_protocol": (
+                None
+                if payload.get("experiment_protocol") is None
+                else validate_protocol_identity(
+                    payload["experiment_protocol"],
+                    payload["experiment_protocol"],
+                    artifact_name="heuristic library manifest",
+                )
+            ),
             "admitted_heuristic_ids": admitted_ids,
         }
     )
@@ -483,6 +577,7 @@ def save_best_checkpoint_bundle(
     replay_metadata: Mapping[str, Any],
     heuristic_library_version: Mapping[str, Any],
     config_snapshot: Mapping[str, Any],
+    experiment_protocol=None,
 ) -> str:
     """Atomically bind three Agent files to one feasibility-first manifest."""
     target_dir = Path(directory).resolve()
@@ -522,6 +617,20 @@ def save_best_checkpoint_bundle(
         )
         checkpoint_files[layer] = filename
 
+    protocol_identity = _resolve_checkpoint_protocol_identity(
+        config_snapshot,
+        experiment_protocol,
+        artifact_name="best checkpoint protocol",
+    )
+    library_protocol = heuristic_library_version.get(
+        "experiment_protocol"
+    )
+    if protocol_identity is not None and library_protocol is not None:
+        validate_protocol_identity(
+            protocol_identity,
+            library_protocol,
+            artifact_name="checkpoint heuristic library",
+        )
     payload = {
         "checkpoint_manifest_schema_version": (
             BEST_CHECKPOINT_MANIFEST_SCHEMA_VERSION
@@ -555,6 +664,8 @@ def save_best_checkpoint_bundle(
         ),
         "config_snapshot": dict(config_snapshot),
     }
+    if protocol_identity is not None:
+        payload["experiment_protocol"] = protocol_identity
     manifest_path = target_dir / "best_checkpoint_manifest.json"
     temporary_path = target_dir / "best_checkpoint_manifest.json.tmp"
     with temporary_path.open("w", encoding="utf-8") as handle:
@@ -571,6 +682,78 @@ def save_best_checkpoint_bundle(
     return str(manifest_path)
 
 
+def read_best_checkpoint_manifest(
+    path: str | os.PathLike[str],
+    *,
+    expected_protocol_identity=None,
+) -> dict[str, Any]:
+    """Read a best bundle and optionally reject cross-protocol loading."""
+    source = Path(path).resolve()
+    with source.open("r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+    if not isinstance(payload, Mapping):
+        raise ValueError("best checkpoint manifest must be a mapping")
+    payload = dict(payload)
+    if (
+        int(payload.get("checkpoint_manifest_schema_version", -1))
+        != BEST_CHECKPOINT_MANIFEST_SCHEMA_VERSION
+    ):
+        raise ValueError("unsupported best checkpoint manifest schema")
+    checkpoints = payload.get("agent_checkpoints")
+    if not isinstance(checkpoints, Mapping) or set(checkpoints) != {
+        "manager",
+        "host",
+        "vm",
+    }:
+        raise ValueError("best checkpoint manifest layer set mismatch")
+    actual_identity = payload.get("experiment_protocol")
+    if expected_protocol_identity is not None:
+        if not isinstance(actual_identity, Mapping):
+            raise ValueError(
+                "best checkpoint manifest is missing experiment_protocol"
+            )
+        payload["experiment_protocol"] = validate_protocol_identity(
+            expected_protocol_identity,
+            actual_identity,
+            artifact_name="best checkpoint manifest",
+        )
+    elif payload.get("experiment_protocol") is not None:
+        identity = payload["experiment_protocol"]
+        payload["experiment_protocol"] = validate_protocol_identity(
+            identity,
+            identity,
+            artifact_name="best checkpoint manifest",
+        )
+    snapshot = payload.get("config_snapshot")
+    if not isinstance(snapshot, Mapping):
+        raise ValueError("best checkpoint config_snapshot must be a mapping")
+    snapshot_identity = protocol_identity_from_config_snapshot(snapshot)
+    normalized_identity = payload.get("experiment_protocol")
+    if normalized_identity is not None and snapshot_identity is not None:
+        validate_protocol_identity(
+            normalized_identity,
+            snapshot_identity,
+            artifact_name="best checkpoint config snapshot",
+        )
+    library = payload.get("heuristic_library_version")
+    if not isinstance(library, Mapping):
+        raise ValueError(
+            "best checkpoint heuristic_library_version must be a mapping"
+        )
+    library_identity = library.get("experiment_protocol")
+    if normalized_identity is not None and library_identity is not None:
+        validate_protocol_identity(
+            normalized_identity,
+            library_identity,
+            artifact_name="best checkpoint heuristic library",
+        )
+    payload["resolved_agent_checkpoints"] = {
+        layer: str((source.parent / filename).resolve())
+        for layer, filename in checkpoints.items()
+    }
+    return payload
+
+
 __all__ = [
     "BEST_CHECKPOINT_MANIFEST_SCHEMA_VERSION",
     "CONFIG_SNAPSHOT_SCHEMA_VERSION",
@@ -582,5 +765,7 @@ __all__ = [
     "build_heuristic_library_version",
     "build_replay_metadata",
     "is_better_model",
+    "protocol_identity_from_config_snapshot",
+    "read_best_checkpoint_manifest",
     "save_best_checkpoint_bundle",
 ]

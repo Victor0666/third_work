@@ -17,6 +17,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
+try:
+    from scenario_registry import validate_protocol_identity
+except ModuleNotFoundError:  # Package-style imports used by some test runners.
+    from algorithms.llm_safe_hrl.scenario_registry import (
+        validate_protocol_identity,
+    )
+
+from hrl_mix.model_selection import protocol_identity_from_config_snapshot
+
 
 SAFE_TRAINING_PLAN_SCHEMA_VERSION = 1
 SAFE_TRAINING_STATE_SCHEMA_VERSION = 1
@@ -619,6 +628,19 @@ def load_safe_training_plan(path: str | os.PathLike[str]) -> SafeTrainingPlan:
         OnlineTrainingStage.from_dict(entry)
         for entry in online_raw
     )
+    if any(stage.transition.mode != "fixed_episodes" for stage in online):
+        raise ValueError(
+            "every online curriculum stage must use fixed_episodes; "
+            "validation cannot control stage duration"
+        )
+    online_episode_budget = sum(
+        int(stage.transition.fixed_episodes) for stage in online
+    )
+    if online_episode_budget != 600:
+        raise ValueError(
+            "Safe-HRL online curriculum stages must total exactly 600 "
+            f"episodes, got {online_episode_budget}"
+        )
     all_ids = [
         stage["stage_id"] for stage in preparation
     ] + [stage.stage_id for stage in online]
@@ -935,74 +957,28 @@ class SafeTrainingController:
             },
         }
 
-    def observe_validation(
-        self,
-        metrics: StageMetrics,
-        *,
-        source: str = "validation",
-    ) -> dict[str, Any]:
-        if source != "validation":
-            raise ValueError(
-                "curriculum transitions may consume validation "
-                "metrics only; final-test results are read-only"
-            )
+    def record_episode(self) -> dict[str, Any]:
+        """Advance a fixed stage after one training episode."""
         if self.completed:
             raise RuntimeError("safe training pipeline is complete")
-
         stage_before = self.current_stage
         training_seed_used = self.training_seed_for_next_episode()
         self.stage_episode_count += 1
         self.total_episode_count += 1
-        self.stage_metric_count += 1
-        for key, value in metrics.to_dict().items():
-            if key in self.stage_metric_sums:
-                self.stage_metric_sums[key] += float(value)
-
         transition = stage_before.transition
-        should_advance = False
-        reason = "not_ready"
-        if transition.mode == "fixed_episodes":
-            should_advance = (
-                self.stage_episode_count
-                >= int(transition.fixed_episodes)
+        if transition.mode != "fixed_episodes":
+            raise ValueError(
+                "curriculum stage duration must use fixed_episodes; "
+                "validation metrics cannot control stage duration"
             )
-            reason = (
-                "fixed_episode_limit"
-                if should_advance
-                else "fixed_episode_progress"
-            )
-        else:
-            passes = self._threshold_passes(metrics, transition)
-            if (
-                passes
-                and self.stage_episode_count
-                >= transition.minimum_episodes
-            ):
-                self.consecutive_validation_passes += 1
-            else:
-                self.consecutive_validation_passes = 0
-            should_advance = (
-                self.consecutive_validation_passes
-                >= transition.consecutive_evaluations
-            )
-            reason = (
-                "consecutive_validation_threshold"
-                if should_advance
-                else (
-                    "validation_threshold_pass"
-                    if passes
-                    else "validation_threshold_fail"
-                )
-            )
-
+        should_advance = self.stage_episode_count >= int(
+            transition.fixed_episodes
+        )
         summary = None
         if should_advance:
             summary = self._stage_summary()
             self.completed_stage_summaries.append(summary)
-            if (
-                self.current_stage_index + 1
-                >= len(self.plan.online_stages)
-            ):
+            if self.current_stage_index + 1 >= len(self.plan.online_stages):
                 self.completed = True
             else:
                 self.current_stage_index += 1
@@ -1010,25 +986,66 @@ class SafeTrainingController:
                 self.consecutive_validation_passes = 0
                 self.stage_metric_count = 0
                 self.stage_metric_sums = _zero_metric_sums()
-
         return {
             "stage_id": stage_before.stage_id,
             "stage_type": stage_before.stage_type,
-            "training_seed_mode": (
-                stage_before.training_seed_mode
-            ),
+            "training_seed_mode": stage_before.training_seed_mode,
             "training_seed_used": int(training_seed_used),
             "transitioned": bool(should_advance),
             "pipeline_completed": bool(self.completed),
-            "transition_reason": reason,
+            "transition_reason": (
+                "fixed_episode_limit"
+                if should_advance
+                else "fixed_episode_progress"
+            ),
             "next_stage_id": (
-                None
-                if self.completed
-                else self.current_stage.stage_id
+                None if self.completed else self.current_stage.stage_id
             ),
             "completed_stage_summary": summary,
         }
 
+    def observe_validation(
+        self,
+        metrics: StageMetrics,
+        *,
+        source: str = "curriculum_validation",
+        count_episode: bool = False,
+    ) -> dict[str, Any]:
+        """Record stage diagnostics without changing stage duration."""
+        if source not in {"validation", "curriculum_validation"}:
+            raise ValueError(
+                "stage diagnostics accept curriculum validation only; "
+                "formal validation and final test are read-only"
+            )
+        if count_episode:
+            raise ValueError(
+                "validation cannot count as a training episode or control "
+                "curriculum duration"
+            )
+        if self.completed:
+            raise RuntimeError("safe training pipeline is complete")
+        stage = self.current_stage
+        self.stage_metric_count += 1
+        for key, value in metrics.to_dict().items():
+            if key in self.stage_metric_sums:
+                self.stage_metric_sums[key] += float(value)
+        threshold_pass = (
+            self._threshold_passes(metrics, stage.transition)
+            if stage.transition.thresholds
+            else None
+        )
+        return {
+            "stage_id": stage.stage_id,
+            "stage_type": stage.stage_type,
+            "training_seed_mode": stage.training_seed_mode,
+            "training_seed_used": int(self.training_seed_for_next_episode()),
+            "transitioned": False,
+            "pipeline_completed": False,
+            "transition_reason": "curriculum_validation_observation_only",
+            "curriculum_check_pass": threshold_pass,
+            "next_stage_id": stage.stage_id,
+            "completed_stage_summary": None,
+        }
     def state_dict(self) -> dict[str, Any]:
         return {
             "state_schema_version": (
@@ -1199,6 +1216,7 @@ def save_pipeline_checkpoint(
     replay_metadata: Mapping[str, Any],
     heuristic_library_version: Mapping[str, Any],
     config_snapshot: Mapping[str, Any],
+    experiment_protocol=None,
 ) -> str:
     """Save complete safe-HRL state plus a versioned orchestration manifest."""
     target_dir = Path(directory).resolve()
@@ -1265,6 +1283,32 @@ def save_pipeline_checkpoint(
         if best_model_metrics is None
         else float(best_model_metrics["fuzzy_energy_score"])
     )
+    snapshot_protocol = protocol_identity_from_config_snapshot(
+        config_snapshot
+    )
+    explicit_protocol = None
+    if experiment_protocol is not None:
+        explicit_protocol = validate_protocol_identity(
+            experiment_protocol,
+            experiment_protocol,
+            artifact_name="safe training checkpoint protocol",
+        )
+    if snapshot_protocol is not None and explicit_protocol is not None:
+        validate_protocol_identity(
+            explicit_protocol,
+            snapshot_protocol,
+            artifact_name="safe training config snapshot",
+        )
+    protocol_identity = explicit_protocol or snapshot_protocol
+    library_protocol = heuristic_library_version.get(
+        "experiment_protocol"
+    )
+    if protocol_identity is not None and library_protocol is not None:
+        validate_protocol_identity(
+            protocol_identity,
+            library_protocol,
+            artifact_name="safe training heuristic library",
+        )
     payload = {
         "checkpoint_schema_version": (
             SAFE_TRAINING_CHECKPOINT_SCHEMA_VERSION
@@ -1308,6 +1352,8 @@ def save_pipeline_checkpoint(
         ),
         "config_snapshot": dict(config_snapshot),
     }
+    if protocol_identity is not None:
+        payload["experiment_protocol"] = protocol_identity
     manifest_path = target_dir / "safe_training_checkpoint.json"
     temp_path = target_dir / "safe_training_checkpoint.json.tmp"
     with temp_path.open("w", encoding="utf-8") as handle:
@@ -1328,6 +1374,7 @@ def read_pipeline_checkpoint(
     path: str | os.PathLike[str],
     *,
     controller: SafeTrainingController,
+    expected_protocol_identity=None,
 ) -> dict[str, Any]:
     """Read and validate orchestration state before environments are built."""
     source = Path(path).resolve()
@@ -1350,6 +1397,23 @@ def read_pipeline_checkpoint(
     if payload.get("plan_hash") != controller.plan.plan_hash:
         raise ValueError(
             "safe training checkpoint plan hash mismatch"
+        )
+    actual_protocol = payload.get("experiment_protocol")
+    if expected_protocol_identity is not None:
+        if not isinstance(actual_protocol, Mapping):
+            raise ValueError(
+                "safe training checkpoint is missing experiment_protocol"
+            )
+        payload["experiment_protocol"] = validate_protocol_identity(
+            expected_protocol_identity,
+            actual_protocol,
+            artifact_name="safe training checkpoint",
+        )
+    elif actual_protocol is not None:
+        payload["experiment_protocol"] = validate_protocol_identity(
+            actual_protocol,
+            actual_protocol,
+            artifact_name="safe training checkpoint",
         )
     best_model_metrics = payload.get("best_model_metrics")
     if best_model_metrics is not None:
@@ -1376,14 +1440,31 @@ def read_pipeline_checkpoint(
         raise ValueError(
             "safe training checkpoint replay metadata layer mismatch"
         )
-    _require_mapping(
+    heuristic_library = _require_mapping(
         payload.get("heuristic_library_version"),
         "heuristic_library_version",
     )
-    _require_mapping(
+    config_snapshot = _require_mapping(
         payload.get("config_snapshot"),
         "config_snapshot",
     )
+    snapshot_protocol = protocol_identity_from_config_snapshot(
+        config_snapshot
+    )
+    normalized_protocol = payload.get("experiment_protocol")
+    if normalized_protocol is not None and snapshot_protocol is not None:
+        validate_protocol_identity(
+            normalized_protocol,
+            snapshot_protocol,
+            artifact_name="safe training config snapshot",
+        )
+    library_protocol = heuristic_library.get("experiment_protocol")
+    if normalized_protocol is not None and library_protocol is not None:
+        validate_protocol_identity(
+            normalized_protocol,
+            library_protocol,
+            artifact_name="safe training heuristic library",
+        )
     _require_mapping(
         payload.get("curriculum_stage"),
         "curriculum_stage",

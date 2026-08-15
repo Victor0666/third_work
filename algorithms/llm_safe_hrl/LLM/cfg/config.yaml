@@ -20,6 +20,11 @@ mode: train  # Options: "train" (normal evolution from seed), "test" (load train
 data_dir: data  # Directory to load trained rules from (only used in test mode)
                 # 加载已训练规则的目录（仅在 test 模式下使用）
 
+# Single is the default main experiment; Multi is explicitly opt-in.
+protocol: single
+source_scenario: SS
+resource_scale: null
+
 # LLM parameters
 # 大语言模型参数
 model: qwen-plus # #gpt-3.5-turbo-0125  # LLM model (other options include gpt-4-turbo-preview; GLM-3-Turbo, GLM-4; and moonshot-v1-8k) 
@@ -68,7 +73,9 @@ parameter_optimization:
     refine: 3
     confirm: 0  # all configured validation_seeds; skipped when that list is empty
   # Evaluate every parameter vector on the same workload/resource scenarios.
-  scenario_ids: [SS, MS, LS]
+  # Empty means inherit the resolved Single/Multi training domain. A non-empty
+  # command-line override is accepted only when it exactly matches that domain.
+  scenario_ids: []
   elite_fraction: 0.25
   boundary_epsilon: 0.000001
   sensitivity_epsilon: 0.02
@@ -89,7 +96,8 @@ parameter_optimization:
   auto_admission_enabled: true
   admission_required: true
   admission_config_path: cfg/problem/cews_task_constructive_hrl_ss_admission.yaml
-  admission_manifest_path: problems/cews_task_constructive/safe_heuristic_library_resS.json
+  # Filled by protocol_config.py with the isolated Single/Multi artifact path.
+  admission_manifest_path: null
 
 # Offline decision-mechanism analysis. It runs only after CMA-ES has frozen
 # selected structures and is never imported by the online Manager path.
@@ -99,7 +107,7 @@ counterfactual_feedback:
   max_structures_per_generation: 2
   include_top_feasible: 1
   include_infeasible_low_energy: 1
-  scenario_ids: [SS, MS]
+  scenario_ids: []
   train_seed_count: 2
   validation_seed_count: 0
 

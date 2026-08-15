@@ -19,6 +19,13 @@ import warnings
 
 import numpy as np
 
+try:
+    from scenario_registry import validate_protocol_identity
+except ModuleNotFoundError:  # Package-style imports used by some test runners.
+    from algorithms.llm_safe_hrl.scenario_registry import (
+        validate_protocol_identity,
+    )
+
 from LLM.rule_optimization import (
     extract_rule_metadata,
     validate_frozen_rule_source,
@@ -779,6 +786,7 @@ def load_manager_heuristic_library(
     manifest_path: str | Path,
     *,
     runtime_context: Mapping | None = None,
+    expected_protocol_identity=None,
 ) -> tuple[ManagerHeuristic, ...]:
     """加载五个传统规则及 manifest 中所有稳定 LLM 动作槽。"""
     path = Path(manifest_path).resolve()
@@ -810,6 +818,43 @@ def load_manager_heuristic_library(
         raise ValueError(
             "safe heuristic manifest_version is required"
         )
+    manifest_protocol = payload.get("experiment_protocol")
+    if expected_protocol_identity is not None:
+        if not isinstance(manifest_protocol, Mapping):
+            raise ValueError(
+                "safe heuristic manifest is missing experiment_protocol"
+            )
+        manifest_protocol = validate_protocol_identity(
+            expected_protocol_identity,
+            manifest_protocol,
+            artifact_name="safe heuristic manifest",
+        )
+    elif manifest_protocol is not None:
+        manifest_protocol = validate_protocol_identity(
+            manifest_protocol,
+            manifest_protocol,
+            artifact_name="safe heuristic manifest",
+        )
+    if manifest_protocol is not None:
+        for entry in entries:
+            if not isinstance(entry, Mapping):
+                raise ValueError(
+                    "safe heuristic manifest rule entry must be a mapping"
+                )
+            entry_protocol = entry.get("experiment_protocol")
+            if not isinstance(entry_protocol, Mapping):
+                raise ValueError(
+                    "protocol-bound heuristic rule is missing "
+                    "experiment_protocol"
+                )
+            validate_protocol_identity(
+                manifest_protocol,
+                entry_protocol,
+                artifact_name=(
+                    "heuristic rule "
+                    + str(entry.get("heuristic_id", "<unknown>"))
+                ),
+            )
     trusted_source_root = str(
         payload.get("trusted_source_root", "")
     ).strip()

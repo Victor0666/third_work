@@ -32,13 +32,39 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description="Train the HRL Mix model for a scenario/deadline setting.")
     parser.add_argument(
         "--scenario",
-        default="SS",
-        help="Two-letter scenario code: task size + resource size, e.g. SS, SM, SL, MM, LL.",
+        default=None,
+        help=(
+            "Legacy scenario alias. New experiments should use "
+            "--protocol with --source-scenario or --resource-scale."
+        ),
+    )
+    parser.add_argument(
+        "--protocol",
+        choices=("single", "multi"),
+        default="single",
+        help="Isolated LLM-SAFE-DRL experiment protocol.",
+    )
+    parser.add_argument(
+        "--source-scenario",
+        default=None,
+        help="Single protocol source scenario: SS, SM, or SL.",
+    )
+    parser.add_argument(
+        "--resource-scale",
+        choices=("S", "M", "L"),
+        default=None,
+        help="Multi protocol resource group: S, M, or L.",
     )
     parser.add_argument(
         "--ddl",
         default="T",
         help="Deadline condition: T/M/L or Tight/Medium/Loose.",
+    )
+    parser.add_argument(
+        "--optimizer-seed",
+        type=int,
+        default=0,
+        help="Algorithm/network seed; environment seeds remain protocol-controlled.",
     )
     parser.add_argument(
         "--episodes",
@@ -100,8 +126,9 @@ def main(argv=None):
         help=(
             "Optional versioned safe-heuristic manifest. Requires "
             "--safe-rl-heuristic-manager. If omitted, the manifest is "
-            "selected from the scenario resource code: "
-            "safe_heuristic_library_resS/resM/resL.json."
+            "selected from the isolated Single/Multi protocol artifact "
+            "namespace. Legacy Python callers retain the old resource-code "
+            "fallback, but formal CLI runs never use it."
         ),
     )
     parser.add_argument(
@@ -152,6 +179,14 @@ def main(argv=None):
         ),
     )
     parser.add_argument(
+        "--without-curriculum",
+        action="store_true",
+        help=(
+            "Ablation: keep all Safe-HRL components and 600 total episodes, "
+            "but always train on the formal target scenario configuration."
+        ),
+    )
+    parser.add_argument(
         "--safe-training-resume",
         default=None,
         help=(
@@ -161,6 +196,8 @@ def main(argv=None):
         ),
     )
     args = parser.parse_args(argv)
+    if args.episodes not in (None, 600):
+        parser.error("formal Safe-HRL training requires exactly 600 total episodes")
     train(
         scenario=args.scenario,
         ddl=args.ddl,
@@ -198,6 +235,13 @@ def main(argv=None):
         safe_rl_training_resume_checkpoint=(
             args.safe_training_resume
         ),
+        safe_rl_curriculum_enabled=(
+            not args.without_curriculum
+        ),
+        optimizer_seed=args.optimizer_seed,
+        protocol=args.protocol,
+        source_scenario=args.source_scenario,
+        resource_scale=args.resource_scale,
     )
 
 

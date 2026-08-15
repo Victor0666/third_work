@@ -182,7 +182,7 @@ def test_same_seed_episode_is_deterministic(policy_type):
 
 def test_both_methods_share_environment_and_final_test_seeds():
     protocol = build_fcfs_protocol("SS", "T", workflows_per_episode=1)
-    assert protocol.test_seeds == FORMAL_TEST_SEEDS == (201, 202, 203)
+    assert protocol.test_seeds == FORMAL_TEST_SEEDS == tuple(range(201, 231))
     assert isinstance(make_environment(protocol, 201), FuzzyBaselineEnv)
     assert issubclass(FuzzyBaselineEnv, HrlFcfsCacheEnv)
     fcfs_path = default_output_path("fcfs_fcfs", protocol)
@@ -208,10 +208,10 @@ def test_formal_runner_smoke(tmp_path: Path, method_id, display_name):
     assert payload["method_id"] == method_id
     assert payload["display_name"] == display_name
     assert Path(payload["output_path"]) == destination.resolve()
-    assert len(payload["seed_records"]) == 3
+    assert len(payload["seed_records"]) == 30
     assert {
         int(record["seed"]) for record in payload["seed_records"]
-    } == {201, 202, 203}
+    } == set(range(201, 231))
     restored = json.loads(destination.read_text(encoding="utf-8"))
     assert restored["method_id"] == method_id
     assert restored["display_name"] == display_name

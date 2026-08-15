@@ -56,6 +56,40 @@ def _file_hash(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _checkpoint_identity(protocol: FuzzyComparisonProtocol, checkpoint: Path) -> dict[str, Any]:
+    return {
+        "artifact_protocol_status": (
+            "legacy" if protocol.protocol_mode == "legacy" else "formal"
+        ),
+        "protocol_mode": protocol.protocol_mode,
+        "source_scenario": protocol.source_scenario,
+        "resource_scale": protocol.resource_scale,
+        "training_scenarios": list(protocol.training_scenarios),
+        "test_scenarios": list(protocol.test_scenarios),
+        "train_seeds": list(protocol.train_seeds),
+        "validation_seeds": list(protocol.validation_seeds),
+        "test_seeds": list(protocol.test_seeds),
+        "protocol_hash": protocol.protocol_hash,
+        "checkpoint_sha256": _file_hash(checkpoint),
+    }
+
+
+def _validate_checkpoint_identity(
+    protocol: FuzzyComparisonProtocol,
+    checkpoint: Path,
+    identity_path: Path,
+) -> dict[str, Any]:
+    if not identity_path.is_file():
+        raise ValueError("baseline checkpoint is missing protocol identity")
+    payload = json.loads(identity_path.read_text(encoding="utf-8"))
+    expected = _checkpoint_identity(protocol, checkpoint)
+    mismatches = [key for key, value in expected.items() if payload.get(key) != value]
+    if mismatches:
+        raise ValueError(
+            "baseline checkpoint protocol identity mismatch: " + ", ".join(mismatches)
+        )
+    return payload
+
 def seed_everything(seed: int) -> None:
     random.seed(int(seed))
     np.random.seed(int(seed))
@@ -99,6 +133,7 @@ def train_baseline(
     train_log = root / "training_metrics.jsonl"
     validation_log = root / "validation_metrics.jsonl"
     checkpoint = root / "best_checkpoint.pt"
+    checkpoint_identity_path = root / "checkpoint_identity.json"
     reward_values = dict(reward_config or {})
     seed_everything(int(optimizer_seed))
     incumbent: FeasibilityFirstModelMetrics | None = None
@@ -107,7 +142,11 @@ def train_baseline(
     for episode in range(1, int(episodes) + 1):
         seed = int(protocol.train_seeds[(episode - 1) % len(protocol.train_seeds)])
         protocol.assert_not_test_seed(seed, "training")
-        env = make_environment(protocol, seed, reward_config=reward_values)
+        training_scenario = protocol.training_scenarios[
+            (episode - 1) % len(protocol.training_scenarios)
+        ]
+        training_protocol = protocol.for_scenario(training_scenario)
+        env = make_environment(training_protocol, seed, reward_config=reward_values)
         record = run_episode(
             env,
             policy,
@@ -122,12 +161,19 @@ def train_baseline(
         )
         if not should_validate:
             continue
-        validation = evaluate_policy(
-            protocol,
-            policy,
-            split="validation",
-            reward_config=reward_values,
-            max_assignment_steps=max_assignment_steps,
+        validation_results = [
+            evaluate_policy(
+                protocol.for_scenario(scenario),
+                policy,
+                split="validation",
+                reward_config=reward_values,
+                max_assignment_steps=max_assignment_steps,
+            )
+            for scenario in protocol.training_scenarios
+        ]
+        validation = max(
+            validation_results,
+            key=lambda item: item.model_selection.comparison_key,
         )
         validation_payload = {
             "episode": episode,
@@ -140,17 +186,28 @@ def train_baseline(
             incumbent = validation.model_selection
             best_episode = int(episode)
             policy.save(str(checkpoint))
+            _write_json(
+                checkpoint_identity_path,
+                _checkpoint_identity(protocol, checkpoint),
+            )
 
     if incumbent is None or not checkpoint.is_file():
         raise RuntimeError("training produced no validated checkpoint")
-    policy.load(str(checkpoint))
-    final_test = evaluate_policy(
-        protocol,
-        policy,
-        split="final_test",
-        reward_config=reward_values,
-        max_assignment_steps=max_assignment_steps,
+    _validate_checkpoint_identity(
+        protocol, checkpoint, checkpoint_identity_path
     )
+    policy.load(str(checkpoint))
+    final_tests = {
+        scenario: evaluate_policy(
+            protocol.for_scenario(scenario),
+            policy,
+            split="final_test",
+            reward_config=reward_values,
+            max_assignment_steps=max_assignment_steps,
+        )
+        for scenario in protocol.test_scenarios
+    }
+    final_test = final_tests[protocol.test_scenarios[0]]
     final_payload = {
         "split": "final_test",
         "used_for_model_selection": False,
@@ -159,6 +216,16 @@ def train_baseline(
         ),
         "aggregate": final_test.aggregate,
         "seed_records": list(final_test.records),
+        "scenario_results": {
+            scenario: {
+                "aggregate": result.aggregate,
+                "seed_records": list(result.records),
+            }
+            for scenario, result in final_tests.items()
+        },
+        "frozen_checkpoint": checkpoint.name,
+        "training_during_generalization_test": False,
+        "checkpoint_reselection_during_generalization_test": False,
     }
     _write_json(root / "final_test_metrics.json", final_payload)
     manifest = {
@@ -171,6 +238,7 @@ def train_baseline(
         "best_validation": incumbent.to_dict(),
         "checkpoint_path": checkpoint.name,
         "checkpoint_sha256": _file_hash(checkpoint),
+        "checkpoint_identity": checkpoint_identity_path.name,
         "training_log": train_log.name,
         "validation_log": validation_log.name,
         "final_test_report": "final_test_metrics.json",

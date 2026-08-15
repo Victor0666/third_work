@@ -55,7 +55,10 @@ from hrl_mix.safe_metrics import (
     aggregate_safe_metric_records,
     build_episode_metric_record,
 )
-from hrl_mix.train_config import build_train_config
+from hrl_mix.train_config import (
+    build_train_config,
+    environment_scenario_values,
+)
 from hrl_mix.train_eval import evaluate_hrl_three_layer_multi_seed
 from hrl_mix.safe_training_pipeline import (
     SafeStageMetricsLogger,
@@ -293,6 +296,159 @@ def _sync_env_kwargs_scales(env_kwargs, env):
     )
 
 
+def scenario_for_training_episode(cfg, episode_index):
+    '''Return the deterministic protocol scenario for one episode.'''
+    index = int(episode_index)
+    if index < 0:
+        raise ValueError('episode_index must be non-negative')
+    scenarios = tuple(str(value).upper() for value in cfg.training_scenarios)
+    if not scenarios:
+        raise ValueError('training_scenarios must be non-empty')
+    protocol = str(cfg.protocol).strip().lower()
+    if protocol == 'single':
+        source = str(cfg.source_scenario).strip().upper()
+        if scenarios != (source,):
+            raise ValueError(
+                'Single Safe-HRL training requires exactly the source '
+                'scenario'
+            )
+        return source
+    if protocol == 'multi':
+        return scenarios[index % len(scenarios)]
+    if protocol == 'legacy' and len(scenarios) == 1:
+        return scenarios[0]
+    raise ValueError(f'unsupported Safe-HRL protocol: {cfg.protocol!r}')
+
+
+def _seed_for_training_episode(cfg, episode_index):
+    '''Cover the scenario/seed Cartesian product deterministically.'''
+    index = int(episode_index)
+    seeds = tuple(int(value) for value in cfg.train_seeds)
+    scenario_count = len(tuple(cfg.training_scenarios))
+    if index < 0 or not seeds or scenario_count < 1:
+        raise ValueError(
+            'episode_index must be non-negative and train_seeds non-empty'
+        )
+    return seeds[(index // scenario_count) % len(seeds)]
+
+
+def _scenario_env_kwargs(base, cfg, scenario, seed):
+    '''Build real task/resource/deadline inputs for one episode.'''
+    scenario_id = str(scenario).strip().upper()
+    allowed = tuple(
+        str(value).strip().upper()
+        for value in cfg.training_scenarios
+    )
+    if scenario_id not in allowed:
+        raise ValueError(
+            f'scenario {scenario_id} is outside training_scenarios {allowed}'
+        )
+    values = environment_scenario_values(scenario_id)
+    result = dict(base)
+    result.update({
+        'dax_paths': list(values['dax_list']),
+        'num_cloud_hosts': values['num_cloud_hosts'],
+        'num_edge_hosts': values['num_edge_hosts'],
+        'cloud_vms_per_host': values['cloud_vms_per_host'],
+        'edge_vms_per_host': values['edge_vms_per_host'],
+        'cloud_pc_tiers': values['cloud_pc_tiers'],
+        'edge_pc_tiers': values['edge_pc_tiers'],
+        'cloud_bw_tiers': values['cloud_bw_tiers'],
+        'edge_bw_tiers': values['edge_bw_tiers'],
+        'deadline_cache_path': values['deadline_cache_path'],
+        'scenario_code': scenario_id,
+        'task_code': values['task_code'],
+        'resource_code': values['resource_code'],
+        'workflow_families': values['workflow_families'],
+        'random_seed': int(seed),
+    })
+    return result
+
+
+def _evaluate_training_scenarios(
+    env_cls,
+    *,
+    base_env_kwargs,
+    active_env_kwargs,
+    cfg,
+    controller,
+    vm_agent,
+    host_agent,
+    manager_agent,
+    seeds,
+    return_safety_metrics,
+    scenarios=None,
+):
+    '''Evaluate an explicit scenario set using the shared validation metrics.'''
+    scenarios = tuple(cfg.training_scenarios if scenarios is None else scenarios)
+    if not scenarios:
+        raise ValueError('validation scenarios must be non-empty')
+    if len(scenarios) == 1:
+        return evaluate_hrl_three_layer_multi_seed(
+            env_cls,
+            dict(active_env_kwargs),
+            vm_agent,
+            host_agent,
+            manager_agent,
+            seeds=seeds,
+            return_safety_metrics=return_safety_metrics,
+        )
+
+    results = []
+    for scenario in scenarios:
+        kwargs = _scenario_env_kwargs(
+            base_env_kwargs,
+            cfg,
+            scenario,
+            seed=cfg.validation_seeds[0],
+        )
+        if controller is not None and cfg.curriculum_enabled:
+            kwargs = apply_curriculum_to_env_kwargs(
+                kwargs,
+                controller.current_stage.curriculum,
+                training_seed=cfg.validation_seeds[0],
+            )
+        for key in _ENV_SCALE_KEYS:
+            if key in active_env_kwargs:
+                kwargs[key] = active_env_kwargs[key]
+        result = evaluate_hrl_three_layer_multi_seed(
+            env_cls,
+            kwargs,
+            vm_agent,
+            host_agent,
+            manager_agent,
+            seeds=seeds,
+            return_safety_metrics=return_safety_metrics,
+        )
+        results.append((str(scenario), result))
+
+    means = tuple(
+        float(np.mean([result[index] for _, result in results]))
+        for index in range(4)
+    )
+    if not return_safety_metrics:
+        return means
+
+    records = []
+    for scenario, result in results:
+        for record in result[4]['per_seed_metrics']:
+            row = dict(record)
+            row['scenario_id'] = scenario
+            records.append(row)
+    safety = aggregate_safe_metric_records(records)
+    violation_budget = float(
+        results[0][1][4].get('evaluation_violation_budget', 0.0)
+    )
+    safety.update({
+        'evaluation_violation_budget': violation_budget,
+        'zero_violation_pass': bool(
+            safety['fuzzy_ddl_violation_rate'] <= violation_budget
+        ),
+        'evaluation_scenarios': list(scenarios),
+    })
+    return (*means, safety)
+
+
 def _probe_environment_dimensions(env, cfg):
     """Probe all three layers, then restore a clean episode."""
     st_host, ok = env.get_host_state_for_next_assignment()
@@ -338,10 +494,26 @@ def _construct_pipeline_environment(
     controller,
     cfg,
 ):
-    active_kwargs = apply_curriculum_to_env_kwargs(
+    episode_index = controller.total_episode_count
+    training_seed = (
+        controller.training_seed_for_next_episode()
+        if cfg.experiment_protocol is None
+        else _seed_for_training_episode(cfg, episode_index)
+    )
+    scenario_kwargs = _scenario_env_kwargs(
         base_env_kwargs,
-        controller.current_stage.curriculum,
-        training_seed=controller.training_seed_for_next_episode(),
+        cfg,
+        scenario_for_training_episode(cfg, episode_index),
+        seed=training_seed,
+    )
+    active_kwargs = (
+        apply_curriculum_to_env_kwargs(
+            scenario_kwargs,
+            controller.current_stage.curriculum,
+            training_seed=training_seed,
+        )
+        if cfg.curriculum_enabled
+        else scenario_kwargs
     )
     env = env_cls(**_environment_ctor_kwargs(active_kwargs))
     env.reset()
@@ -350,8 +522,27 @@ def _construct_pipeline_environment(
     return env, active_kwargs
 
 
+def _validate_pipeline_protocol_seed_split(cfg, training_plan):
+    '''Reject pipeline plans that bypass the experiment protocol seeds.'''
+    if cfg.experiment_protocol is None:
+        return
+    actual_training = tuple(training_plan.seed_split.training)
+    actual_validation = tuple(training_plan.seed_split.validation)
+    if actual_training != tuple(cfg.train_seeds):
+        raise ValueError(
+            'safe training plan training seeds do not match protocol '
+            f'train_seeds: {actual_training} != {tuple(cfg.train_seeds)}'
+        )
+    if actual_validation != tuple(cfg.validation_seeds):
+        raise ValueError(
+            'safe training plan validation seeds do not match protocol '
+            f'validation_seeds: {actual_validation} != '
+            f'{tuple(cfg.validation_seeds)}'
+        )
+
+
 def train(
-    scenario: str = "SS",
+    scenario: str | None = None,
     ddl: str = "T",
     max_episodes: int | None = None,
     safe_rl_enabled: bool = False,
@@ -367,6 +558,11 @@ def train(
     safe_rl_offline_pretrain_q_c: bool = True,
     safe_rl_training_pipeline_plan: str | None = None,
     safe_rl_training_resume_checkpoint: str | None = None,
+    safe_rl_curriculum_enabled: bool = True,
+    optimizer_seed: int = 0,
+    protocol: str | None = None,
+    source_scenario: str | None = None,
+    resource_scale: str | None = None,
 ):
     """执行一次完整训练
 
@@ -413,6 +609,11 @@ def train(
         safe_rl_training_resume_checkpoint=(
             safe_rl_training_resume_checkpoint
         ),
+        safe_rl_curriculum_enabled=safe_rl_curriculum_enabled,
+        optimizer_seed=optimizer_seed,
+        protocol=protocol,
+        source_scenario=source_scenario,
+        resource_scale=resource_scale,
     )
 
     training_plan = None
@@ -423,6 +624,7 @@ def train(
         training_plan = load_safe_training_plan(
             cfg.safe_rl.training_pipeline.plan_path
         )
+        _validate_pipeline_protocol_seed_split(cfg, training_plan)
         training_controller = SafeTrainingController(
             training_plan
         )
@@ -433,6 +635,7 @@ def train(
             training_resume_payload = read_pipeline_checkpoint(
                 resume_path,
                 controller=training_controller,
+                expected_protocol_identity=cfg.experiment_protocol,
             )
             if training_controller.completed:
                 raise ValueError(
@@ -467,7 +670,7 @@ def train(
     )
 
     # 训练前固定随机种子，便于复现实验
-    set_seed(cfg.random_seed)
+    set_seed(cfg.optimizer_seed)
 
     # 构造环境入参。部分 reward 尺度参数不是构造函数参数，
     # 会在环境创建和 reset 之后通过 apply_env_scales() 手动写入
@@ -522,6 +725,7 @@ def train(
         manager_heuristic_library_path=(
             cfg.safe_rl.manager_heuristics.library_manifest_path
         ),
+        experiment_protocol_identity=cfg.experiment_protocol,
         manager_heuristic_recent_window=(
             cfg.safe_rl.manager_heuristics.recent_window
         ),
@@ -545,7 +749,14 @@ def train(
             cfg=cfg,
         )
     else:
-        env = EnvCls(**env_kwargs) # 创建环境
+        if cfg.experiment_protocol is not None:
+            env_kwargs = _scenario_env_kwargs(
+                base_env_kwargs,
+                cfg,
+                scenario_for_training_episode(cfg, 0),
+                seed=_seed_for_training_episode(cfg, 0),
+            )
+        env = EnvCls(**_environment_ctor_kwargs(env_kwargs)) # 创建环境
         env.reset() # 初始化环境， 函数为自己创建
 
     # 将配置中的 reward/归一化尺度写入训练环境（手动化写入参数）
@@ -1091,24 +1302,70 @@ def train(
                     global_step=global_step,
                     episode=episode_idx,
                 )
-            eval_result = evaluate_hrl_three_layer_multi_seed(
-                EnvCls,
-                dict(env_kwargs),
-                vm_agent,
-                host_agent,
-                manager_agent,
-                seeds=(
-                    training_plan.seed_split.validation
-                    if training_plan is not None
-                    else cfg.eval_seeds
-                ),
-                return_safety_metrics=(
-                    feasibility_first_selection
-                    or lagrange_controller.enabled
-                    or training_controller is not None
-                    or metric_store is not None
-                ),
+            validation_due = (
+                (episode_idx + 1) % cfg.validation_interval == 0
+                or episode_idx + 1 == cfg.max_episodes
             )
+            if validation_due:
+                curriculum_eval_result = None
+                if training_controller is not None:
+                    curriculum_eval_result = _evaluate_training_scenarios(
+                        EnvCls,
+                        base_env_kwargs=base_env_kwargs,
+                        active_env_kwargs=env_kwargs,
+                        cfg=cfg,
+                        controller=training_controller,
+                        vm_agent=vm_agent,
+                        host_agent=host_agent,
+                        manager_agent=manager_agent,
+                        seeds=cfg.validation_seeds,
+                        return_safety_metrics=True,
+                        scenarios=tuple(cfg.training_scenarios),
+                    )
+                # Only fixed source-scenario validation may select checkpoint.
+                eval_result = _evaluate_training_scenarios(
+                    EnvCls,
+                    base_env_kwargs=base_env_kwargs,
+                    active_env_kwargs=base_env_kwargs,
+                    cfg=cfg,
+                    controller=None,
+                    vm_agent=vm_agent,
+                    host_agent=host_agent,
+                    manager_agent=manager_agent,
+                    seeds=cfg.validation_seeds,
+                    scenarios=(str(cfg.source_scenario or cfg.training_scenarios[0]).upper(),),
+                    return_safety_metrics=(
+                        feasibility_first_selection
+                        or lagrange_controller.enabled
+                        or training_controller is not None
+                        or metric_store is not None
+                    ),
+                )
+            else:
+                skipped_energy = float(env.total_energy - ep_energy0)
+                eval_result = (
+                    0.0,
+                    0.0,
+                    0.0,
+                    skipped_energy,
+                    {
+                        "deadline_violation_rate": 0.0,
+                        "zero_violation_pass": False,
+                        "fuzzy_energy_score": skipped_energy,
+                        "safety_cost": 0.0,
+                        "shield_intervention_rate": 0.0,
+                        "fallback_rate": 0.0,
+                        "max_fuzzy_lateness": 0.0,
+                        "mean_fuzzy_lateness": 0.0,
+                        "all_seed_feasible": False,
+                        "all_seed_evaluation_completed": False,
+                        "completed_evaluation_seed_rate": 0.0,
+                        "feasible_seed_rate": 0.0,
+                        "worst_seed_violation": 0.0,
+                        "worst_seed_lateness": 0.0,
+                        "validation_seed_count": 0,
+                    },
+                )
             if (
                 feasibility_first_selection
                 or lagrange_controller.enabled
@@ -1146,6 +1403,7 @@ def train(
                 }
             if (
                 feasibility_first_selection
+                and validation_due
                 and not bool(
                     eval_safety[
                         "all_seed_evaluation_completed"
@@ -1160,10 +1418,10 @@ def train(
                 FeasibilityFirstModelMetrics.from_mapping(
                     eval_safety
                 )
-                if feasibility_first_selection
+                if feasibility_first_selection and validation_due
                 else None
             )
-            if metric_store is not None:
+            if metric_store is not None and validation_due:
                 eval_safety["q_c_prediction_error"] = float(
                     q_c_error
                 )
@@ -1184,55 +1442,63 @@ def train(
             ep_total_late, ep_avg_late, wf_avg_late = compute_episode_task_lateness_metrics(env)
             ep_wf_late_sum = float(getattr(env, "ep_wf_lateness_sum", 0.0))
             episode_shield = env.get_safety_shield_diagnostics()
-            pipeline_transition_event = None
+            pipeline_transition_event = {
+                "transitioned": False,
+                "pipeline_completed": False,
+            }
             pipeline_stage_metrics = None
-            if training_controller is not None:
+            if (
+                training_controller is not None
+                and validation_due
+                and not training_controller.completed
+            ):
+                curriculum_safety = curriculum_eval_result[4]
                 pipeline_stage_metrics = StageMetrics(
                     fuzzy_energy_score=float(
-                        eval_safety["fuzzy_energy_score"]
+                        curriculum_safety["fuzzy_energy_score"]
                     ),
-                    safety_cost=float(
-                        eval_safety["safety_cost"]
-                    ),
+                    safety_cost=float(curriculum_safety["safety_cost"]),
                     violation_rate=float(
-                        eval_safety[
-                            "deadline_violation_rate"
-                        ]
+                        curriculum_safety["deadline_violation_rate"]
                     ),
                     shield_intervention_rate=float(
-                        eval_safety[
-                            "shield_intervention_rate"
-                        ]
+                        curriculum_safety["shield_intervention_rate"]
                     ),
-                    fallback_rate=float(
-                        eval_safety["fallback_rate"]
-                    ),
+                    fallback_rate=float(curriculum_safety["fallback_rate"]),
                     lagrange_multiplier=float(
-                        lagrange_diagnostics[
-                            "current_lambda"
-                        ]
+                        lagrange_diagnostics["current_lambda"]
                     ),
                     q_c_prediction_error=q_c_error,
-                    q_c_prediction_error_sample_count=(
-                        q_c_error_count
-                    ),
+                    q_c_prediction_error_sample_count=q_c_error_count,
                 )
-                pipeline_transition_event = (
+                curriculum_observation = (
                     training_controller.observe_validation(
                         pipeline_stage_metrics,
-                        source="validation",
+                        source="curriculum_validation",
+                        count_episode=False,
                     )
                 )
-                stage_metrics_logger.log(
-                    controller=training_controller,
-                    metrics=pipeline_stage_metrics,
-                    transition_event=(
-                        pipeline_transition_event
-                    ),
-                    global_step=global_step,
-                    episode=episode_idx,
+            else:
+                curriculum_observation = None
+            if training_controller is not None:
+                pipeline_transition_event = training_controller.record_episode()
+                pipeline_transition_event["training_seed_used"] = (
+                    _seed_for_training_episode(cfg, episode_idx)
                 )
-
+                pipeline_transition_event["training_scenario_used"] = (
+                    scenario_for_training_episode(cfg, episode_idx)
+                )
+                if curriculum_observation is not None:
+                    pipeline_transition_event[
+                        "curriculum_validation_observation"
+                    ] = curriculum_observation
+                    stage_metrics_logger.log(
+                        controller=training_controller,
+                        metrics=pipeline_stage_metrics,
+                        transition_event=pipeline_transition_event,
+                        global_step=global_step,
+                        episode=episode_idx,
+                    )
             logger.log(
                 step=global_step, episode=episode_idx, type="episode",
                 ep_length=episode_steps, env_time=getattr(env, "current_time", 0.0),
@@ -1424,7 +1690,7 @@ def train(
                 f"worst_seed_late={eval_safety['worst_seed_lateness']:.6f}"
             )
 
-            best_improved = (
+            best_improved = validation_due and (
                 is_better_model(
                     candidate_model_metrics,
                     best_model_metrics,
@@ -1529,6 +1795,13 @@ def train(
                     lagrange_controller,
                 )
 
+            # The completed episode is already logged and checkpointed. Do
+            # not construct/reset an unused environment after the configured
+            # final episode; doing so can consume the next environment seed.
+            if episode_idx + 1 >= cfg.max_episodes:
+                episode_idx += 1
+                break
+
             if training_controller is not None:
                 checkpoint_due = (
                     training_controller.total_episode_count
@@ -1595,11 +1868,11 @@ def train(
                     "pipeline_completed"
                 ]:
                     print(
-                        "[safe training pipeline] completed after "
+                        "[safe training pipeline] curriculum completed after "
                         f"{training_controller.total_episode_count} "
-                        "online episodes"
+                        "online episodes; continuing frozen final stage to "
+                        f"the configured {cfg.max_episodes} episodes"
                     )
-                    break
                 env, next_env_kwargs = (
                     _construct_pipeline_environment(
                         EnvCls,
@@ -1621,11 +1894,33 @@ def train(
                     )
                 env_kwargs = next_env_kwargs
             else:
-                env.random_seed = (
-                    getattr(env, "random_seed", 0) + 1
-                )
-                env.reset()
-                apply_env_scales(env, cfg)
+                if cfg.experiment_protocol is None:
+                    env.random_seed = (
+                        getattr(env, "random_seed", 0) + 1
+                    )
+                    env.reset()
+                    apply_env_scales(env, cfg)
+                else:
+                    next_episode_index = episode_idx + 1
+                    next_env_kwargs = _scenario_env_kwargs(
+                        base_env_kwargs,
+                        cfg,
+                        scenario_for_training_episode(
+                            cfg,
+                            next_episode_index,
+                        ),
+                        seed=_seed_for_training_episode(
+                            cfg,
+                            next_episode_index,
+                        ),
+                    )
+                    env = EnvCls(
+                        **_environment_ctor_kwargs(next_env_kwargs)
+                    )
+                    env.reset()
+                    apply_env_scales(env, cfg)
+                    _sync_env_kwargs_scales(next_env_kwargs, env)
+                    env_kwargs = next_env_kwargs
             pending_host_transition = None
             pending_vm_transition = None
 

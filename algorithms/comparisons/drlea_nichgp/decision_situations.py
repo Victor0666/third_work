@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .config import config_for_scenario
 from .env_adapter import CEWSEnvAdapter
 from .features import routing_state
 from .gp_features import task_gp_terminals
@@ -44,8 +45,12 @@ def collect_decision_situations(
         else target_size
     )
     situations = []
-    for seed in seeds:
-        adapter = CEWSEnvAdapter(config, int(seed))
+    for index, seed in enumerate(seeds):
+        scenario = config.training_scenarios[
+            index % len(config.training_scenarios)
+        ]
+        scenario_config = config_for_scenario(config, scenario)
+        adapter = CEWSEnvAdapter(scenario_config, int(seed))
         adapter.reset()
         task_id = adapter.advance_until_actionable()
         while task_id is not None:

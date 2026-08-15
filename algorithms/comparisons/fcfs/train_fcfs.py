@@ -24,8 +24,12 @@ DEFAULT_PROTOCOL_CONFIG = (
     PROJECT_ROOT / "algorithms" / "comparisons" / "config"
     / "fuzzy_baselines.json"
 )
-FORMAL_TEST_SEEDS = (201, 202, 203)
-
+FORMAL_TEST_SEEDS = tuple(range(201, 231))
+SINGLE_GENERALIZATION_GROUPS = {
+    "SS": ("SS", "MS", "LS"),
+    "SM": ("SM", "MM", "LM"),
+    "SL": ("SL", "ML", "LL"),
+}
 
 def build_fcfs_protocol(
     scenario="SS",
@@ -43,7 +47,7 @@ def build_fcfs_protocol(
     )
     if protocol.test_seeds != FORMAL_TEST_SEEDS:
         raise ValueError(
-            "FCFS formal test seeds must be exactly (201, 202, 203)"
+            "FCFS formal test seeds must be exactly 201-230"
         )
     return protocol
 
@@ -109,6 +113,57 @@ def run_formal_evaluation(
     return payload
 
 
+def run_single_generalization(
+    method_id,
+    source_scenario="SS",
+    ddl="T",
+    *,
+    config_path=DEFAULT_PROTOCOL_CONFIG,
+    output_root=None,
+    workflows_per_episode=None,
+):
+    """Evaluate one frozen FCFS method across its Single scenario group."""
+    source = str(source_scenario).strip().upper()
+    if source not in SINGLE_GENERALIZATION_GROUPS:
+        raise ValueError("Single FCFS source scenario must be SS, SM, or SL")
+    policy = make_policy(method_id)
+    scenario_results = {}
+    for scenario in SINGLE_GENERALIZATION_GROUPS[source]:
+        protocol = build_fcfs_protocol(
+            scenario,
+            ddl,
+            config_path=config_path,
+            workflows_per_episode=workflows_per_episode,
+        )
+        result = evaluate_policy(protocol, policy, split="final_test")
+        scenario_results[scenario] = {
+            "aggregate": result.aggregate,
+            "seed_records": list(result.records),
+        }
+    root = Path(output_root) if output_root else (
+        PROJECT_ROOT / "out" / "comparisons" / policy.method_id
+        / "main_single" / source
+    )
+    destination = root / "generalization_metrics.json"
+    payload = {
+        "method_id": policy.method_id,
+        "display_name": policy.display_name,
+        "protocol": "single",
+        "source_scenario": source,
+        "training_performed": False,
+        "checkpoint_selection_performed": False,
+        "test_scenarios": list(SINGLE_GENERALIZATION_GROUPS[source]),
+        "final_test_seeds": list(FORMAL_TEST_SEEDS),
+        "scenario_results": scenario_results,
+    }
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(
+        json.dumps(payload, indent=2, sort_keys=True, allow_nan=False),
+        encoding="utf-8",
+    )
+    payload["output_path"] = str(destination.resolve())
+    return payload
+
 def main(argv=None, *, fixed_method_id=None):
     parser = argparse.ArgumentParser(description=__doc__)
     if fixed_method_id is None:
@@ -119,18 +174,29 @@ def main(argv=None, *, fixed_method_id=None):
     parser.add_argument("--ddl", default="T")
     parser.add_argument("--config", default=str(DEFAULT_PROTOCOL_CONFIG))
     parser.add_argument("--output")
+    parser.add_argument("--single-source", choices=("SS", "SM", "SL"))
     args = parser.parse_args(argv)
     method_id = (
         str(fixed_method_id)
         if fixed_method_id is not None
         else str(args.method)
     )
-    payload = run_formal_evaluation(
-        method_id,
-        args.scenario,
-        args.ddl,
-        config_path=args.config,
-        output_path=args.output,
+    payload = (
+        run_single_generalization(
+            method_id,
+            args.single_source,
+            args.ddl,
+            config_path=args.config,
+            output_root=args.output,
+        )
+        if args.single_source
+        else run_formal_evaluation(
+            method_id,
+            args.scenario,
+            args.ddl,
+            config_path=args.config,
+            output_path=args.output,
+        )
     )
     print(payload["output_path"])
 

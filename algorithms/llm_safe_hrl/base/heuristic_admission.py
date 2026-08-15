@@ -15,6 +15,17 @@ from pathlib import Path
 import re
 from typing import Mapping
 
+try:
+    from scenario_registry import (
+        assert_no_final_test_seed,
+        validate_protocol_identity,
+    )
+except ModuleNotFoundError:  # Package-style imports used by some test runners.
+    from algorithms.llm_safe_hrl.scenario_registry import (
+        assert_no_final_test_seed,
+        validate_protocol_identity,
+    )
+
 
 ADMISSION_MANIFEST_SCHEMA_VERSION = 3
 ADMISSION_RECORD_SCHEMA_VERSION = 2
@@ -348,6 +359,7 @@ def admission_policy_from_config(config: Mapping) -> dict:
         raise ValueError(
             "required_evaluation_seeds must not contain duplicates"
         )
+    assert_no_final_test_seed(seeds, "heuristic admission")
     policy = {
         "policy_version": str(admission["policy_version"]),
         "required_evaluation_seeds": [
@@ -596,6 +608,52 @@ def record_sha256(record: Mapping) -> str:
     return canonical_json_sha256(payload)
 
 
+def _normalized_experiment_protocol(
+    value,
+    *,
+    artifact_name: str,
+) -> dict | None:
+    """Normalize protocol metadata through the canonical registry."""
+    if value is None:
+        return None
+    return validate_protocol_identity(
+        value,
+        value,
+        artifact_name=artifact_name,
+    )
+
+
+def _protocol_from_evaluation_config(config: Mapping) -> dict | None:
+    nested = config.get("experiment_protocol")
+    if nested is not None:
+        return _normalized_experiment_protocol(
+            nested,
+            artifact_name="evaluation config protocol",
+        )
+    fields = (
+        "protocol",
+        "source_scenario",
+        "training_scenarios",
+        "test_scenarios",
+        "llm_train_seeds",
+        "llm_validation_seeds",
+        "safe_hrl_train_seeds",
+        "safe_hrl_validation_seeds",
+        "final_test_seeds",
+    )
+    present = [field for field in fields if field in config]
+    if not present:
+        return None
+    if len(present) != len(fields):
+        raise ValueError(
+            "evaluation config has incomplete experiment protocol"
+        )
+    return _normalized_experiment_protocol(
+        {field: config[field] for field in fields},
+        artifact_name="evaluation config protocol",
+    )
+
+
 def build_admission_record(
     *,
     heuristic_id: str,
@@ -608,6 +666,7 @@ def build_admission_record(
     display_name: str | None = None,
     trusted_source_root: str = DEFAULT_TRUSTED_SOURCE_ROOT,
     trusted_report_root: str = DEFAULT_TRUSTED_REPORT_ROOT,
+    experiment_protocol=None,
 ) -> dict:
     """从可信目录中的候选字节和评价报告构造不可执行的准入记录。"""
     manifest = Path(manifest_path).resolve()
@@ -941,6 +1000,16 @@ def build_admission_record(
             else ";".join(rejection_reasons)
         ),
     }
+    protocol_identity = (
+        _normalized_experiment_protocol(
+            experiment_protocol,
+            artifact_name="admission record",
+        )
+        if experiment_protocol is not None
+        else _protocol_from_evaluation_config(evaluation_config)
+    )
+    if protocol_identity is not None:
+        record["experiment_protocol"] = protocol_identity
     record["record_sha256"] = record_sha256(record)
     logging.info(
         "Heuristic admission id=%s structure=%s frozen_hash=%s admitted=%s reasons=%s",
@@ -960,6 +1029,7 @@ def append_admission_record(
     manifest_version: str = DEFAULT_MANIFEST_VERSION,
     trusted_source_root: str = DEFAULT_TRUSTED_SOURCE_ROOT,
     trusted_report_root: str = DEFAULT_TRUSTED_REPORT_ROOT,
+    expected_protocol_identity=None,
 ) -> dict:
     """追加新版本记录；拒绝覆盖相同 ID 或相同版本。"""
     path = Path(manifest_path)
@@ -974,6 +1044,24 @@ def append_admission_record(
     record_policy = admission_policy_from_config(
         {"admission": record.get("admission_policy")}
     )
+    record_protocol = _normalized_experiment_protocol(
+        record.get("experiment_protocol"),
+        artifact_name="admission record",
+    )
+    expected_protocol = _normalized_experiment_protocol(
+        expected_protocol_identity,
+        artifact_name="expected admission protocol",
+    )
+    if expected_protocol is not None:
+        if record_protocol is None:
+            raise ValueError(
+                "admission record is missing experiment_protocol"
+            )
+        validate_protocol_identity(
+            expected_protocol,
+            record_protocol,
+            artifact_name="admission record",
+        )
     if path.exists():
         payload = json.loads(path.read_text(encoding="utf-8"))
         if (
@@ -989,6 +1077,30 @@ def append_admission_record(
         manifest_scope = normalize_admission_scope(
             payload.get("admission_scope")
         )
+        manifest_protocol = _normalized_experiment_protocol(
+            payload.get("experiment_protocol"),
+            artifact_name="safe heuristic manifest",
+        )
+        if (manifest_protocol is None) != (record_protocol is None):
+            raise ValueError(
+                "record experiment_protocol does not match manifest"
+            )
+        if manifest_protocol is not None:
+            validate_protocol_identity(
+                manifest_protocol,
+                record_protocol,
+                artifact_name="admission record",
+            )
+        if expected_protocol is not None:
+            if manifest_protocol is None:
+                raise ValueError(
+                    "safe heuristic manifest is missing experiment_protocol"
+                )
+            validate_protocol_identity(
+                expected_protocol,
+                manifest_protocol,
+                artifact_name="safe heuristic manifest",
+            )
         if canonical_json_sha256(
             manifest_policy
         ) != canonical_json_sha256(record_policy):
@@ -1016,6 +1128,8 @@ def append_admission_record(
             "admission_policy": record_policy,
             "llm_rules": [],
         }
+        if record_protocol is not None:
+            payload["experiment_protocol"] = record_protocol
     rules = payload.get("llm_rules")
     if not isinstance(rules, list):
         raise ValueError("manifest llm_rules must be a list")

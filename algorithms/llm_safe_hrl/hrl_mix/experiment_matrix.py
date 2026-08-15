@@ -22,6 +22,7 @@ from typing import Any, Mapping, Sequence
 import numpy as np
 
 from algorithms.llm_safe_hrl.paths import PROJECT_ROOT
+from algorithms.llm_safe_hrl.scenario_registry import SCENARIO_REGISTRY
 from common.read_xml_opt_Tsize import poisson_arrival_times
 from hrl_mix.safe_metrics import SAFE_METRICS_SCHEMA_VERSION
 
@@ -33,10 +34,12 @@ REQUIRED_METHOD_IDS = (
     'fuzzy_irws',
     'fuzzy_marl',
     'fuzzy_pd3qn',
+    'drlea_nichgp',
     "original_hrl",
     "original_hrl_plus_llm",
     "safe_hrl_without_llm",
     "llm_augmented_safe_hrl",
+    "llm_safe_hrl_without_curriculum",
     "seevo_best_heuristic_only",
     "edf_baseline",
     "fcfs_fcfs",
@@ -137,6 +140,7 @@ IMPLEMENTED_EXECUTION_ADAPTERS = frozenset(
         'fuzzy_irws_runner',
         'fuzzy_marl_runner',
         'fuzzy_pd3qn_runner',
+        'drlea_nichgp_pipeline',
         "fcfs_fcfs_evaluator",
         "fcfs_fixed_evaluator",
         "original_hrl_train_runner",
@@ -539,6 +543,22 @@ def _validate_methods(
             name=method_id,
             contracts=contracts,
         )
+        runtime_overrides = dict(
+            _mapping(
+                method.get("runtime_overrides", {}),
+                f"{method_id}.runtime_overrides",
+            )
+        )
+        if set(runtime_overrides).difference({"curriculum_enabled"}):
+            raise ValueError(f"{method_id} has unknown runtime override")
+        if "curriculum_enabled" in runtime_overrides and not isinstance(
+            runtime_overrides["curriculum_enabled"], bool
+        ):
+            raise ValueError("curriculum_enabled override must be boolean")
+        method["runtime_overrides"] = runtime_overrides
+        method["output_namespace"] = str(
+            method.get("output_namespace", method_id)
+        )
         methods[method_id] = method
     missing = set(REQUIRED_METHOD_IDS).difference(methods)
     if missing:
@@ -662,9 +682,18 @@ def load_experiment_matrix(
     shared = dict(
         _mapping(raw.get("shared_protocol"), "shared_protocol")
     )
-    if str(shared.get("scenario", "")).upper() != "SS":
+    scenario = str(shared.get("scenario", "")).upper()
+    if scenario != "SS":
         raise ValueError(
             "stage-17 reference matrix currently freezes scenario SS"
+        )
+    registry_topology = SCENARIO_REGISTRY[scenario].resource_mapping()
+    configured_topology = shared.get("resource_topology")
+    if configured_topology is not None and dict(
+        _mapping(configured_topology, "shared.resource_topology")
+    ) != registry_topology:
+        raise ValueError(
+            "shared.resource_topology conflicts with Scenario Registry"
         )
     if str(shared.get("ddl_setting", "")).lower() != "tight":
         raise ValueError("reference comparison must use Tight DDL")
@@ -739,27 +768,61 @@ def load_experiment_matrix(
             "sha256": _file_sha256(deadline_path),
         }
     )
-    heuristic_relative, heuristic_path = _resolve_repo_artifact(
-        path,
-        shared.get("heuristic_library_manifest_path"),
-        "heuristic_library_manifest_path",
+    heuristic_raw = Path(str(shared.get("heuristic_library_manifest_path")))
+    heuristic_path = (
+        heuristic_raw
+        if heuristic_raw.is_absolute()
+        else (path.parent / heuristic_raw)
+    ).resolve()
+    try:
+        heuristic_relative = heuristic_path.relative_to(PROJECT_ROOT).as_posix()
+    except ValueError as exc:
+        raise ValueError(
+            "heuristic_library_manifest_path must stay inside the project"
+        ) from exc
+    heuristic_manifest = {}
+    if heuristic_path.is_file():
+        artifacts.append(
+            {
+                "artifact_role": "heuristic_library_manifest",
+                "path": heuristic_relative,
+                "sha256": _file_sha256(heuristic_path),
+            }
+        )
+        with heuristic_path.open("r", encoding="utf-8") as handle:
+            heuristic_manifest = json.load(handle)
+    formal_library = False
+    protocol_metadata = heuristic_manifest.get("experiment_protocol")
+    if isinstance(protocol_metadata, Mapping):
+        formal_library = (
+            str(protocol_metadata.get("protocol", "")).lower() == "single"
+            and str(protocol_metadata.get("source_scenario", "")).upper()
+            == str(shared.get("scenario", "")).upper()
+            and tuple(protocol_metadata.get("training_scenarios", ()))
+            == (str(shared.get("scenario", "")).upper(),)
+            and tuple(protocol_metadata.get("llm_train_seeds", ())) == (1, 2, 3)
+            and tuple(protocol_metadata.get("llm_validation_seeds", ())) == (4, 5)
+            and tuple(protocol_metadata.get("final_test_seeds", ()))
+            == tuple(range(201, 231))
+        )
+    admitted_llm = (
+        sorted(
+            str(record["heuristic_id"])
+            for record in heuristic_manifest.get("llm_rules", [])
+            if record.get("admitted") is True
+            and str(record.get("admission_status", "")).lower()
+            == "admitted"
+        )
+        if formal_library
+        else []
     )
-    artifacts.append(
-        {
-            "artifact_role": "heuristic_library_manifest",
-            "path": heuristic_relative,
-            "sha256": _file_sha256(heuristic_path),
-        }
+    heuristic_library_status = (
+        "formal"
+        if formal_library
+        else ("incompatible" if heuristic_path.is_file() else "missing_formal")
     )
-    with heuristic_path.open("r", encoding="utf-8") as handle:
-        heuristic_manifest = json.load(handle)
-    admitted_llm = sorted(
-        str(record["heuristic_id"])
-        for record in heuristic_manifest.get("llm_rules", [])
-        if record.get("admitted") is True
-        and str(record.get("admission_status", "")).lower()
-        == "admitted"
-    )
+    if heuristic_path.is_file():
+        artifacts[-1]["artifact_protocol_status"] = heuristic_library_status
 
     deadline_evidence = _load_deadline_cache_evidence(
         deadline_path
@@ -827,6 +890,7 @@ def load_experiment_matrix(
         )
 
     normalized_shared = dict(shared)
+    normalized_shared["resource_topology"] = registry_topology
     normalized_shared["workload"] = workload
     normalized_shared["fuzzy"] = fuzzy
     normalized_shared["case_splits"] = case_splits
@@ -847,6 +911,8 @@ def load_experiment_matrix(
         "ablations": ablations,
         "smoke_profile": smoke,
         "artifact_integrity": artifacts,
+        "heuristic_library_status": heuristic_library_status,
+        "expected_heuristic_library_path": heuristic_relative,
         "deadline_cache_evidence": deadline_evidence,
         "admitted_llm_heuristic_ids": admitted_llm,
         "_workflow_paths": resolved_workflows,
@@ -1016,6 +1082,8 @@ def build_experiment_manifest(
             "execution_adapter": method[
                 "execution_adapter"
             ],
+            "runtime_overrides": dict(method["runtime_overrides"]),
+            "output_namespace": method["output_namespace"],
             "effective_components": components,
             "disabled_components": [],
             "shared_protocol_sha256": matrix[

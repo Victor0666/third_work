@@ -7,6 +7,7 @@ import time
 
 import numpy as np
 
+from .config import config_for_scenario, protocol_artifact_identity
 from .checkpointing import (
     experiment_manifest,
     portable_path,
@@ -126,17 +127,20 @@ def evaluate_sequencing(
     sequencing_agent,
     seeds,
 ) -> dict:
-    rows = [
-        run_sequencing_episode(
-            config,
-            routing_agent,
-            rules,
-            sequencing_agent,
-            int(seed),
-            training=False,
-        )[0]
-        for seed in seeds
-    ]
+    rows = []
+    for scenario in config.training_scenarios:
+        scenario_config = config_for_scenario(config, scenario)
+        for seed in seeds:
+            row = run_sequencing_episode(
+                scenario_config,
+                routing_agent,
+                rules,
+                sequencing_agent,
+                int(seed),
+                training=False,
+            )[0]
+            row["scenario_id"] = scenario
+            rows.append(row)
     return aggregate_seed_metrics(rows)
 
 
@@ -159,8 +163,12 @@ def train_sequencing(
         train_seed = config.train_seeds[
             episode % len(config.train_seeds)
         ]
+        training_scenario = config.training_scenarios[
+            episode % len(config.training_scenarios)
+        ]
+        episode_config = config_for_scenario(config, training_scenario)
         train_metrics, trace = run_sequencing_episode(
-            config,
+            episode_config,
             routing_agent,
             rules,
             agent,
@@ -168,22 +176,34 @@ def train_sequencing(
             training=True,
         )
         interaction_count += len(trace)
-        validation = evaluate_sequencing(
-            config,
-            routing_agent,
-            rules,
-            agent,
-            config.validation_seeds,
+        validation_due = (
+            (episode + 1) % config.validation_interval == 0
+            or episode + 1 == config.sa_episodes
         )
-        key = comparison_key(validation)
-        saved = best_key is None or key < best_key
-        if saved:
-            best_key = key
-            agent.save(path, metrics=validation)
+        validation = None
+        saved = False
+        if validation_due:
+            validation = evaluate_sequencing(
+                config,
+                routing_agent,
+                rules,
+                agent,
+                config.validation_seeds,
+            )
+            key = comparison_key(validation)
+            saved = best_key is None or key < best_key
+            if saved:
+                best_key = key
+                agent.save(
+                    path,
+                    metrics=validation,
+                    protocol_identity=protocol_artifact_identity(config),
+                )
         history.append(
             {
                 "episode": episode + 1,
                 "train_seed": int(train_seed),
+                "training_scenario": training_scenario,
                 "mean_reward": float(
                     np.mean([row["reward"] for row in trace])
                 )
@@ -194,8 +214,11 @@ def train_sequencing(
                 "train_fuzzy_energy_score": train_metrics[
                     "fuzzy_energy_score"
                 ],
+                "validation_performed": bool(validation_due),
                 **{
-                    f"validation_{name}": float(validation[name])
+                    f"validation_{name}": (
+                        float(validation[name]) if validation is not None else None
+                    )
                     for name in (
                         "deadline_violation_rate",
                         "max_fuzzy_lateness",
@@ -205,7 +228,10 @@ def train_sequencing(
                 },
             }
         )
-    best_agent = SequencingAgent.load(path)
+    best_agent = SequencingAgent.load(
+        path,
+        expected_protocol_identity=protocol_artifact_identity(config),
+    )
     write_json(output / "sa_history.json", history)
     write_csv(output / "sa_history.csv", history)
     write_json(
@@ -218,7 +244,9 @@ def train_sequencing(
                 "checkpoint": portable_path(path),
                 "best_comparison_key": list(best_key or ()),
                 "environment_interaction_count": interaction_count,
-                "validation_call_count": int(config.sa_episodes),
+                "validation_call_count": sum(
+                    row["validation_performed"] for row in history
+                ),
                 "compute_device": str(agent.device),
                 "process_cpu_seconds": float(
                     time.process_time() - started_cpu

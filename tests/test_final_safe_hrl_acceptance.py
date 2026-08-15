@@ -13,7 +13,6 @@ import unittest
 from unittest.mock import patch
 
 import torch
-import yaml
 
 from algorithms.llm_safe_hrl.paths import LLM_ROOT
 from base.d3qn_agent import D3QNAgent
@@ -21,6 +20,7 @@ from hrl_mix.train_config import build_train_config
 import hrl_mix.train_runner as train_runner
 from LLM.problems.cews_task_constructive.eval import (
     evaluate_candidate,
+    load_problem_config,
 )
 
 
@@ -30,13 +30,11 @@ REFERENCE_DAX = ROOT / "data" / "dax" / "Montage_25.xml"
 
 class FinalSafeHRLAcceptanceTests(unittest.TestCase):
     def test_small_cews_reference_evaluation_uses_frozen_formulas(self):
-        problem_config = yaml.safe_load(
-            (
-                LLM_ROOT
-                / "cfg"
-                / "problem"
-                / "cews_task_constructive.yaml"
-            ).read_text(encoding="utf-8")
+        problem_config = load_problem_config(
+            LLM_ROOT
+            / "cfg"
+            / "problem"
+            / "cews_task_constructive.yaml"
         )
         problem_config["dataset"]["workflows_per_instance"] = 1
         result = evaluate_candidate(
@@ -47,7 +45,7 @@ class FinalSafeHRLAcceptanceTests(unittest.TestCase):
                 / "reference.py"
             ),
             problem_config,
-            [0],
+            [1],
         )
         self.assertTrue(result["interface_valid"])
         self.assertTrue(result["all_evaluation_seeds_completed"])
@@ -112,6 +110,7 @@ class FinalSafeHRLAcceptanceTests(unittest.TestCase):
         return replace(
             base,
             dax_list=[str(REFERENCE_DAX)],
+            task_code="",
             workflows_per_episode=1,
             max_episodes=1,
             save_interval=10**9,

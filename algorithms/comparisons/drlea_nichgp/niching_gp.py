@@ -9,6 +9,11 @@ import time
 
 import numpy as np
 
+from .config import (
+    config_for_scenario,
+    protocol_artifact_identity,
+    validate_protocol_artifact_identity,
+)
 from .checkpointing import (
     experiment_manifest,
     portable_path,
@@ -135,14 +140,16 @@ def run_rule_episode(config, routing_agent, program, seed: int) -> dict:
 
 
 def evaluate_program(config, routing_agent, program, seeds) -> dict:
-    return aggregate_seed_metrics(
-        [
-            run_rule_episode(
-                config, routing_agent, program, int(seed)
+    rows = []
+    for scenario in config.training_scenarios:
+        scenario_config = config_for_scenario(config, scenario)
+        for seed in seeds:
+            row = run_rule_episode(
+                scenario_config, routing_agent, program, int(seed)
             )
-            for seed in seeds
-        ]
-    )
+            row["scenario_id"] = scenario
+            rows.append(row)
+    return aggregate_seed_metrics(rows)
 
 
 def _tournament(
@@ -211,7 +218,7 @@ def evolve_niching_gp(
                     config,
                     routing_agent,
                     individual.program,
-                    config.validation_seeds,
+                    config.train_seeds,
                 )
                 fitness_cache[key] = (
                     comparison_key(metrics),
@@ -308,9 +315,24 @@ def evolve_niching_gp(
         if candidate.valid:
             _update_archive(archive_by_behavior, [candidate])
 
-    archive = sorted(
+    train_archive = sorted(
         archive_by_behavior.values(),
         key=lambda item: item.fitness,
+    )
+    validation_cache = {}
+    for individual in train_archive:
+        metrics = evaluate_program(
+            config,
+            routing_agent,
+            individual.program,
+            config.validation_seeds,
+        )
+        validation_cache[individual.program.tokens] = metrics
+    archive = sorted(
+        train_archive,
+        key=lambda item: comparison_key(
+            validation_cache[item.program.tokens]
+        ),
     )[: config.gp.archive_size]
     if len(archive) != 4:
         raise RuntimeError("exactly four GP rules are required")
@@ -320,6 +342,7 @@ def evolve_niching_gp(
         "scenario": config.scenario,
         "ddl": config.ddl,
         "algorithm_seed": config.algorithm_seed,
+        "protocol_identity": protocol_artifact_identity(config),
         "source_hash": source_hash(),
         "routing_agent": {
             "seed": int(routing_agent.seed),
@@ -340,6 +363,12 @@ def evolve_niching_gp(
                 "rule_id": index,
                 **individual.program.to_dict(),
                 "fitness": list(individual.fitness),
+                "training_fitness": list(individual.fitness),
+                "validation_fitness": list(
+                    comparison_key(
+                        validation_cache[individual.program.tokens]
+                    )
+                ),
                 "behavior": list(individual.behavior),
             }
             for index, individual in enumerate(archive)
@@ -367,7 +396,12 @@ def evolve_niching_gp(
                 "unique_candidate_evaluation_count": len(
                     fitness_cache
                 ),
-                "validation_call_count": len(fitness_cache),
+                "training_fitness_call_count": len(fitness_cache),
+                "validation_call_count": len(validation_cache),
+                "gp_evolution_seeds": list(config.train_seeds),
+                "final_rule_selection_seeds": list(
+                    config.validation_seeds
+                ),
                 "compute_device": str(routing_agent.device),
                 "process_cpu_seconds": float(
                     time.process_time() - started_cpu
@@ -378,7 +412,11 @@ def evolve_niching_gp(
     return [item.program for item in archive], path, history
 
 
-def load_rules(path: str | Path) -> list[GPProgram]:
+def load_rules(
+    path: str | Path,
+    *,
+    expected_protocol_identity: dict | None = None,
+) -> list[GPProgram]:
     payload = read_json(path)
     if (
         int(payload.get("schema_version", -1)) != 2
@@ -389,6 +427,12 @@ def load_rules(path: str | Path) -> list[GPProgram]:
         or tuple(payload.get("terminal_names", ())) != GP_TERMINALS
     ):
         raise ValueError("incompatible GP rule archive")
+    if expected_protocol_identity is not None:
+        validate_protocol_artifact_identity(
+            expected_protocol_identity,
+            payload.get("protocol_identity"),
+            artifact_name="DRL-EA GP rule archive",
+        )
     rules = [
         GPProgram.from_dict(item) for item in payload["rules"]
     ]

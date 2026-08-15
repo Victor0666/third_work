@@ -478,14 +478,14 @@ class AggregatorTests(unittest.TestCase):
 class IsolationAndIntegrationTests(unittest.TestCase):
     def test_final_test_seed_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "Final test seeds"):
-            reject_test_seeds([7, 100], [100])
+            reject_test_seeds([7, 201], [201])
         with self.assertRaisesRegex(ValueError, "Final test seeds"):
             CounterfactualRunSession(
                 CounterfactualConfig(cache_enabled=False),
-                metadata(seed=100),
+                metadata(seed=201),
                 PROJECT_ROOT / "tests" / "artifacts" / "counterfactual_feedback_smoke",
                 resource_config_hash="resource",
-                final_test_seeds=[100],
+                final_test_seeds=[201],
             )
         with tempfile.TemporaryDirectory() as directory:
             candidate = Path(directory) / "candidate.py"
@@ -498,10 +498,10 @@ class IsolationAndIntegrationTests(unittest.TestCase):
                 evaluate_candidate(
                     candidate,
                     load_problem_config(),
-                    [100],
+                    [201],
                     counterfactual_options={
                         "config": CounterfactualConfig(cache_enabled=False),
-                        "metadata": metadata(seed=100),
+                        "metadata": metadata(seed=201),
                         "output_dir": directory,
                     },
                 )
@@ -663,7 +663,7 @@ def get_task_priority_v2(
         result = evaluate_candidate(
             candidate,
             config,
-            [0],
+                [1],
             counterfactual_options={
                 "config": cf_config,
                 "metadata": metadata(),

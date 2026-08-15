@@ -9,6 +9,7 @@ import unittest
 from pathlib import Path
 
 from algorithms.llm_safe_hrl.paths import HRL_ROOT
+from algorithms.llm_safe_hrl.scenario_registry import SCENARIO_REGISTRY
 from hrl_mix.experiment_matrix import (
     GET_TASK_PRIORITY_V2_INPUTS,
     REQUIRED_ABLATION_IDS,
@@ -85,10 +86,14 @@ class ExperimentMatrixTests(unittest.TestCase):
             fuzzy["deadline_is_deterministic"],
             True,
         )
+        self.assertEqual(
+            matrix["shared_protocol"]["resource_topology"],
+            SCENARIO_REGISTRY["SS"].resource_mapping(),
+        )
 
     def test_all_runs_share_fixtures_evaluation_and_metrics(self):
         manifest = build_experiment_manifest(CONFIG)
-        self.assertEqual(len(manifest["runs"]), 18)
+        self.assertEqual(len(manifest["runs"]), 20)
         self.assertEqual(
             manifest["generator"]["module"],
             "hrl_mix.experiment_matrix",
@@ -214,6 +219,14 @@ class ExperimentMatrixTests(unittest.TestCase):
         self.assertEqual(
             manifest["admitted_llm_heuristic_ids"],
             [],
+        )
+        self.assertEqual(
+            load_experiment_matrix(CONFIG)["heuristic_library_status"],
+            "missing_formal",
+        )
+        self.assertIn(
+            "out/main_single/SS/safe_heuristic_library_single_SS.json",
+            load_experiment_matrix(CONFIG)["expected_heuristic_library_path"],
         )
         self.assertTrue(runs["original_hrl"]["execution_ready"])
         self.assertTrue(runs["fuzzy_irws"]["execution_ready"])

@@ -18,6 +18,10 @@ import numpy as np
 from omegaconf import OmegaConf
 
 from algorithms.llm_safe_hrl.paths import LLM_ROOT
+from algorithms.llm_safe_hrl.scenario_registry import (
+    apply_scenario_to_problem_config,
+    resolve_experiment_protocol,
+)
 
 if str(LLM_ROOT) not in sys.path:
     sys.path.insert(0, str(LLM_ROOT))
@@ -740,10 +744,15 @@ class StagedEvaluationConfigurationTests(unittest.TestCase):
         self.assertTrue(validation)
         self.assertFalse(set(train) & set(validation))
         self.assertFalse((set(train) | set(validation)) & set(tests))
-        self.assertGreaterEqual(
-            len(config.parameter_optimization.scenario_ids),
-            2,
+        context = resolve_experiment_protocol(
+            config.protocol,
+            source_scenario=config.source_scenario,
+            resource_scale=config.resource_scale,
+            train_seeds=train,
+            validation_seeds=validation,
         )
+        self.assertEqual(context.training_scenarios, ("SS",))
+        self.assertEqual(list(config.parameter_optimization.scenario_ids), [])
         self.assertGreaterEqual(
             config.parameter_optimization.max_parallel_evaluations,
             2,
@@ -795,7 +804,14 @@ class StagedEvaluationConfigurationTests(unittest.TestCase):
                     stderr="",
                 )
 
-            with mock.patch("seevo.subprocess.run", side_effect=fake_run) as run:
+            with mock.patch(
+                "seevo.apply_scenario_to_problem_config",
+                side_effect=lambda config, scenario, **_kwargs: (
+                    apply_scenario_to_problem_config(
+                        config, scenario, require_files=False
+                    )
+                ),
+            ), mock.patch("seevo.subprocess.run", side_effect=fake_run) as run:
                 result = algorithm._evaluate_parameter_map(
                     candidate,
                     {"weight": 1.0, "epsilon": 0.1},
@@ -863,7 +879,14 @@ class StagedEvaluationConfigurationTests(unittest.TestCase):
                     stderr="",
                 )
 
-            with mock.patch("seevo.subprocess.run", side_effect=fake_run) as run:
+            with mock.patch(
+                "seevo.apply_scenario_to_problem_config",
+                side_effect=lambda config, scenario, **_kwargs: (
+                    apply_scenario_to_problem_config(
+                        config, scenario, require_files=False
+                    )
+                ),
+            ), mock.patch("seevo.subprocess.run", side_effect=fake_run) as run:
                 result = algorithm._evaluate_parameter_map(
                     candidate,
                     {"weight": 1.0, "epsilon": 0.1},
@@ -942,7 +965,14 @@ class StagedEvaluationConfigurationTests(unittest.TestCase):
                 {"weight": weight, "epsilon": 0.1}
                 for weight in (0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0)
             ]
-            with mock.patch("seevo.subprocess.run", side_effect=fake_run) as run:
+            with mock.patch(
+                "seevo.apply_scenario_to_problem_config",
+                side_effect=lambda config, scenario, **_kwargs: (
+                    apply_scenario_to_problem_config(
+                        config, scenario, require_files=False
+                    )
+                ),
+            ), mock.patch("seevo.subprocess.run", side_effect=fake_run) as run:
                 results = algorithm._evaluate_parameter_maps(
                     candidate,
                     parameter_maps,
@@ -1270,20 +1300,36 @@ class TinyEndToEndTests(unittest.TestCase):
             generated_dir = problem_dir / "generated"
             generated_dir.mkdir(parents=True)
             manifest_path = problem_dir / "safe_heuristic_library_resS.json"
-            manifest_path.write_text(
-                (
-                    LLM_ROOT
-                    / "problems"
-                    / "cews_task_constructive"
-                    / "safe_heuristic_library_resS.json"
-                ).read_text(encoding="utf-8"),
-                encoding="utf-8",
+            context = resolve_experiment_protocol(
+                "multi",
+                source_scenario=None,
+                resource_scale="S",
+                train_seeds=(1, 2, 3),
+                validation_seeds=(4, 5),
             )
-            admission_config_path = (
+            admission_template_path = (
                 LLM_ROOT
                 / "cfg"
                 / "problem"
                 / "cews_task_constructive_hrl_ss_admission.yaml"
+            )
+            admission_cfg = apply_scenario_to_problem_config(
+                OmegaConf.to_container(
+                    OmegaConf.load(admission_template_path),
+                    resolve=True,
+                ),
+                "SS",
+                require_files=True,
+            )
+            admission_cfg["experiment_protocol"] = context.identity()
+            admission_cfg["admission_evaluation_scenarios"] = list(
+                context.training_scenarios
+            )
+            admission_config_path = root / "effective_admission_config.yaml"
+            OmegaConf.save(
+                OmegaConf.create(admission_cfg),
+                admission_config_path,
+                resolve=True,
             )
             candidate = parse_rule_candidate(_source())
             best_parameters = candidate.parameter_schema.values_dict(
@@ -1302,8 +1348,8 @@ class TinyEndToEndTests(unittest.TestCase):
                     "optimizer_config_hash": "b" * 64,
                     "parameter_diagnostics_hash": "c" * 64,
                     "optimizer_seed": 7,
-                    "training_seeds": [0, 1, 2],
-                    "validation_seeds": [3, 4],
+                    "training_seeds": [1, 2, 3],
+                    "validation_seeds": [4, 5],
                 },
             )
             source_path = generated_dir / "candidate_iter1_ind2.py"
@@ -1318,6 +1364,8 @@ class TinyEndToEndTests(unittest.TestCase):
             algorithm.problem = "cews_task_constructive"
             algorithm.mode = "train"
             algorithm.cfg = SimpleNamespace(timeout=10)
+            algorithm.experiment_protocol_context = context
+            algorithm.experiment_protocol_identity = context.identity()
             algorithm.parameter_optimizer_config = OptimizerConfig(
                 enabled=True,
                 auto_admission_enabled=True,
@@ -1360,8 +1408,8 @@ class TinyEndToEndTests(unittest.TestCase):
                         "optimizer_seed": 7,
                         "frozen_rule_hash": source_hash,
                         "parameter_diagnostics_hash": "c" * 64,
-                        "training_seeds": [0, 1, 2],
-                        "validation_seeds": [3, 4],
+                        "training_seeds": [1, 2, 3],
+                        "validation_seeds": [4, 5],
                     }
                 )
                 metrics["per_seed_metrics"][0].update(

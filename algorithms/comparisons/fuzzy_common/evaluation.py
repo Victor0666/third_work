@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import statistics
 import time
 from typing import Any, Protocol, Sequence
 
@@ -65,6 +66,68 @@ class EvaluationResult:
     aggregate: dict[str, Any]
     model_selection: FeasibilityFirstModelMetrics
 
+
+PAPER_FINAL_METRIC_FIELDS = (
+    "deadline_violation_rate",
+    "max_fuzzy_lateness",
+    "mean_fuzzy_lateness",
+    "fuzzy_energy_mean",
+    "fuzzy_energy_std",
+    "fuzzy_energy_score",
+)
+
+
+def aggregate_paper_final_metrics(
+    records: Sequence[dict[str, Any]],
+) -> dict[str, float]:
+    """Return the shared six-field paper view for frozen-policy runs."""
+    if not records:
+        raise ValueError("paper final metrics require at least one record")
+    rows = [dict(record) for record in records]
+    if "completed_workflow_count" in rows[0]:
+        aggregate = aggregate_safe_metric_records(rows)
+        return {
+            name: float(aggregate[name])
+            for name in PAPER_FINAL_METRIC_FIELDS
+        }
+    required = set(PAPER_FINAL_METRIC_FIELDS).union(
+        {"workflow_count", "deadline_violation_count"}
+    )
+    for row in rows:
+        missing = required.difference(row)
+        if missing:
+            raise ValueError(
+                f"paper final metric record missing {sorted(missing)}"
+            )
+    workflows = sum(int(row["workflow_count"]) for row in rows)
+    if workflows <= 0:
+        raise ValueError("paper final metrics require completed workflows")
+    violations = sum(
+        int(row["deadline_violation_count"]) for row in rows
+    )
+    return {
+        "deadline_violation_rate": float(violations / workflows),
+        "max_fuzzy_lateness": float(
+            max(float(row["max_fuzzy_lateness"]) for row in rows)
+        ),
+        "mean_fuzzy_lateness": float(
+            sum(
+                float(row["mean_fuzzy_lateness"])
+                * int(row["workflow_count"])
+                for row in rows
+            )
+            / workflows
+        ),
+        "fuzzy_energy_mean": float(
+            statistics.fmean(float(row["fuzzy_energy_mean"]) for row in rows)
+        ),
+        "fuzzy_energy_std": float(
+            statistics.fmean(float(row["fuzzy_energy_std"]) for row in rows)
+        ),
+        "fuzzy_energy_score": float(
+            statistics.fmean(float(row["fuzzy_energy_score"]) for row in rows)
+        ),
+    }
 
 def make_environment(
     protocol: FuzzyComparisonProtocol,
@@ -169,6 +232,7 @@ def evaluate_policy(
             )
         )
     aggregate = aggregate_safe_metric_records(records)
+    aggregate.update(aggregate_paper_final_metrics(records))
     selection_values = aggregate_seed_feasibility_metrics(records)
     selection = FeasibilityFirstModelMetrics.from_mapping(selection_values)
     return EvaluationResult(
@@ -179,8 +243,10 @@ def evaluate_policy(
 
 
 __all__ = [
+    "PAPER_FINAL_METRIC_FIELDS",
     "ComparisonPolicy",
     "EvaluationResult",
+    "aggregate_paper_final_metrics",
     "evaluate_policy",
     "make_environment",
     "run_episode",

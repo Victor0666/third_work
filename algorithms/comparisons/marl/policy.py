@@ -49,7 +49,8 @@ class MARLPolicy:
             env.num_hosts,
             config,
         )
-        self._pending: dict[str, Any] | None = None
+        self._pending_host: dict[str, Any] | None = None
+        self._pending_vm_by_host: dict[int, dict[str, Any]] = {}
 
     def configuration(self) -> dict[str, Any]:
         return {
@@ -63,36 +64,49 @@ class MARLPolicy:
         }
 
     def begin_episode(self, env: FuzzyBaselineEnv, *, training: bool) -> None:
-        self._pending = None
+        self._pending_host = None
+        self._pending_vm_by_host = {}
         env.set_task_orderer(None, training=training)
 
-    def _update_pending(
+    def _update_pending_host(
         self,
-        next_host_observation: np.ndarray,
-        next_vm_observation: np.ndarray,
+        next_observation: np.ndarray,
         *,
         done: float,
     ) -> None:
-        if self._pending is None:
+        if self._pending_host is None:
             return
+        pending = self._pending_host
         self.host_agent.update_transition(
-            self._pending["host_observation"],
-            self._pending["host_mask"],
-            self._pending["host_action"],
-            self._pending["reward"],
-            next_host_observation,
+            pending["observation"],
+            pending["mask"],
+            pending["action"],
+            pending["reward"],
+            next_observation,
             done,
         )
+        self._pending_host = None
+
+    def _update_pending_vm(
+        self,
+        host_id: int,
+        next_observation: np.ndarray,
+        *,
+        done: float,
+    ) -> None:
+        host_id = int(host_id)
+        pending = self._pending_vm_by_host.pop(host_id, None)
+        if pending is None:
+            return
         self.vm_agent.update_transition(
-            self._pending["vm_observation"],
-            self._pending["vm_mask"],
-            self._pending["vm_action"],
-            self._pending["reward"],
-            next_vm_observation,
+            pending["observation"],
+            pending["mask"],
+            pending["action"],
+            pending["reward"],
+            next_observation,
             done,
-            self._pending["host_action"],
+            host_id,
         )
-        self._pending = None
 
     def assign(
         self,
@@ -103,6 +117,8 @@ class MARLPolicy:
     ) -> FuzzyAssignmentResult:
         host_observation = np.asarray(host_state["obs"], dtype=np.float32)
         host_mask = _legal_mask(host_state)
+        if training:
+            self._update_pending_host(host_observation, done=0.0)
         host_action = self.host_agent.select_action(
             host_observation,
             host_mask,
@@ -115,8 +131,10 @@ class MARLPolicy:
         vm_observation = np.asarray(vm_state["obs"], dtype=np.float32)
         vm_mask = _legal_mask(vm_state)
         if training:
-            self._update_pending(
-                host_observation,
+            # A Host-specific critic may only bootstrap from the same Host's
+            # local VM state; other Hosts keep their transition pending.
+            self._update_pending_vm(
+                host_action,
                 vm_observation,
                 done=0.0,
             )
@@ -128,13 +146,16 @@ class MARLPolicy:
         )
         result = env.assign_local_vm(vm_action)
         if training:
-            self._pending = {
-                "host_observation": host_observation.copy(),
-                "host_mask": host_mask.copy(),
-                "host_action": int(host_action),
-                "vm_observation": vm_observation.copy(),
-                "vm_mask": vm_mask.copy(),
-                "vm_action": int(vm_action),
+            self._pending_host = {
+                "observation": host_observation.copy(),
+                "mask": host_mask.copy(),
+                "action": int(host_action),
+                "reward": float(result.reward),
+            }
+            self._pending_vm_by_host[int(host_action)] = {
+                "observation": vm_observation.copy(),
+                "mask": vm_mask.copy(),
+                "action": int(vm_action),
                 "reward": float(result.reward),
             }
         return result
@@ -160,13 +181,23 @@ class MARLPolicy:
 
     def end_episode(self, env: FuzzyBaselineEnv, *, training: bool) -> None:
         del env
-        if training and self._pending is not None:
-            self._update_pending(
+        if training:
+            self._update_pending_host(
                 np.zeros(self.host_agent.observation_dim, dtype=np.float32),
-                np.zeros(self.vm_agent.observation_dim, dtype=np.float32),
                 done=1.0,
             )
-        self._pending = None
+            terminal_vm_observation = np.zeros(
+                self.vm_agent.observation_dim,
+                dtype=np.float32,
+            )
+            for host_id in sorted(tuple(self._pending_vm_by_host)):
+                self._update_pending_vm(
+                    host_id,
+                    terminal_vm_observation,
+                    done=1.0,
+                )
+        self._pending_host = None
+        self._pending_vm_by_host = {}
 
     def save(self, path: str) -> None:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
@@ -184,7 +215,11 @@ class MARLPolicy:
 
     def load(self, path: str) -> None:
         try:
-            payload = torch.load(path, map_location=self.host_agent.device, weights_only=True)
+            payload = torch.load(
+                path,
+                map_location=self.host_agent.device,
+                weights_only=True,
+            )
         except TypeError:
             payload = torch.load(path, map_location=self.host_agent.device)
         if payload.get("method_id") != self.method_id:

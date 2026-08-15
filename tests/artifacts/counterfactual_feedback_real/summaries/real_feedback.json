@@ -10,16 +10,16 @@
         "ddl_diagnostic_agent",
         "energy_diagnostic_agent"
       ],
-      "decision_id": "smoke:SS:0:d000006",
-      "preferred_task": 16
+      "decision_id": "smoke:SS:1:d000000",
+      "preferred_task": 0
     },
     {
       "agents": [
         "ddl_diagnostic_agent",
         "energy_diagnostic_agent"
       ],
-      "decision_id": "smoke:SS:0:d000009",
-      "preferred_task": 6
+      "decision_id": "smoke:SS:1:d000001",
+      "preferred_task": 0
     }
   ],
   "ddl_patterns": [
@@ -27,30 +27,32 @@
       "agent_name": "ddl_diagnostic_agent",
       "confidence": "medium",
       "decision_ids": [
-        "smoke:SS:0:d000006",
-        "smoke:SS:0:d000009"
+        "smoke:SS:1:d000000",
+        "smoke:SS:1:d000001"
       ],
-      "diagnosis_code": "higher_ddl_risk_choice",
+      "diagnosis_code": "critical_path_or_successor_blocked+higher_ddl_risk_choice",
       "occurrences": 2,
       "scenarios": [
         "SS"
       ],
       "seeds": [
-        0
+        1
       ],
       "suggested_structural_actions": [
-        "add_conditional_ddl_protection_gate"
+        "add_conditional_ddl_protection_gate",
+        "add_successor_release_interaction",
+        "add_upward_rank_remaining_work_interaction"
       ]
     }
   ],
-  "diagnostics_hash": "bf094afa6b346355ec7729a585c87eabed35f720fdff99b9deb7a5db9321ca77",
+  "diagnostics_hash": "f82dc979e9eddae78d073bf8e359b9943584070357e8b7e965cf9df9e1ae9bb5",
   "energy_patterns": [
     {
       "agent_name": "energy_diagnostic_agent",
       "confidence": "medium",
       "decision_ids": [
-        "smoke:SS:0:d000006",
-        "smoke:SS:0:d000009"
+        "smoke:SS:1:d000000",
+        "smoke:SS:1:d000001"
       ],
       "diagnosis_code": "avoidable_marginal_energy_or_load_cost",
       "occurrences": 2,
@@ -58,7 +60,7 @@
         "SS"
       ],
       "seeds": [
-        0
+        1
       ],
       "suggested_structural_actions": [
         "add_host_load_conditional_gate",
@@ -71,14 +73,14 @@
   "insufficient_evidence_items": [
     {
       "agent_name": "uncertainty_diagnostic_agent",
-      "decision_id": "smoke:SS:0:d000006",
+      "decision_id": "smoke:SS:1:d000000",
       "limitations": [
         "modal and pessimistic evidence do not disagree materially"
       ]
     },
     {
       "agent_name": "uncertainty_diagnostic_agent",
-      "decision_id": "smoke:SS:0:d000009",
+      "decision_id": "smoke:SS:1:d000001",
       "limitations": [
         "modal and pessimistic evidence do not disagree materially"
       ]
@@ -96,8 +98,8 @@
         "ddl_diagnostic_agent"
       ],
       "evidence_decision_ids": [
-        "smoke:SS:0:d000006",
-        "smoke:SS:0:d000009"
+        "smoke:SS:1:d000000",
+        "smoke:SS:1:d000001"
       ],
       "occurrences": 2,
       "scenario_count": 1,
@@ -109,8 +111,47 @@
         "energy_diagnostic_agent"
       ],
       "evidence_decision_ids": [
-        "smoke:SS:0:d000006",
-        "smoke:SS:0:d000009"
+        "smoke:SS:1:d000000",
+        "smoke:SS:1:d000001"
+      ],
+      "occurrences": 2,
+      "scenario_count": 1,
+      "seed_count": 1
+    },
+    {
+      "action": "add_load_successor_release_interaction",
+      "agents": [
+        "energy_diagnostic_agent"
+      ],
+      "evidence_decision_ids": [
+        "smoke:SS:1:d000000",
+        "smoke:SS:1:d000001"
+      ],
+      "occurrences": 2,
+      "scenario_count": 1,
+      "seed_count": 1
+    },
+    {
+      "action": "add_successor_release_interaction",
+      "agents": [
+        "ddl_diagnostic_agent"
+      ],
+      "evidence_decision_ids": [
+        "smoke:SS:1:d000000",
+        "smoke:SS:1:d000001"
+      ],
+      "occurrences": 2,
+      "scenario_count": 1,
+      "seed_count": 1
+    },
+    {
+      "action": "add_upward_rank_remaining_work_interaction",
+      "agents": [
+        "ddl_diagnostic_agent"
+      ],
+      "evidence_decision_ids": [
+        "smoke:SS:1:d000000",
+        "smoke:SS:1:d000001"
       ],
       "occurrences": 2,
       "scenario_count": 1,
@@ -122,8 +163,8 @@
       "agent_name": "energy_diagnostic_agent",
       "confidence": "medium",
       "decision_ids": [
-        "smoke:SS:0:d000006",
-        "smoke:SS:0:d000009"
+        "smoke:SS:1:d000000",
+        "smoke:SS:1:d000001"
       ],
       "diagnosis_code": "avoidable_marginal_energy_or_load_cost",
       "occurrences": 2,
@@ -131,7 +172,7 @@
         "SS"
       ],
       "seeds": [
-        0
+        1
       ],
       "suggested_structural_actions": [
         "add_host_load_conditional_gate",
@@ -142,68 +183,71 @@
       "agent_name": "ddl_diagnostic_agent",
       "confidence": "medium",
       "decision_ids": [
-        "smoke:SS:0:d000006",
-        "smoke:SS:0:d000009"
+        "smoke:SS:1:d000000",
+        "smoke:SS:1:d000001"
       ],
-      "diagnosis_code": "higher_ddl_risk_choice",
+      "diagnosis_code": "critical_path_or_successor_blocked+higher_ddl_risk_choice",
       "occurrences": 2,
       "scenarios": [
         "SS"
       ],
       "seeds": [
-        0
+        1
       ],
       "suggested_structural_actions": [
-        "add_conditional_ddl_protection_gate"
+        "add_conditional_ddl_protection_gate",
+        "add_successor_release_interaction",
+        "add_upward_rank_remaining_work_interaction"
       ]
     }
   ],
   "representative_cases": [
     {
       "alternatives": [
-        16,
-        21
+        3,
+        0
       ],
       "critical_reasons": [
-        "selected_not_maximum_upward_rank",
         "close_rule_scores",
-        "ready_queue_congestion"
+        "ready_queue_congestion",
+        "successor_release_difference"
       ],
-      "decision_id": "smoke:SS:0:d000006",
-      "diagnosis_code": "higher_ddl_risk_choice",
+      "decision_id": "smoke:SS:1:d000000",
+      "diagnosis_code": "critical_path_or_successor_blocked+higher_ddl_risk_choice",
       "estimator_type": "local_one_step",
       "quantitative_deltas": {
         "critical_successor_release_regret": 0.0,
         "predicted_violation_regret": 0.0,
-        "remaining_critical_path_regret": 0.0,
-        "safety_margin_regret": 0.21260541318849846
+        "remaining_critical_path_regret": 0.6147513178816268,
+        "safety_margin_regret": 5.608947831778551
       },
       "scenario_id": "SS",
-      "seed": 0,
-      "selected_task_id": 5
+      "seed": 1,
+      "selected_task_id": 4
     },
     {
       "alternatives": [
-        6,
-        21
+        2,
+        0
       ],
       "critical_reasons": [
         "selected_not_maximum_upward_rank",
         "close_rule_scores",
-        "ready_queue_congestion"
+        "ready_queue_congestion",
+        "successor_release_difference"
       ],
-      "decision_id": "smoke:SS:0:d000009",
-      "diagnosis_code": "higher_ddl_risk_choice",
+      "decision_id": "smoke:SS:1:d000001",
+      "diagnosis_code": "critical_path_or_successor_blocked+higher_ddl_risk_choice",
       "estimator_type": "local_one_step",
       "quantitative_deltas": {
         "critical_successor_release_regret": 0.0,
         "predicted_violation_regret": 0.0,
-        "remaining_critical_path_regret": 0.0,
-        "safety_margin_regret": 0.032463866773923655
+        "remaining_critical_path_regret": 1.0466262145142764,
+        "safety_margin_regret": 4.046541912319299
       },
       "scenario_id": "SS",
-      "seed": 0,
-      "selected_task_id": 7
+      "seed": 1,
+      "selected_task_id": 3
     }
   ],
   "structure_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",

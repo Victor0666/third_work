@@ -1,0 +1,382 @@
+{
+  "algorithm_seed": 41,
+  "ddl": "Tight",
+  "method_id": "drlea_nichgp",
+  "protocol_identity": {
+    "algorithm_seed": 41,
+    "ddl": "Tight",
+    "protocol": "legacy",
+    "resource_scale": "S",
+    "source_scenario": "SS",
+    "test_scenarios": [
+      "SS"
+    ],
+    "test_seeds": [
+      201,
+      202,
+      203,
+      204,
+      205,
+      206,
+      207,
+      208,
+      209,
+      210,
+      211,
+      212,
+      213,
+      214,
+      215,
+      216,
+      217,
+      218,
+      219,
+      220,
+      221,
+      222,
+      223,
+      224,
+      225,
+      226,
+      227,
+      228,
+      229,
+      230
+    ],
+    "train_seeds": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "training_scenarios": [
+      "SS"
+    ],
+    "validation_seeds": [
+      101,
+      102,
+      103
+    ]
+  },
+  "routing_agent": {
+    "action_dim": 25,
+    "seed": 41,
+    "state_dim": 258
+  },
+  "rule_count": 4,
+  "rules": [
+    {
+      "behavior": [
+        4,
+        3,
+        2,
+        1
+      ],
+      "expression": "max(max(sub(sub(MIN_ENERGY,TIME_TO_DEADLINE),mul(MIN_ENERGY,TOTAL_WORK)),min(sub(WF_AGE,READY_COUNT),pdiv(UNCERTAINTY,READY_COUNT))),max(min(max(FUZZY_SLACK,UNCERTAINTY),add(READY_COUNT,TIME_TO_DEADLINE)),add(READY_WORK,mul(FUZZY_SLACK,TASK_WAIT))))",
+      "fitness": [
+        0.0,
+        0.0,
+        0.0,
+        23036.93718191239
+      ],
+      "rule_id": 0,
+      "terminal_names": [
+        "READY_COUNT",
+        "READY_WORK",
+        "MIN_INPUT_COMM",
+        "MIN_OUTPUT_COMM",
+        "MIN_COMP",
+        "MIN_ENERGY",
+        "WF_AGE",
+        "TASK_WAIT",
+        "TIME_TO_DEADLINE",
+        "FUZZY_SLACK",
+        "REMAIN_TASKS",
+        "REMAIN_WORK",
+        "TOTAL_WORK",
+        "UNCERTAINTY"
+      ],
+      "tokens": [
+        "max",
+        "max",
+        "sub",
+        "sub",
+        "MIN_ENERGY",
+        "TIME_TO_DEADLINE",
+        "mul",
+        "MIN_ENERGY",
+        "TOTAL_WORK",
+        "min",
+        "sub",
+        "WF_AGE",
+        "READY_COUNT",
+        "pdiv",
+        "UNCERTAINTY",
+        "READY_COUNT",
+        "max",
+        "min",
+        "max",
+        "FUZZY_SLACK",
+        "UNCERTAINTY",
+        "add",
+        "READY_COUNT",
+        "TIME_TO_DEADLINE",
+        "add",
+        "READY_WORK",
+        "mul",
+        "FUZZY_SLACK",
+        "TASK_WAIT"
+      ],
+      "training_fitness": [
+        0.0,
+        0.0,
+        0.0,
+        23036.93718191239
+      ],
+      "validation_fitness": [
+        0.0,
+        0.0,
+        0.0,
+        22744.532650849764
+      ],
+      "version": "drlea_gp14_v1"
+    },
+    {
+      "behavior": [
+        2,
+        1,
+        0,
+        1
+      ],
+      "expression": "sub(add(add(max(WF_AGE,FUZZY_SLACK),max(FUZZY_SLACK,MIN_ENERGY)),pdiv(max(WF_AGE,TOTAL_WORK),max(UNCERTAINTY,REMAIN_WORK))),min(pdiv(pdiv(MIN_OUTPUT_COMM,MIN_COMP),TOTAL_WORK),pdiv(mul(TOTAL_WORK,UNCERTAINTY),pdiv(MIN_OUTPUT_COMM,TIME_TO_DEADLINE))))",
+      "fitness": [
+        0.0,
+        0.0,
+        0.0,
+        23236.51079129965
+      ],
+      "rule_id": 1,
+      "terminal_names": [
+        "READY_COUNT",
+        "READY_WORK",
+        "MIN_INPUT_COMM",
+        "MIN_OUTPUT_COMM",
+        "MIN_COMP",
+        "MIN_ENERGY",
+        "WF_AGE",
+        "TASK_WAIT",
+        "TIME_TO_DEADLINE",
+        "FUZZY_SLACK",
+        "REMAIN_TASKS",
+        "REMAIN_WORK",
+        "TOTAL_WORK",
+        "UNCERTAINTY"
+      ],
+      "tokens": [
+        "sub",
+        "add",
+        "add",
+        "max",
+        "WF_AGE",
+        "FUZZY_SLACK",
+        "max",
+        "FUZZY_SLACK",
+        "MIN_ENERGY",
+        "pdiv",
+        "max",
+        "WF_AGE",
+        "TOTAL_WORK",
+        "max",
+        "UNCERTAINTY",
+        "REMAIN_WORK",
+        "min",
+        "pdiv",
+        "pdiv",
+        "MIN_OUTPUT_COMM",
+        "MIN_COMP",
+        "TOTAL_WORK",
+        "pdiv",
+        "mul",
+        "TOTAL_WORK",
+        "UNCERTAINTY",
+        "pdiv",
+        "MIN_OUTPUT_COMM",
+        "TIME_TO_DEADLINE"
+      ],
+      "training_fitness": [
+        0.0,
+        0.0,
+        0.0,
+        23236.51079129965
+      ],
+      "validation_fitness": [
+        0.0,
+        0.0,
+        0.0,
+        23406.132590767902
+      ],
+      "version": "drlea_gp14_v1"
+    },
+    {
+      "behavior": [
+        1,
+        0,
+        2,
+        1
+      ],
+      "expression": "add(min(mul(mul(MIN_OUTPUT_COMM,TASK_WAIT),max(UNCERTAINTY,TIME_TO_DEADLINE)),max(pdiv(MIN_INPUT_COMM,WF_AGE),add(MIN_OUTPUT_COMM,READY_COUNT))),mul(MIN_OUTPUT_COMM,add(TIME_TO_DEADLINE,WF_AGE)))",
+      "fitness": [
+        0.0,
+        0.0,
+        0.0,
+        23149.861361025873
+      ],
+      "rule_id": 2,
+      "terminal_names": [
+        "READY_COUNT",
+        "READY_WORK",
+        "MIN_INPUT_COMM",
+        "MIN_OUTPUT_COMM",
+        "MIN_COMP",
+        "MIN_ENERGY",
+        "WF_AGE",
+        "TASK_WAIT",
+        "TIME_TO_DEADLINE",
+        "FUZZY_SLACK",
+        "REMAIN_TASKS",
+        "REMAIN_WORK",
+        "TOTAL_WORK",
+        "UNCERTAINTY"
+      ],
+      "tokens": [
+        "add",
+        "min",
+        "mul",
+        "mul",
+        "MIN_OUTPUT_COMM",
+        "TASK_WAIT",
+        "max",
+        "UNCERTAINTY",
+        "TIME_TO_DEADLINE",
+        "max",
+        "pdiv",
+        "MIN_INPUT_COMM",
+        "WF_AGE",
+        "add",
+        "MIN_OUTPUT_COMM",
+        "READY_COUNT",
+        "mul",
+        "MIN_OUTPUT_COMM",
+        "add",
+        "TIME_TO_DEADLINE",
+        "WF_AGE"
+      ],
+      "training_fitness": [
+        0.0,
+        0.0,
+        0.0,
+        23149.861361025873
+      ],
+      "validation_fitness": [
+        0.0,
+        0.0,
+        0.0,
+        23542.256801680385
+      ],
+      "version": "drlea_gp14_v1"
+    },
+    {
+      "behavior": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "expression": "sub(pdiv(TIME_TO_DEADLINE,READY_COUNT),max(min(min(READY_WORK,TOTAL_WORK),add(MIN_INPUT_COMM,MIN_INPUT_COMM)),add(min(TASK_WAIT,REMAIN_WORK),max(FUZZY_SLACK,WF_AGE))))",
+      "fitness": [
+        0.0,
+        0.0,
+        0.0,
+        22759.904968789837
+      ],
+      "rule_id": 3,
+      "terminal_names": [
+        "READY_COUNT",
+        "READY_WORK",
+        "MIN_INPUT_COMM",
+        "MIN_OUTPUT_COMM",
+        "MIN_COMP",
+        "MIN_ENERGY",
+        "WF_AGE",
+        "TASK_WAIT",
+        "TIME_TO_DEADLINE",
+        "FUZZY_SLACK",
+        "REMAIN_TASKS",
+        "REMAIN_WORK",
+        "TOTAL_WORK",
+        "UNCERTAINTY"
+      ],
+      "tokens": [
+        "sub",
+        "pdiv",
+        "TIME_TO_DEADLINE",
+        "READY_COUNT",
+        "max",
+        "min",
+        "min",
+        "READY_WORK",
+        "TOTAL_WORK",
+        "add",
+        "MIN_INPUT_COMM",
+        "MIN_INPUT_COMM",
+        "add",
+        "min",
+        "TASK_WAIT",
+        "REMAIN_WORK",
+        "max",
+        "FUZZY_SLACK",
+        "WF_AGE"
+      ],
+      "training_fitness": [
+        0.0,
+        0.0,
+        0.0,
+        22759.904968789837
+      ],
+      "validation_fitness": [
+        0.0,
+        0.0,
+        0.0,
+        23603.257369799394
+      ],
+      "version": "drlea_gp14_v1"
+    }
+  ],
+  "scenario": "SS",
+  "schema_version": 2,
+  "selection_order": [
+    "deadline_violation_rate",
+    "max_fuzzy_lateness",
+    "mean_fuzzy_lateness",
+    "fuzzy_energy_score"
+  ],
+  "source_hash": "63292f029ff748e98cb17fec6a56e123dc7e7a4eea37bd9ed357971f12beb86f",
+  "terminal_names": [
+    "READY_COUNT",
+    "READY_WORK",
+    "MIN_INPUT_COMM",
+    "MIN_OUTPUT_COMM",
+    "MIN_COMP",
+    "MIN_ENERGY",
+    "WF_AGE",
+    "TASK_WAIT",
+    "TIME_TO_DEADLINE",
+    "FUZZY_SLACK",
+    "REMAIN_TASKS",
+    "REMAIN_WORK",
+    "TOTAL_WORK",
+    "UNCERTAINTY"
+  ],
+  "terminal_version": "drlea_gp14_v1"
+}

@@ -119,7 +119,7 @@ def _plan_payload(*, manifest_name="dataset.json"):
                 ),
                 "transition": {
                     "mode": "fixed_episodes",
-                    "episodes": 1,
+                    "episodes": 120,
                 },
             },
             {
@@ -131,7 +131,7 @@ def _plan_payload(*, manifest_name="dataset.json"):
                 ),
                 "transition": {
                     "mode": "fixed_episodes",
-                    "episodes": 1,
+                    "episodes": 120,
                 },
             },
             {
@@ -143,7 +143,7 @@ def _plan_payload(*, manifest_name="dataset.json"):
                 ),
                 "transition": {
                     "mode": "fixed_episodes",
-                    "episodes": 1,
+                    "episodes": 120,
                 },
             },
             {
@@ -155,7 +155,7 @@ def _plan_payload(*, manifest_name="dataset.json"):
                 ),
                 "transition": {
                     "mode": "fixed_episodes",
-                    "episodes": 1,
+                    "episodes": 120,
                 },
             },
             {
@@ -167,7 +167,7 @@ def _plan_payload(*, manifest_name="dataset.json"):
                 ),
                 "transition": {
                     "mode": "fixed_episodes",
-                    "episodes": 1,
+                    "episodes": 120,
                 },
             },
         ],
@@ -286,44 +286,22 @@ class SafeTrainingPipelineTests(unittest.TestCase):
             )
             validate_preparation_artifacts(plan)
 
-    def test_validation_threshold_requires_consecutive_passes(self):
+    def test_validation_is_observation_only_and_fixed_episode_driven(self):
         with tempfile.TemporaryDirectory() as td:
-            payload = _plan_payload()
-            payload["online_stages"][0]["transition"] = {
-                "mode": "validation_threshold",
-                "minimum_episodes": 1,
-                "consecutive_evaluations": 2,
-                "thresholds": {
-                    "max_violation_rate": 0.0,
-                    "max_safety_cost": 0.0,
-                },
-            }
             controller = SafeTrainingController(
-                load_safe_training_plan(
-                    _write_plan(Path(td), payload)
-                )
+                load_safe_training_plan(_write_plan(Path(td)))
             )
-            first = controller.observe_validation(
-                _safe_metrics()
-            )
-            self.assertFalse(first["transitioned"])
-            controller.observe_validation(
-                _safe_metrics(violation_rate=0.1)
-            )
-            self.assertEqual(
-                controller.consecutive_validation_passes,
-                0,
-            )
-            controller.observe_validation(_safe_metrics())
-            second = controller.observe_validation(
-                _safe_metrics()
-            )
-            self.assertTrue(second["transitioned"])
+            event = controller.observe_validation(_safe_metrics())
+            self.assertFalse(event["transitioned"])
+            self.assertEqual(controller.total_episode_count, 0)
+            for _ in range(119):
+                self.assertFalse(controller.record_episode()["transitioned"])
+            transition = controller.record_episode()
+            self.assertTrue(transition["transitioned"])
             self.assertEqual(
                 controller.current_stage.stage_id,
                 "stage_4_loose",
             )
-
     def test_final_test_metrics_cannot_advance_curriculum(self):
         with tempfile.TemporaryDirectory() as td:
             controller = SafeTrainingController(
@@ -332,7 +310,7 @@ class SafeTrainingPipelineTests(unittest.TestCase):
                 )
             )
             with self.assertRaisesRegex(
-                ValueError, "validation metrics only"
+                ValueError, "formal validation and final test are read-only"
             ):
                 controller.observe_validation(
                     _safe_metrics(),
@@ -388,7 +366,8 @@ class SafeTrainingPipelineTests(unittest.TestCase):
             root = Path(td)
             plan = load_safe_training_plan(_write_plan(root))
             controller = SafeTrainingController(plan)
-            controller.observe_validation(_safe_metrics())
+            for _ in range(120):
+                controller.record_episode()
             agents = {
                 layer: _DummyAgent(layer)
                 for layer in ("manager", "host", "vm")
@@ -400,7 +379,7 @@ class SafeTrainingPipelineTests(unittest.TestCase):
                 agents=agents,
                 lagrange_controller=lagrange,
                 global_step=7,
-                next_episode=1,
+                next_episode=120,
                 best_model_metrics={
                     "deadline_violation_rate": 0.0,
                     "max_fuzzy_lateness": 0.0,
@@ -449,7 +428,7 @@ class SafeTrainingPipelineTests(unittest.TestCase):
                 "stage_4_loose",
             )
             self.assertEqual(
-                restored_controller.total_episode_count, 1
+                restored_controller.total_episode_count, 120
             )
             self.assertTrue(restored_lagrange.restored)
             self.assertEqual(restored_lagrange.current_lambda, 2.0)
@@ -516,35 +495,22 @@ class SafeTrainingPipelineTests(unittest.TestCase):
 
     def test_cross_seed_stage_cycles_training_seeds_only(self):
         with tempfile.TemporaryDirectory() as td:
-            payload = _plan_payload()
-            payload["online_stages"][-1]["transition"][
-                "episodes"
-            ] = 3
             controller = SafeTrainingController(
-                load_safe_training_plan(
-                    _write_plan(Path(td), payload)
-                )
+                load_safe_training_plan(_write_plan(Path(td)))
             )
-            for _ in range(4):
-                controller.observe_validation(_safe_metrics())
+            for _ in range(120 * 4):
+                controller.record_episode()
             self.assertEqual(
                 controller.current_stage.stage_type,
                 "cross_seed_robust_training",
             )
             used = []
             for _ in range(3):
-                used.append(
-                    controller.training_seed_for_next_episode()
-                )
-                controller.observe_validation(_safe_metrics())
+                used.append(controller.training_seed_for_next_episode())
+                controller.record_episode()
             self.assertEqual(used, [1, 2, 1])
-            self.assertNotIn(
-                11, used
-            )
-            self.assertNotIn(
-                21, used
-            )
-
+            self.assertNotIn(11, used)
+            self.assertNotIn(21, used)
     def test_short_five_stage_flow_smoke_and_metrics_log(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -552,55 +518,34 @@ class SafeTrainingPipelineTests(unittest.TestCase):
             controller = SafeTrainingController(plan)
             logger = SafeStageMetricsLogger(plan.metrics_path)
             visited = []
-            for episode in range(5):
-                visited.append(controller.current_stage.stage_id)
-                event = controller.observe_validation(
-                    _safe_metrics()
-                )
-                logger.log(
-                    controller=controller,
-                    metrics=_safe_metrics(),
-                    transition_event=event,
-                    global_step=episode,
-                    episode=episode,
-                )
+            for episode in range(600):
+                if episode % 120 == 0:
+                    visited.append(controller.current_stage.stage_id)
+                controller.observe_validation(_safe_metrics())
+                event = controller.record_episode()
+                if episode % 120 == 119:
+                    logger.log(
+                        controller=controller,
+                        metrics=_safe_metrics(),
+                        transition_event=event,
+                        global_step=episode,
+                        episode=episode,
+                    )
             self.assertEqual(
                 visited,
-                [
-                    "stage_3",
-                    "stage_4_loose",
-                    "stage_4_medium",
-                    "stage_4_tight",
-                    "stage_5",
-                ],
+                ["stage_3", "stage_4_loose", "stage_4_medium", "stage_4_tight", "stage_5"],
             )
             self.assertTrue(controller.completed)
-            lines = Path(plan.metrics_path).read_text(
-                encoding="utf-8"
-            ).splitlines()
-            self.assertEqual(len(lines), 5)
-            records = [json.loads(line) for line in lines]
+            records = [
+                json.loads(line)
+                for line in Path(plan.metrics_path).read_text(
+                    encoding="utf-8"
+                ).splitlines()
+            ]
+            self.assertEqual(len(records), 5)
             self.assertTrue(
-                all(
-                    record["metric_source"] == "validation"
-                    and not record["final_test_consumed"]
-                    for record in records
-                )
+                all(not record["final_test_consumed"] for record in records)
             )
-            self.assertEqual(
-                set(records[0]["metrics"]),
-                {
-                    "fuzzy_energy_score",
-                    "safety_cost",
-                    "violation_rate",
-                    "shield_intervention_rate",
-                    "fallback_rate",
-                    "lambda",
-                    "q_c_prediction_error",
-                    "q_c_prediction_error_sample_count",
-                },
-            )
-
     def test_default_train_config_keeps_pipeline_disabled(self):
         with mock.patch("hrl_mix.train_config.os.makedirs"):
             config = build_train_config(

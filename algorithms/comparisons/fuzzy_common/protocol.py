@@ -11,6 +11,10 @@ from typing import Any, Mapping, Sequence
 
 from . import LLM_SAFE_HRL_ROOT  # noqa: F401  Ensures legacy imports resolve.
 from hrl_mix.train_config import TrainConfig, build_train_config, normalize_ddl
+from algorithms.llm_safe_hrl.scenario_registry import (
+    FINAL_TEST_SEEDS,
+    ExperimentProtocolContext,
+)
 
 
 PROTOCOL_SCHEMA_VERSION = 1
@@ -58,6 +62,11 @@ class FuzzyComparisonProtocol:
     train_seeds: tuple[int, ...]
     validation_seeds: tuple[int, ...]
     test_seeds: tuple[int, ...]
+    protocol_mode: str = "legacy"
+    source_scenario: str | None = None
+    resource_scale: str | None = None
+    training_scenarios: tuple[str, ...] = ()
+    test_scenarios: tuple[str, ...] = ()
     workflows_per_episode: int = 50
     fuzzy_delta1: float = 0.75
     fuzzy_delta2: float = 1.2
@@ -70,6 +79,24 @@ class FuzzyComparisonProtocol:
         if len(scenario) != 2 or any(value not in "SML" for value in scenario):
             raise ValueError("scenario must be one of SS, SM, SL, MS, MM, ML, LS, LM, LL")
         object.__setattr__(self, "scenario", scenario)
+        mode = str(self.protocol_mode).strip().lower()
+        if mode not in {"legacy", "single", "multi"}:
+            raise ValueError("protocol_mode must be legacy, single, or multi")
+        object.__setattr__(self, "protocol_mode", mode)
+        training = tuple(self.training_scenarios) or (scenario,)
+        testing = tuple(self.test_scenarios) or (scenario,)
+        for name, values in (("training_scenarios", training), ("test_scenarios", testing)):
+            normalized = tuple(str(value).strip().upper() for value in values)
+            if any(value not in {
+                "SS", "MS", "LS", "SM", "MM", "LM", "SL", "ML", "LL"
+            } for value in normalized):
+                raise ValueError(f"invalid {name}")
+            object.__setattr__(self, name, normalized)
+        source = self.source_scenario or scenario
+        if mode == "single" and training != (source,):
+            raise ValueError("Single baseline training must use only source scenario")
+        object.__setattr__(self, "source_scenario", source)
+        object.__setattr__(self, "resource_scale", self.resource_scale or scenario[1])
         ddl_setting = normalize_ddl(self.ddl_setting)
         object.__setattr__(self, "ddl_setting", ddl_setting)
         for name in ("train_seeds", "validation_seeds", "test_seeds"):
@@ -77,6 +104,15 @@ class FuzzyComparisonProtocol:
                 self,
                 name,
                 _unique_non_negative(getattr(self, name), name),
+            )
+        reserved = set(FINAL_TEST_SEEDS)
+        leaked = reserved.intersection(self.train_seeds).union(
+            reserved.intersection(self.validation_seeds)
+        )
+        if leaked:
+            raise ValueError(
+                "paper final-test seeds 201-230 are reserved for the "
+                f"frozen final-evaluation runner: {sorted(leaked)}"
             )
         all_roles = {
             "train": set(self.train_seeds),
@@ -100,6 +136,10 @@ class FuzzyComparisonProtocol:
                 raise ValueError(f"{name} must be non-negative")
         if not 0.0 <= float(self.fuzzy_deadline_eta) <= 1.0:
             raise ValueError("fuzzy_deadline_eta must be in [0, 1]")
+
+    def for_scenario(self, scenario: str) -> "FuzzyComparisonProtocol":
+        """Return a read-only evaluation view with identical frozen seed roles."""
+        return replace(self, scenario=str(scenario).strip().upper())
 
     @property
     def ddl_small_probability(self) -> float:
@@ -128,17 +168,24 @@ class FuzzyComparisonProtocol:
         return mapping[key]
 
     def assert_not_test_seed(self, seed: int, purpose: str) -> None:
-        if int(seed) in set(self.test_seeds):
+        if int(seed) in set(FINAL_TEST_SEEDS) or int(seed) in set(self.test_seeds):
             raise ValueError(
                 f"final-test seed {int(seed)} cannot be used for {purpose}"
             )
 
-    def train_config(self, seed: int, *, max_episodes: int = 1) -> TrainConfig:
+    def train_config(
+        self,
+        seed: int,
+        *,
+        max_episodes: int = 1,
+        require_deadline_cache: bool = True,
+    ) -> TrainConfig:
         config = build_train_config(
             scenario=self.scenario,
             ddl=self.ddl_setting,
             max_episodes=max_episodes,
             safe_rl_enabled=False,
+            require_deadline_cache=bool(require_deadline_cache),
         )
         return replace(
             config,
@@ -148,8 +195,16 @@ class FuzzyComparisonProtocol:
             eval_seeds=tuple(self.validation_seeds),
         )
 
-    def environment_kwargs(self, seed: int) -> dict[str, Any]:
-        config = self.train_config(seed)
+    def environment_kwargs(
+        self,
+        seed: int,
+        *,
+        require_deadline_cache: bool = True,
+    ) -> dict[str, Any]:
+        config = self.train_config(
+            seed,
+            require_deadline_cache=require_deadline_cache,
+        )
         return {
             "dax_paths": list(config.dax_list),
             "horizon": float(config.horizon),
@@ -243,6 +298,7 @@ def protocol_from_config(
     scenario: str,
     ddl: str,
     workflows_per_episode: int | None = None,
+    experiment_context: ExperimentProtocolContext | None = None,
 ) -> FuzzyComparisonProtocol:
     seeds = payload.get("seeds", {})
     fuzzy = payload.get("fuzzy", {})
@@ -252,7 +308,22 @@ def protocol_from_config(
         ddl_setting=ddl,
         train_seeds=tuple(seeds.get("training", (1, 2, 3, 4, 5))),
         validation_seeds=tuple(seeds.get("validation", (101, 102, 103))),
-        test_seeds=tuple(seeds.get("final_test", (201, 202, 203))),
+        test_seeds=tuple(seeds.get("final_test", range(201, 231))),
+        protocol_mode=(
+            experiment_context.protocol if experiment_context is not None else "legacy"
+        ),
+        source_scenario=(
+            experiment_context.source_scenario if experiment_context is not None else scenario
+        ),
+        resource_scale=(
+            experiment_context.resource_scale if experiment_context is not None else scenario[1]
+        ),
+        training_scenarios=(
+            experiment_context.training_scenarios if experiment_context is not None else (scenario,)
+        ),
+        test_scenarios=(
+            experiment_context.test_scenarios if experiment_context is not None else (scenario,)
+        ),
         workflows_per_episode=int(
             workflows_per_episode
             if workflows_per_episode is not None

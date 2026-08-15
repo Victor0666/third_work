@@ -58,7 +58,7 @@ dataset:
   train_seeds: [1, 2, 3]
   # Held-out seeds used by CMA-ES confirm; disjoint from train and final test.
   validation_seeds: [4, 5]
-  test_seeds: [100]
+  test_seeds: [201, 202, 203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223, 224, 225, 226, 227, 228, 229, 230]
   # 复用项目 data/dax 下的真实工作流 DAG；每次到达时从中抽取模板。
   dax_files:
     - CyberShake_30.xml
@@ -78,20 +78,6 @@ dataset:
   deadline_alpha_small: 2.0
   deadline_alpha_large: 3.0
   deadline_alpha_small_prob: 0.8
-
-resources:
-  # Host 数量。Host/VM 类和能耗模型均复用 common/resource_opt.py。
-  num_cloud_hosts: 3
-  num_edge_hosts: 2
-  # 数组下标对应同类型 Host 的顺序，每个值是该 Host 上的 VM 数量。
-  cloud_vms_per_host: [9, 8, 6]
-  edge_vms_per_host: [8, 6]
-  # VM 模态处理能力层级；环境会构造三角模糊处理能力以表达不确定性。
-  cloud_pc_tiers: [1.0, 2.0, 4.0, 6.0, 8.0]
-  edge_pc_tiers: [1.0, 2.0, 4.0, 6.0, 8.0]
-  # VM 模态带宽层级，单位沿用现有资源模型（Mbps）。
-  cloud_bw_tiers: [1000.0, 2000.0, 4000.0, 6000.0, 8000.0]
-  edge_bw_tiers: [1000.0, 2000.0, 4000.0, 6000.0, 8000.0]
 
 safety:
   # 防止错误候选或环境异常使单次评价无限运行。

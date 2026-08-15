@@ -22,6 +22,9 @@ def prepare_output(config: ComparisonConfig) -> Path:
         output / "source.json",
         {
             "method_id": METHOD_ID,
+        "artifact_protocol_status": (
+            "legacy" if config.protocol == "legacy" else "formal"
+        ),
             "source_hash": source_hash(),
         },
     )
@@ -104,6 +107,9 @@ def experiment_manifest(
 ) -> dict:
     return {
         "method_id": METHOD_ID,
+        "artifact_protocol_status": (
+            "legacy" if config.protocol == "legacy" else "formal"
+        ),
         "schema_version": config.schema_version,
         "scenario": config.scenario,
         "ddl": config.ddl,
@@ -113,6 +119,12 @@ def experiment_manifest(
         "train_seeds": list(config.train_seeds),
         "validation_seeds": list(config.validation_seeds),
         "test_seeds": list(config.test_seeds),
+        "protocol": config.protocol,
+        "source_scenario": config.source_scenario,
+        "resource_scale": config.resource_scale,
+        "training_scenarios": list(config.training_scenarios),
+        "test_scenarios": list(config.test_scenarios),
+        "validation_interval": int(config.validation_interval),
         "elapsed_seconds": float(elapsed_seconds),
         "failure_count": int(failures),
         "invalid_individual_count": int(invalid_individuals),

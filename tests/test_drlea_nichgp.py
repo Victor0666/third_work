@@ -17,6 +17,7 @@ from algorithms.comparisons.drlea_nichgp.config import (
     AgentConfig,
     build_config,
     ensure_disjoint_seeds,
+    protocol_artifact_identity,
 )
 from algorithms.comparisons.drlea_nichgp.d3qn import MaskedD3QN
 from algorithms.comparisons.drlea_nichgp.env_adapter import CEWSEnvAdapter
@@ -313,7 +314,7 @@ def test_comparison_does_not_import_primary_private_agents():
 
 
 def test_small_complete_three_stage_pipeline():
-    config = build_config("SS", "T", 41, smoke=True)
+    config = build_config("SS", "T", 41, smoke=True, protocol="legacy")
     result = run_pipeline(config)
     output = Path(result["output_dir"])
     assert Path(result["ra_checkpoint"]).is_file()
@@ -327,3 +328,59 @@ def test_small_complete_three_stage_pipeline():
     )
     assert payload["rule_count"] == 4
     assert len(result["evaluation"]["comparison_key"]) == 4
+
+
+def test_formal_artifact_identity_rejects_single_multi_mix(tmp_path):
+    single = build_config("SS", "T", 5, smoke=True, protocol="single")
+    multi = build_config(
+        "SS",
+        "T",
+        5,
+        smoke=True,
+        protocol="multi",
+        source_scenario=None,
+        resource_scale="S",
+    )
+    agent = MaskedD3QN(
+        3,
+        2,
+        AgentConfig(hidden_dims=(4, 4), replay_capacity=8, batch_size=1),
+        seed=5,
+        device="cpu",
+    )
+    path = agent.save(
+        tmp_path / "single.pt",
+        protocol_identity=protocol_artifact_identity(single),
+    )
+    with pytest.raises(ValueError, match="protocol identity mismatch"):
+        MaskedD3QN.load(
+            path,
+            expected_protocol_identity=protocol_artifact_identity(multi),
+        )
+
+
+def test_gp_source_uses_train_for_evolution_and_validation_only_for_archive_selection():
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "algorithms"
+        / "comparisons"
+        / "drlea_nichgp"
+        / "niching_gp.py"
+    ).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    evolve = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "evolve_niching_gp"
+    )
+    nested_evaluate = next(
+        node
+        for node in evolve.body
+        if isinstance(node, ast.FunctionDef) and node.name == "evaluate"
+    )
+    nested_text = ast.get_source_segment(source, nested_evaluate)
+    evolve_text = ast.get_source_segment(source, evolve)
+    assert "config.train_seeds" in nested_text
+    assert "config.validation_seeds" not in nested_text
+    assert "validation_cache" in evolve_text
+    assert "config.validation_seeds" in evolve_text

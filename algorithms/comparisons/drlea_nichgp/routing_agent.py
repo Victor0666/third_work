@@ -7,6 +7,7 @@ import time
 
 import numpy as np
 
+from .config import config_for_scenario, protocol_artifact_identity
 from .checkpointing import (
     experiment_manifest,
     portable_path,
@@ -106,12 +107,15 @@ def run_routing_episode(
 
 
 def evaluate_routing(config, agent, seeds) -> dict:
-    rows = [
-        run_routing_episode(
-            config, agent, int(seed), training=False
-        )[0]
-        for seed in seeds
-    ]
+    rows = []
+    for scenario in config.training_scenarios:
+        scenario_config = config_for_scenario(config, scenario)
+        for seed in seeds:
+            row = run_routing_episode(
+                scenario_config, agent, int(seed), training=False
+            )[0]
+            row["scenario_id"] = scenario
+            rows.append(row)
     return aggregate_seed_metrics(rows)
 
 
@@ -132,22 +136,38 @@ def train_routing(
         train_seed = config.train_seeds[
             episode % len(config.train_seeds)
         ]
+        training_scenario = config.training_scenarios[
+            episode % len(config.training_scenarios)
+        ]
+        episode_config = config_for_scenario(config, training_scenario)
         train_metrics, trace = run_routing_episode(
-            config, agent, train_seed, training=True
+            episode_config, agent, train_seed, training=True
         )
         interaction_count += len(trace)
-        validation = evaluate_routing(
-            config, agent, config.validation_seeds
+        validation_due = (
+            (episode + 1) % config.validation_interval == 0
+            or episode + 1 == config.ra_episodes
         )
-        key = comparison_key(validation)
-        saved = best_key is None or key < best_key
-        if saved:
-            best_key = key
-            agent.save(path, metrics=validation)
+        validation = None
+        saved = False
+        if validation_due:
+            validation = evaluate_routing(
+                config, agent, config.validation_seeds
+            )
+            key = comparison_key(validation)
+            saved = best_key is None or key < best_key
+            if saved:
+                best_key = key
+                agent.save(
+                    path,
+                    metrics=validation,
+                    protocol_identity=protocol_artifact_identity(config),
+                )
         history.append(
             {
                 "episode": episode + 1,
                 "train_seed": int(train_seed),
+                "training_scenario": training_scenario,
                 "mean_reward": float(
                     np.mean([row["reward"] for row in trace])
                 )
@@ -155,8 +175,11 @@ def train_routing(
                 else 0.0,
                 "epsilon": float(agent.epsilon),
                 "saved": bool(saved),
+                "validation_performed": bool(validation_due),
                 **{
-                    f"validation_{name}": float(validation[name])
+                    f"validation_{name}": (
+                        float(validation[name]) if validation is not None else None
+                    )
                     for name in (
                         "deadline_violation_rate",
                         "max_fuzzy_lateness",
@@ -169,7 +192,10 @@ def train_routing(
                 ],
             }
         )
-    best_agent = RoutingAgent.load(path)
+    best_agent = RoutingAgent.load(
+        path,
+        expected_protocol_identity=protocol_artifact_identity(config),
+    )
     write_json(output / "ra_history.json", history)
     write_csv(output / "ra_history.csv", history)
     write_json(
@@ -182,7 +208,9 @@ def train_routing(
                 "checkpoint": portable_path(path),
                 "best_comparison_key": list(best_key or ()),
                 "environment_interaction_count": interaction_count,
-                "validation_call_count": int(config.ra_episodes),
+                "validation_call_count": sum(
+                    row["validation_performed"] for row in history
+                ),
                 "compute_device": str(agent.device),
                 "process_cpu_seconds": float(
                     time.process_time() - started_cpu

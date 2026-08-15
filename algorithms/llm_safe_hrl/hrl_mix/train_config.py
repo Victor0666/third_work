@@ -27,6 +27,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from algorithms.llm_safe_hrl.paths import LLM_ROOT, PROJECT_ROOT
+from algorithms.llm_safe_hrl.scenario_registry import (
+    DEFAULT_BW_TIERS,
+    DEFAULT_PC_TIERS,
+    ExperimentProtocolContext,
+    RESOURCE_SCALE_REGISTRY,
+    SCENARIO_REGISTRY,
+    TASK_DAX_FILES as SHARED_TASK_DAX_FILES,
+    resolve_experiment_protocol,
+)
 from base.heuristic_admission import (
     workflow_families_from_dax_files,
 )
@@ -64,25 +73,27 @@ DDL_FULL = {
 # 不同任务规模对应的 DAX 工作流 XML 文件集合。
 # build_train_config() 会根据 scenario 第一位选择其中一组。
 TASK_DAX_FILES = {
-    "S": ["CyberShake_30.xml", "Epigenomics_24.xml", "Ligo_30.xml", "Montage_25.xml", "Sipht_29.xml"],
-    "M": ["CyberShake_50.xml", "Epigenomics_47.xml", "Ligo_50.xml", "Montage_50.xml", "Sipht_58.xml"],
-    "L": ["CyberShake_100.xml", "Epigenomics_100.xml", "Ligo_100.xml", "Montage_100.xml", "Sipht_97.xml"],
+    code: list(dax_files) for code, dax_files in SHARED_TASK_DAX_FILES.items()
 }
 
 # 不同资源规模分别配置云主机和边缘主机，且保持原有总 host/VM 规模不变。
 # 每个元组依次为：云主机数、边缘主机数、云主机 VM 模板、边缘主机 VM 模板。
 RESOURCE_CONFIG = {
-    "S": (2, 1, (9, 8), (8,)),
-    "M": (3, 3, (9, 9, 8), (8, 8, 8)),
-    "L": (5, 4, (9, 9, 9, 8, 8), (8, 8, 8, 8)),
+    code: (
+        spec.num_cloud_hosts,
+        spec.num_edge_hosts,
+        spec.cloud_vms_per_host,
+        spec.edge_vms_per_host,
+    )
+    for code, spec in RESOURCE_SCALE_REGISTRY.items()
 }
 
 # 云端和边缘端使用独立字段。当前取值一致，以保持既有实验的资源档位；
 # 后续可单独修改任意一端而不会影响另一端。
-CLOUD_PC_TIERS = (1.0, 2.0, 4.0, 6.0, 8.0)
-EDGE_PC_TIERS = (1.0, 2.0, 4.0, 6.0, 8.0)
-CLOUD_BW_TIERS = (1000.0, 2000.0, 4000.0, 6000.0, 8000.0)
-EDGE_BW_TIERS = (1000.0, 2000.0, 4000.0, 6000.0, 8000.0)
+CLOUD_PC_TIERS = DEFAULT_PC_TIERS
+EDGE_PC_TIERS = DEFAULT_PC_TIERS
+CLOUD_BW_TIERS = DEFAULT_BW_TIERS
+EDGE_BW_TIERS = DEFAULT_BW_TIERS
 
 
 @dataclass(frozen=True)
@@ -394,6 +405,18 @@ class SafeRLConfig:
 class TrainConfig:
     """一次训练运行所需的完整配置。"""
 
+    # Experiment identity. ``legacy`` is retained only for old Python callers
+    # that do not opt into the isolated Single/Multi protocol.
+    experiment_protocol: dict[str, object] | None
+    protocol: str
+    source_scenario: str | None
+    resource_scale: str
+    training_scenarios: tuple[str, ...]
+    test_scenarios: tuple[str, ...]
+    train_seeds: tuple[int, ...]
+    validation_seeds: tuple[int, ...]
+    final_test_seeds: tuple[int, ...]
+
     # 场景和 deadline 基本信息。
     scenario: str
     ddl_name: str
@@ -416,6 +439,7 @@ class TrainConfig:
     horizon: float
     arrival_lambda: float
     random_seed: int
+    optimizer_seed: int
     max_ready_tasks: str
     normalize_obs: bool
     workflows_per_episode: int
@@ -436,6 +460,8 @@ class TrainConfig:
 
     # 训练过程控制参数。
     max_episodes: int
+    validation_interval: int
+    curriculum_enabled: bool
     save_interval: int
     skip_manager_update_if_zero_assign: bool
     eval_seeds: tuple[int, ...]
@@ -473,24 +499,67 @@ def normalize_ddl(ddl: str) -> str:
     return DDL_FULL[key]
 
 
+def environment_scenario_values(
+    scenario: str,
+    *,
+    project_root: str | Path = ROOT_DIR,
+) -> dict:
+    """Return canonical environment inputs for one registered scenario.
+
+    The returned mapping is a fresh value object suitable for rebuilding an
+    episode environment. It contains no policy, optimizer, or mutable runtime
+    state.
+    """
+    scenario_id = normalize_scenario(scenario)
+    spec = SCENARIO_REGISTRY[scenario_id]
+    root = Path(project_root).resolve()
+    dax_list = [
+        str(root / "data" / "dax" / name)
+        for name in spec.dax_files
+    ]
+    return {
+        "scenario": scenario_id,
+        "task_code": spec.task_code,
+        "resource_code": spec.resource_code,
+        "task_size": spec.task_size,
+        "resource_size": spec.resource_size,
+        "dax_list": dax_list,
+        "workflow_families": tuple(
+            workflow_families_from_dax_files(dax_list)
+        ),
+        "num_cloud_hosts": spec.num_cloud_hosts,
+        "num_edge_hosts": spec.num_edge_hosts,
+        "cloud_vms_per_host": spec.cloud_vms_per_host,
+        "edge_vms_per_host": spec.edge_vms_per_host,
+        "cloud_pc_tiers": spec.cloud_pc_tiers,
+        "edge_pc_tiers": spec.edge_pc_tiers,
+        "cloud_bw_tiers": spec.cloud_bw_tiers,
+        "edge_bw_tiers": spec.edge_bw_tiers,
+        "deadline_cache_path": str(spec.deadline_cache_path(root)),
+    }
+
+
 def resolve_manager_heuristic_manifest(
     resource_code: str,
     override: str | None = None,
+    *,
+    protocol_context: ExperimentProtocolContext | None = None,
 ) -> str:
-    """Resolve an explicit manifest or the resource-domain default."""
+    """Resolve an explicit, protocol-scoped, or legacy manifest path."""
     code = str(resource_code).strip().upper()
     if code not in SIZE_FULL:
         raise ValueError("resource_code must be S, M, or L")
-    path = (
-        Path(override).resolve()
-        if override
-        else (
+    if override:
+        path = Path(override).resolve()
+    elif protocol_context is not None:
+        path = protocol_context.library_path.resolve()
+    else:
+        path = (
             LLM_ROOT
             / "problems"
             / "cews_task_constructive"
             / f"safe_heuristic_library_res{code}.json"
         ).resolve()
-    )
     if not path.is_file():
         raise FileNotFoundError(
             f"safe Manager heuristic manifest not found: {path}"
@@ -499,7 +568,7 @@ def resolve_manager_heuristic_manifest(
 
 
 def build_train_config(
-    scenario: str = "SS",
+    scenario: str | None = None,
     ddl: str = "T",
     max_episodes: int | None = None,
     safe_rl_enabled: bool = False,
@@ -515,6 +584,12 @@ def build_train_config(
     safe_rl_offline_pretrain_q_c: bool = True,
     safe_rl_training_pipeline_plan: str | None = None,
     safe_rl_training_resume_checkpoint: str | None = None,
+    safe_rl_curriculum_enabled: bool = True,
+    optimizer_seed: int = 0,
+    protocol: str | None = None,
+    source_scenario: str | None = None,
+    resource_scale: str | None = None,
+    require_deadline_cache: bool = True,
 ) -> TrainConfig:
     """根据命令行参数构造完整训练配置。
 
@@ -637,29 +712,84 @@ def build_train_config(
                 "offline safe pretraining requires "
                 "safe_rl_heuristic_manager_enabled=True"
             )
-    scenario = normalize_scenario(scenario)
-    ddl_name = normalize_ddl(ddl)
-    task_code, res_code = scenario[0], scenario[1]
-    task_size = SIZE_FULL[task_code]
-    res_size = SIZE_FULL[res_code]
-    (
-        num_cloud_hosts,
-        num_edge_hosts,
-        cloud_vms_per_host,
-        edge_vms_per_host,
-    ) = RESOURCE_CONFIG[res_code]
+    protocol_context = None
+    if protocol is None:
+        if source_scenario is not None or resource_scale is not None:
+            raise ValueError(
+                "source_scenario/resource_scale require an explicit protocol"
+            )
+        scenario = normalize_scenario(scenario or "SS")
+        protocol_name = "legacy"
+        protocol_source = scenario
+        protocol_resource_scale = scenario[1]
+        training_scenarios = (scenario,)
+        test_scenarios = (scenario,)
+        protocol_train_seeds = (1,)
+        protocol_validation_seeds = (1,)
+        protocol_final_test_seeds = tuple(range(201, 231))
+    else:
+        mode = str(protocol).strip().lower()
+        if mode == "single":
+            if (
+                scenario is not None
+                and source_scenario is not None
+                and normalize_scenario(scenario)
+                != normalize_scenario(source_scenario)
+            ):
+                raise ValueError(
+                    "legacy scenario conflicts with single source_scenario"
+                )
+            source = source_scenario or scenario or "SS"
+            protocol_context = resolve_experiment_protocol(
+                "single",
+                source_scenario=source,
+                resource_scale=resource_scale,
+            )
+        elif mode == "multi":
+            if scenario is not None:
+                raise ValueError(
+                    "multi protocol does not accept the legacy scenario argument"
+                )
+            protocol_context = resolve_experiment_protocol(
+                "multi",
+                source_scenario=None,
+                resource_scale=resource_scale,
+            )
+        else:
+            raise ValueError("protocol must be 'single' or 'multi'")
+        protocol_name = protocol_context.protocol
+        protocol_source = protocol_context.source_scenario
+        protocol_resource_scale = protocol_context.resource_scale
+        training_scenarios = protocol_context.training_scenarios
+        test_scenarios = protocol_context.test_scenarios
+        protocol_train_seeds = protocol_context.safe_hrl_train_seeds
+        protocol_validation_seeds = protocol_context.safe_hrl_validation_seeds
+        protocol_final_test_seeds = protocol_context.final_test_seeds
+        scenario = (
+            protocol_context.source_scenario
+            if protocol_context.protocol == "single"
+            else protocol_context.training_scenarios[0]
+        )
 
-    dax_dir = ROOT_DIR / "data" / "dax"
-    dax_list = [str(dax_dir / name) for name in TASK_DAX_FILES[task_code]]
-    workflow_families = tuple(
-        workflow_families_from_dax_files(dax_list)
-    )
+    ddl_name = normalize_ddl(ddl)
+    environment_values = environment_scenario_values(scenario)
+    task_code = environment_values["task_code"]
+    res_code = environment_values["resource_code"]
+    task_size = environment_values["task_size"]
+    res_size = environment_values["resource_size"]
+    num_cloud_hosts = environment_values["num_cloud_hosts"]
+    num_edge_hosts = environment_values["num_edge_hosts"]
+    cloud_vms_per_host = environment_values["cloud_vms_per_host"]
+    edge_vms_per_host = environment_values["edge_vms_per_host"]
+    dax_list = environment_values["dax_list"]
+    workflow_families = environment_values["workflow_families"]
     resolved_manager_manifest = None
     if safe_rl_heuristic_manager_enabled:
         resolved_manager_manifest = Path(
             resolve_manager_heuristic_manifest(
                 res_code,
                 manager_heuristic_manifest,
+                protocol_context=protocol_context,
             )
         )
 
@@ -713,6 +843,8 @@ def build_train_config(
             "offline_q_c": bool(
                 safe_rl_offline_pretrain_q_c
             ),
+            "curriculum_enabled": bool(safe_rl_curriculum_enabled),
+            "optimizer_seed": int(optimizer_seed),
         }
         run_name = safe_hrl_run_id(
             scenario,
@@ -723,15 +855,26 @@ def build_train_config(
         run_name = pipeline_run_id(
             scenario,
             ddl_name,
-            pipeline_plan.plan_hash,
+            pipeline_plan.plan_hash + (
+                ":curriculum" if safe_rl_curriculum_enabled
+                else ":without_curriculum"
+            ) + f":optimizer_seed={int(optimizer_seed)}",
         )
-    output_paths = training_output_paths(ROOT_DIR, run_name)
-    save_dir = output_paths.checkpoint_dir
-    log_path = output_paths.log_path
-    deadline_cache_path = (
-        ROOT_DIR / "data" / "deadlines" / "fcfs" / f"fcfs_{task_size}Task_{res_size}Res_seed0-1000.json"
+    if protocol_context is None:
+        output_paths = training_output_paths(ROOT_DIR, run_name)
+        save_dir = output_paths.checkpoint_dir
+        log_path = output_paths.log_path
+    else:
+        save_dir = protocol_context.checkpoint_root / run_name
+        log_path = (
+            protocol_context.artifact_output_root
+            / run_name
+            / "train.csv"
+        )
+    deadline_cache_path = Path(
+        environment_values["deadline_cache_path"]
     )
-    if not deadline_cache_path.exists():
+    if require_deadline_cache and not deadline_cache_path.exists():
         raise FileNotFoundError(
             f"deadline cache 不存在：{deadline_cache_path}\n"
             f"请先生成对应的 FCFS deadline cache。"
@@ -742,6 +885,19 @@ def build_train_config(
     os.makedirs(log_path.parent, exist_ok=True)
 
     return TrainConfig(
+        experiment_protocol=(
+            protocol_context.identity()
+            if protocol_context is not None
+            else None
+        ),
+        protocol=protocol_name,
+        source_scenario=protocol_source,
+        resource_scale=protocol_resource_scale,
+        training_scenarios=training_scenarios,
+        test_scenarios=test_scenarios,
+        train_seeds=protocol_train_seeds,
+        validation_seeds=protocol_validation_seeds,
+        final_test_seeds=protocol_final_test_seeds,
         scenario=scenario,
         ddl_name=ddl_name,
         task_code=task_code,
@@ -754,13 +910,14 @@ def build_train_config(
         num_edge_hosts=num_edge_hosts,
         cloud_vms_per_host=cloud_vms_per_host,
         edge_vms_per_host=edge_vms_per_host,
-        cloud_pc_tiers=CLOUD_PC_TIERS,
-        edge_pc_tiers=EDGE_PC_TIERS,
-        cloud_bw_tiers=CLOUD_BW_TIERS,
-        edge_bw_tiers=EDGE_BW_TIERS,
+        cloud_pc_tiers=environment_values['cloud_pc_tiers'],
+        edge_pc_tiers=environment_values['edge_pc_tiers'],
+        cloud_bw_tiers=environment_values['cloud_bw_tiers'],
+        edge_bw_tiers=environment_values['edge_bw_tiers'],
         horizon=1e9,
         arrival_lambda=0.03,
-        random_seed=1,
+        random_seed=protocol_train_seeds[0],
+        optimizer_seed=int(optimizer_seed),
         max_ready_tasks="auto",
         normalize_obs=True,
         workflows_per_episode=50,
@@ -775,9 +932,11 @@ def build_train_config(
         deadline_alpha_large=3.0,
         deadline_alpha_small_prob=0.8,
         max_episodes=int(max_episodes) if max_episodes is not None else 600,
+        validation_interval=25,
+        curriculum_enabled=bool(safe_rl_curriculum_enabled),
         save_interval=2000,
         skip_manager_update_if_zero_assign=True,
-        eval_seeds=(1,),
+        eval_seeds=protocol_validation_seeds,
         warmup_frac=0.03,
         hard_max_steps=10**9,
         run_name=run_name,

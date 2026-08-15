@@ -54,12 +54,60 @@ from counterfactual_feedback import (
     reject_test_seeds,
     strict_replay_gate_triggered,
 )
+from algorithms.llm_safe_hrl.scenario_registry import (
+    apply_scenario_to_problem_config,
+    resolve_experiment_protocol,
+    validate_component_scenarios,
+    validate_protocol_identity,
+)
 
 
 RESULT_JSON_PREFIX = "RESULT_JSON="
-LLM_EVOLUTION_FORBIDDEN_SEEDS = frozenset(
-    {101, 102, 103, 201, 202, 203}
-)
+LLM_EVOLUTION_FORBIDDEN_SEEDS = frozenset({101, 102, 103}).union(range(201, 231))
+
+
+def _config_mapping(value, label: str) -> dict:
+    """Return a resolved mapping from an OmegaConf or plain mapping value."""
+    if value is None:
+        raise ValueError(f"{label} is required")
+    if OmegaConf.is_config(value):
+        value = OmegaConf.to_container(value, resolve=True)
+    if not isinstance(value, dict):
+        raise ValueError(f"{label} must be a mapping")
+    return dict(value)
+
+
+def _resolve_seevo_protocol_context(cfg):
+    """Rebuild and verify the immutable protocol boundary used by SeEvo."""
+    identity = _config_mapping(
+        getattr(cfg, "experiment_protocol", None),
+        "cfg.experiment_protocol",
+    )
+    training = list(identity.get("training_scenarios", []))
+    if not training:
+        raise ValueError("experiment protocol has no training scenarios")
+    context = resolve_experiment_protocol(
+        identity.get("protocol", ""),
+        source_scenario=identity.get("source_scenario"),
+        resource_scale=str(training[0])[1:2],
+        train_seeds=identity.get("llm_train_seeds", []),
+        validation_seeds=identity.get("llm_validation_seeds", []),
+    )
+    validate_protocol_identity(
+        context,
+        identity,
+        artifact_name="SeEvo configuration",
+    )
+    problem = _config_mapping(cfg.problem, "cfg.problem")
+    validate_protocol_identity(
+        context,
+        _config_mapping(
+            problem.get("experiment_protocol"),
+            "cfg.problem.experiment_protocol",
+        ),
+        artifact_name="SeEvo problem configuration",
+    )
+    return context
 
 
 def parse_result_json(stdout_text: str) -> dict:
@@ -440,6 +488,20 @@ class SeEvo:
             if raw_counterfactual_config is not None
             else CounterfactualConfig(enabled=False)
         )
+        self.experiment_protocol_context = _resolve_seevo_protocol_context(cfg)
+        self.experiment_protocol_identity = (
+            self.experiment_protocol_context.identity()
+        )
+        validate_component_scenarios(
+            self.experiment_protocol_context,
+            "CMA-ES",
+            self.parameter_optimizer_config.scenario_ids,
+        )
+        validate_component_scenarios(
+            self.experiment_protocol_context,
+            "Counterfactual",
+            self.counterfactual_config.scenario_ids,
+        )
         raw_replay_config = getattr(cfg, "critical_state_replay", None)
         if raw_replay_config is not None and OmegaConf.is_config(raw_replay_config):
             raw_replay_config = OmegaConf.to_container(raw_replay_config, resolve=True)
@@ -495,14 +557,27 @@ class SeEvo:
         self.problem_dir = os.path.join(self.root_dir, "problems", self.problem)
         # CEWS 每个个体都会在此目录写入独立候选模块。exist_ok=True 允许恢复
         # 训练或多次执行同一实验，不会删除既有候选和用户文件。
-        self.generated_dir = os.path.join(self.problem_dir, "generated")
+        protocol_paths = _config_mapping(
+            getattr(self.cfg, "protocol_paths", None),
+            "cfg.protocol_paths",
+        )
+        self.protocol_output_root = os.path.abspath(
+            str(protocol_paths.get("output_root", ""))
+        )
+        if not str(protocol_paths.get("output_root", "")).strip():
+            raise ValueError("cfg.protocol_paths.output_root is required")
+        self.generated_dir = os.path.join(
+            self.protocol_output_root,
+            "generated",
+        )
         os.makedirs(self.generated_dir, exist_ok=True)
 
         # Hydra 命令行 override 已经合并进 self.cfg.problem。评价子进程不能继续
         # 读取仓库中的原始 YAML，否则 workflows_per_instance 等运行参数会被忽略。
         # 当前 Hydra run 目录彼此隔离，因此每次运行保存一个只读有效配置快照。
-        self.effective_problem_config_path = os.path.abspath(
-            f"effective_{self.problem}_config.yaml"
+        self.effective_problem_config_path = os.path.join(
+            self.protocol_output_root,
+            f"effective_{self.problem}_config.yaml",
         )
         OmegaConf.save(
             config=self.cfg.problem,
@@ -893,12 +968,6 @@ class SeEvo:
         )
         os.makedirs(search_dir, exist_ok=True)
         problem_config = self._problem_config_dict()
-        resource_config_hash = rule_json_sha256(
-            {
-                "resources": problem_config.get("resources", {}),
-                "fuzzy": problem_config.get("fuzzy", {}),
-            }
-        )
         cache = getattr(self, "parameter_evaluation_cache", None)
         config = self._optimizer_config()
         scenario_ids = self._optimization_scenario_ids()
@@ -927,11 +996,18 @@ class SeEvo:
                     handle.write(frozen_source)
             group = []
             for scenario_id in scenario_ids:
-                scenario_config = json.loads(json.dumps(problem_config))
-                scenario_config.setdefault("dataset", {})[
-                    "scenario"
-                ] = scenario_id
+                scenario_config = apply_scenario_to_problem_config(
+                    problem_config,
+                    scenario_id,
+                    require_files=True,
+                )
                 evaluation_config_hash = rule_json_sha256(scenario_config)
+                resource_config_hash = rule_json_sha256(
+                    {
+                        "resources": scenario_config.get("resources", {}),
+                        "fuzzy": scenario_config.get("fuzzy", {}),
+                    }
+                )
                 for seed in seeds:
                     cache_key = EvaluationCacheKey.create(
                         structure_hash=candidate.structure_hash,
@@ -2381,9 +2457,6 @@ class SeEvo:
         manifest_path = os.path.abspath(manifest_path)
         if not os.path.isfile(admission_config_path):
             raise FileNotFoundError(admission_config_path)
-        if not os.path.isfile(manifest_path):
-            raise FileNotFoundError(manifest_path)
-
         admission_cfg = OmegaConf.to_container(
             OmegaConf.load(admission_config_path),
             resolve=True,
@@ -2409,11 +2482,16 @@ class SeEvo:
         child_env["PYTHONUTF8"] = "1"
         admission_scenarios = [
             str(value).strip().upper()
-            for value in admission_cfg.get("admission_scope", {}).get(
-                "allowed_scenarios",
+            for value in admission_cfg.get(
+                "admission_evaluation_scenarios",
                 [admission_cfg.get("dataset", {}).get("scenario", "SS")],
             )
         ]
+        validate_component_scenarios(
+            self.experiment_protocol_context,
+            "Rule Admission",
+            admission_scenarios,
+        )
         context_results = []
         context_seeds = []
         for scenario_id in admission_scenarios:
@@ -2449,6 +2527,9 @@ class SeEvo:
         result["evaluation_seed_count"] = len(required_seeds)
         result["completed_seed_count"] = len(required_seeds)
         result["scenario_ids"] = admission_scenarios
+        result["experiment_protocol"] = dict(
+            self.experiment_protocol_identity
+        )
         result["evaluation_context_count"] = len(context_results)
         result["evaluation_config_sha256"] = rule_json_sha256(admission_cfg)
         result["scenario_id"] = str(
@@ -2619,20 +2700,32 @@ class SeEvo:
             manifest_path=manifest_path,
             seevo_iteration=int(individual["candidate_iteration"]),
             seevo_individual=int(individual["candidate_individual"]),
+            experiment_protocol=self.experiment_protocol_identity,
         )
-        with open(manifest_path, "r", encoding="utf-8") as handle:
-            manifest = json.load(handle)
-        existing = next(
-            (
-                entry
-                for entry in manifest.get("llm_rules", [])
-                if entry.get("heuristic_id") == heuristic_id
-                and entry.get("source_hash") == record.get("source_hash")
-            ),
-            None,
-        )
+        existing = None
+        if os.path.isfile(manifest_path):
+            with open(manifest_path, "r", encoding="utf-8") as handle:
+                manifest = json.load(handle)
+            validate_protocol_identity(
+                self.experiment_protocol_context,
+                manifest.get("experiment_protocol", {}),
+                artifact_name="safe heuristic library",
+            )
+            existing = next(
+                (
+                    entry
+                    for entry in manifest.get("llm_rules", [])
+                    if entry.get("heuristic_id") == heuristic_id
+                    and entry.get("source_hash") == record.get("source_hash")
+                ),
+                None,
+            )
         if existing is None:
-            append_admission_record(manifest_path, record)
+            append_admission_record(
+                manifest_path,
+                record,
+                expected_protocol_identity=self.experiment_protocol_identity,
+            )
         else:
             record = existing
         individual["final_admission"] = dict(record)

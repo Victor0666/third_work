@@ -363,7 +363,7 @@ class SafeHeuristicLibraryTests(unittest.TestCase):
         mask = heuristic_availability_mask(heuristics)
         np.testing.assert_array_equal(
             mask,
-            [1, 1, 1, 1, 1],
+            [1, 1, 1, 1, 1, 0],
         )
 
     def test_invalid_llm_rule_is_masked_without_importing_it(self):

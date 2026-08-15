@@ -36,6 +36,9 @@ for import_root in (str(_BOOTSTRAP_PROJECT_ROOT), str(LLM_ROOT)):
         sys.path.insert(0, import_root)
 
 from algorithms.llm_safe_hrl.paths import PROJECT_ROOT
+from algorithms.llm_safe_hrl.scenario_registry import (
+    apply_scenario_to_problem_config,
+)
 from base.hrl_env import HrlFcfsCacheEnv, NoFeasibleVMError
 from base.heuristic_admission import (
     CEWS_EVALUATOR_PROTOCOL_VERSION,
@@ -55,9 +58,7 @@ from counterfactual_feedback import (
 
 
 DEFAULT_CONFIG_PATH = LLM_ROOT / "cfg" / "problem" / "cews_task_constructive.yaml"
-LLM_EVOLUTION_FORBIDDEN_SEEDS = frozenset(
-    {101, 102, 103, 201, 202, 203}
-)
+LLM_EVOLUTION_FORBIDDEN_SEEDS = frozenset({101, 102, 103}).union(range(201, 231))
 
 
 def load_problem_config(config_path: str | Path = DEFAULT_CONFIG_PATH) -> dict:
@@ -77,7 +78,15 @@ def load_problem_config(config_path: str | Path = DEFAULT_CONFIG_PATH) -> dict:
         config = yaml.safe_load(stream)
     if not isinstance(config, dict):
         raise ValueError(f"Problem config must contain a YAML mapping: {config_path}")
-    return config
+    dataset = config.get("dataset")
+    if not isinstance(dataset, dict):
+        raise ValueError("Problem config must contain a dataset mapping")
+    return apply_scenario_to_problem_config(
+        config,
+        dataset.get("scenario", "SS"),
+        project_root=PROJECT_ROOT,
+        require_files=False,
+    )
 
 
 def load_priority_function(candidate_path: str | Path, function_name: str = "get_task_priority_v2"):
@@ -829,8 +838,12 @@ def main(argv=None):
     if args.scenario is not None:
         scenario = str(args.scenario).strip().upper()
         _scenario_names(scenario)
-        config["dataset"] = dict(config["dataset"])
-        config["dataset"]["scenario"] = scenario
+        config = apply_scenario_to_problem_config(
+            config,
+            scenario,
+            project_root=PROJECT_ROOT,
+            require_files=True,
+        )
     seeds = _resolve_seeds(config, args.dataset_mode, args.cases)
     counterfactual_options = None
     counterfactual_values = (

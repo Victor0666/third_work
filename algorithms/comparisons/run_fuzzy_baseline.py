@@ -13,10 +13,14 @@ from algorithms.comparisons.fuzzy_common.protocol import (
     load_protocol_config,
     protocol_from_config,
 )
-from algorithms.comparisons.fuzzy_common.training import train_baseline
+from algorithms.comparisons.fuzzy_common.training import (
+    seed_everything,
+    train_baseline,
+)
 from algorithms.comparisons.irws import IRWSPolicy
 from algorithms.comparisons.marl import MARLPolicy
 from algorithms.comparisons.pd3qn import PD3QNPolicy
+from algorithms.llm_safe_hrl.scenario_registry import resolve_experiment_protocol
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -63,6 +67,11 @@ def _smoke_protocol(
             protocol.fuzzy_energy_uncertainty_weight
         ),
         fuzzy_deadline_eta=protocol.fuzzy_deadline_eta,
+        protocol_mode=protocol.protocol_mode,
+        source_scenario=protocol.source_scenario,
+        resource_scale=protocol.resource_scale,
+        training_scenarios=protocol.training_scenarios,
+        test_scenarios=protocol.test_scenarios,
     )
 
 
@@ -72,6 +81,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--method", required=True, choices=("irws", "marl", "pd3qn"))
     parser.add_argument("--scenario", default="SS")
+    parser.add_argument("--protocol", choices=("single", "multi"), default="single")
+    parser.add_argument("--resource-scale", choices=("S", "M", "L"), default=None)
     parser.add_argument("--ddl", default="T")
     parser.add_argument("--episodes", type=int, default=None)
     parser.add_argument("--validation-interval", type=int, default=None)
@@ -82,13 +93,26 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--output", type=Path, default=None)
     args = parser.parse_args(argv)
+    if not args.smoke:
+        if args.episodes not in (None, 600):
+            parser.error("formal baseline training requires exactly 600 episodes")
+        if args.validation_interval not in (None, 25):
+            parser.error("formal baseline validation interval must be 25 episodes")
+        if args.output is not None:
+            parser.error("formal Single/Multi output directory is protocol-managed")
 
     config = load_protocol_config(args.config)
+    experiment_context = resolve_experiment_protocol(
+        args.protocol,
+        source_scenario=(args.scenario if args.protocol == "single" else None),
+        resource_scale=args.resource_scale,
+    )
     protocol = protocol_from_config(
         config,
-        scenario=args.scenario,
+        scenario=experiment_context.training_scenarios[0],
         ddl=args.ddl,
         workflows_per_episode=args.workflows_per_episode,
+        experiment_context=experiment_context,
     )
     training = dict(config.get("training", {}))
     if args.smoke:
@@ -110,9 +134,12 @@ def main(argv: list[str] | None = None) -> int:
             / "out"
             / "fuzzy_comparisons"
             / args.method
-            / f"{protocol.scenario}_{protocol.ddl_setting.lower()}"
+            / ("main_single" if protocol.protocol_mode == "single" else "enhancement_multi")
+            / (protocol.source_scenario if protocol.protocol_mode == "single" else protocol.resource_scale)
+            / protocol.ddl_setting.lower()
         ).resolve()
     )
+    seed_everything(int(args.optimizer_seed))
     prototype = make_environment(
         protocol,
         protocol.train_seeds[0],

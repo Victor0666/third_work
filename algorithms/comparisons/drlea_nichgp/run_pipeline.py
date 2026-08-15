@@ -12,10 +12,10 @@ from .checkpointing import (
     read_json,
     write_json,
 )
-from .config import build_config
+from .config import build_config, config_for_scenario, protocol_artifact_identity
 from .decision_situations import collect_decision_situations
 from .evaluate import evaluate_frozen
-from .niching_gp import evolve_niching_gp
+from .niching_gp import evolve_niching_gp, load_rules
 from .routing_agent import train_routing
 from .sequencing_agent import train_sequencing
 
@@ -36,12 +36,49 @@ def run_pipeline(config) -> dict:
     sequencing, sa_path, _sa_history = train_sequencing(
         config, routing, rules
     )
-    evaluation = evaluate_frozen(
-        config,
-        routing,
-        sequencing,
-        rules,
-        config.test_seeds,
+    identity = protocol_artifact_identity(config)
+    routing = type(routing).load(
+        ra_path,
+        expected_protocol_identity=identity,
+    )
+    sequencing = type(sequencing).load(
+        sa_path,
+        expected_protocol_identity=identity,
+    )
+    rules = load_rules(
+        rules_path,
+        expected_protocol_identity=identity,
+    )
+    scenario_evaluations = {}
+    for scenario in config.test_scenarios:
+        evaluation_config = config_for_scenario(config, scenario)
+        scenario_evaluations[scenario] = evaluate_frozen(
+            evaluation_config,
+            routing,
+            sequencing,
+            rules,
+            config.test_seeds,
+            output_path=(
+                output / "eval.json"
+                if (
+                    config.protocol == "legacy"
+                    and len(config.test_scenarios) == 1
+                )
+                else output / f"eval_{scenario}.json"
+            ),
+        )
+    evaluation = scenario_evaluations[config.test_scenarios[0]]
+    write_json(
+        output / "generalization_metrics.json",
+        {
+            "protocol": config.protocol,
+            "source_scenario": config.source_scenario,
+            "training_scenarios": list(config.training_scenarios),
+            "test_scenarios": list(config.test_scenarios),
+            "training_during_generalization_test": False,
+            "checkpoint_reselection_during_generalization_test": False,
+            "scenario_results": scenario_evaluations,
+        },
     )
     gp_manifest = read_json(output / "gp_manifest.json")
     manifest = experiment_manifest(
@@ -61,6 +98,8 @@ def run_pipeline(config) -> dict:
                 for row in evaluation["seed_metrics"]
             ],
             "comparison_key": evaluation["comparison_key"],
+            "generalization_scenarios": list(config.test_scenarios),
+            "generalization_metrics": "generalization_metrics.json",
             "compute_device": str(sequencing.device),
             "process_cpu_seconds": float(
                 time.process_time() - started_cpu
@@ -74,12 +113,15 @@ def run_pipeline(config) -> dict:
         "rules_file": portable_path(rules_path),
         "sa_checkpoint": portable_path(sa_path),
         "evaluation": evaluation,
+        "scenario_evaluations": scenario_evaluations,
     }
 
 
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
     result.add_argument("--scenario", default="SS")
+    result.add_argument("--protocol", choices=("single", "multi"), default="single")
+    result.add_argument("--resource-scale", choices=("S", "M", "L"), default=None)
     result.add_argument("--ddl", default="T")
     result.add_argument(
         "--algorithm-seed", dest="algorithm_seed", type=int, default=0
@@ -96,6 +138,9 @@ def main(argv=None):
             args.ddl,
             args.algorithm_seed,
             smoke=args.smoke,
+            protocol=args.protocol,
+            source_scenario=(args.scenario if args.protocol == "single" else None),
+            resource_scale=args.resource_scale,
         )
     )
     print(result["output_dir"])

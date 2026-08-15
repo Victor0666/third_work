@@ -185,7 +185,7 @@ class MaskedD3QN:
         self.learn_steps += 1
         return float(loss.item())
 
-    def checkpoint_payload(self, *, metrics: dict | None = None) -> dict:
+    def checkpoint_payload(self, *, metrics: dict | None = None, protocol_identity: dict | None = None) -> dict:
         return {
             "checkpoint_schema_version": self.checkpoint_schema_version,
             "method_id": METHOD_ID,
@@ -202,12 +202,17 @@ class MaskedD3QN:
             "learn_steps": self.learn_steps,
             "replay_metadata": self.replay.metadata(),
             "selection_metrics": dict(metrics or {}),
+            "protocol_identity": (
+                dict(protocol_identity)
+                if protocol_identity is not None
+                else None
+            ),
         }
 
-    def save(self, path: str | Path, *, metrics: dict | None = None) -> Path:
+    def save(self, path: str | Path, *, metrics: dict | None = None, protocol_identity: dict | None = None) -> Path:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        torch.save(self.checkpoint_payload(metrics=metrics), path)
+        torch.save(self.checkpoint_payload(metrics=metrics, protocol_identity=protocol_identity), path)
         return path
 
     @classmethod
@@ -216,6 +221,7 @@ class MaskedD3QN:
         path: str | Path,
         *,
         device: str | None = None,
+        expected_protocol_identity: dict | None = None,
     ) -> "MaskedD3QN":
         try:
             payload = torch.load(
@@ -228,6 +234,13 @@ class MaskedD3QN:
             or payload.get("method_id") != METHOD_ID
         ):
             raise ValueError("incompatible DRL-EA checkpoint schema")
+        if expected_protocol_identity is not None:
+            from .config import validate_protocol_artifact_identity
+            validate_protocol_artifact_identity(
+                expected_protocol_identity,
+                payload.get("protocol_identity"),
+                artifact_name="DRL-EA checkpoint",
+            )
         expected_role = getattr(cls, "expected_role", None)
         if (
             expected_role is not None
