@@ -62,6 +62,7 @@ class FuzzyComparisonProtocol:
     train_seeds: tuple[int, ...]
     validation_seeds: tuple[int, ...]
     test_seeds: tuple[int, ...]
+    deadline_cache_path: str | None = None
     protocol_mode: str = "legacy"
     source_scenario: str | None = None
     resource_scale: str | None = None
@@ -186,6 +187,7 @@ class FuzzyComparisonProtocol:
             max_episodes=max_episodes,
             safe_rl_enabled=False,
             require_deadline_cache=bool(require_deadline_cache),
+            deadline_cache_override=self.deadline_cache_path,
         )
         return replace(
             config,
@@ -299,6 +301,7 @@ def protocol_from_config(
     ddl: str,
     workflows_per_episode: int | None = None,
     experiment_context: ExperimentProtocolContext | None = None,
+    deadline_cache_path: str | Path | None = None,
 ) -> FuzzyComparisonProtocol:
     seeds = payload.get("seeds", {})
     fuzzy = payload.get("fuzzy", {})
@@ -309,6 +312,11 @@ def protocol_from_config(
         train_seeds=tuple(seeds.get("training", (1, 2, 3, 4, 5))),
         validation_seeds=tuple(seeds.get("validation", (101, 102, 103))),
         test_seeds=tuple(seeds.get("final_test", range(201, 231))),
+        deadline_cache_path=(
+            str(deadline_cache_path)
+            if deadline_cache_path is not None
+            else None
+        ),
         protocol_mode=(
             experiment_context.protocol if experiment_context is not None else "legacy"
         ),

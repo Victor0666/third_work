@@ -590,6 +590,7 @@ def build_train_config(
     source_scenario: str | None = None,
     resource_scale: str | None = None,
     require_deadline_cache: bool = True,
+    deadline_cache_override: str | Path | None = None,
 ) -> TrainConfig:
     """根据命令行参数构造完整训练配置。
 
@@ -773,6 +774,13 @@ def build_train_config(
 
     ddl_name = normalize_ddl(ddl)
     environment_values = environment_scenario_values(scenario)
+    if deadline_cache_override is not None:
+        override_path = Path(deadline_cache_override).expanduser()
+        if not override_path.is_absolute():
+            override_path = ROOT_DIR / override_path
+        override_path = override_path.resolve()
+        environment_values["deadline_cache_path"] = str(override_path)
+
     task_code = environment_values["task_code"]
     res_code = environment_values["resource_code"]
     task_size = environment_values["task_size"]

@@ -72,6 +72,7 @@ def _smoke_protocol(
         resource_scale=protocol.resource_scale,
         training_scenarios=protocol.training_scenarios,
         test_scenarios=protocol.test_scenarios,
+        deadline_cache_path=protocol.deadline_cache_path,
     )
 
 
@@ -87,12 +88,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--episodes", type=int, default=None)
     parser.add_argument("--validation-interval", type=int, default=None)
     parser.add_argument("--workflows-per-episode", type=int, default=None)
+    parser.add_argument( "--deadline-cache", type=Path,default=None, help=("Optional deadline-cache override for Single protocol. " "If omitted, use the cache defined by scenario_registry."),)
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--optimizer-seed", type=int, default=0)
     parser.add_argument("--smoke", action="store_true")
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--output", type=Path, default=None)
     args = parser.parse_args(argv)
+    if args.deadline_cache is not None and args.protocol != "single":
+        parser.error(
+            "--deadline-cache override is currently supported only "
+            "for --protocol single"
+        )
     if not args.smoke:
         if args.episodes not in (None, 600):
             parser.error("formal baseline training requires exactly 600 episodes")
@@ -113,6 +120,7 @@ def main(argv: list[str] | None = None) -> int:
         ddl=args.ddl,
         workflows_per_episode=args.workflows_per_episode,
         experiment_context=experiment_context,
+        deadline_cache_path=args.deadline_cache,
     )
     training = dict(config.get("training", {}))
     if args.smoke:
@@ -126,18 +134,35 @@ def main(argv: list[str] | None = None) -> int:
             args.validation_interval
             or training.get("validation_interval", 25)
         )
+
+    default_output = (
+        PROJECT_ROOT
+        / "out"
+        / "fuzzy_comparisons"
+        / args.method
+        / (
+            "main_single"
+            if protocol.protocol_mode == "single"
+            else "enhancement_multi"
+        )
+        / (
+            protocol.source_scenario
+            if protocol.protocol_mode == "single"
+            else protocol.resource_scale
+        )
+        / protocol.ddl_setting.lower()
+    )
+    if args.deadline_cache is not None:
+        default_output = (
+            default_output
+            / "deadline_cache_override"
+            / Path(args.deadline_cache).stem
+        )
+
     output = (
         args.output.resolve()
         if args.output is not None
-        else (
-            PROJECT_ROOT
-            / "out"
-            / "fuzzy_comparisons"
-            / args.method
-            / ("main_single" if protocol.protocol_mode == "single" else "enhancement_multi")
-            / (protocol.source_scenario if protocol.protocol_mode == "single" else protocol.resource_scale)
-            / protocol.ddl_setting.lower()
-        ).resolve()
+        else default_output.resolve()
     )
     seed_everything(int(args.optimizer_seed))
     prototype = make_environment(

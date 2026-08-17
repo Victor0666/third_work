@@ -1,10 +1,9 @@
 """Generate exact-workload-mix FCFS deadline-reference caches.
 
 This offline data-preparation runner reuses the shared fuzzy environment and
-the existing FCFS-FCFS policy.  It does not implement a second scheduling,
-deadline, resource, or energy model.  Paper final seeds may be generated here
-only as immutable problem-instance data; they are never exposed to training or
-model selection.
+the existing deterministic FCFS policies. It supports both FCFS-FCFS and
+FCFS-Fixed for diagnostic comparison while keeping the workflow instances,
+resource configuration, fuzzy environment, and random seeds unchanged.
 """
 
 from __future__ import annotations
@@ -15,7 +14,11 @@ import json
 from pathlib import Path
 from typing import Iterable
 
-from algorithms.comparisons.fcfs.policies import FCFSFCFSPolicy
+from algorithms.comparisons.fcfs.policies import (
+    POLICY_TYPES,
+    make_policy,
+)
+
 from algorithms.comparisons.fcfs.train_fcfs import (
     DEFAULT_PROTOCOL_CONFIG,
     build_fcfs_protocol,
@@ -39,7 +42,14 @@ FORMAL_ENVIRONMENT_SEEDS = tuple(sorted(set(
 
 
 def _generate_seed_record(args) -> dict:
-    scenario, ddl, config_path, workflows_per_episode, seed = args
+    (
+        scenario,
+        ddl,
+        config_path,
+        workflows_per_episode,
+        seed,
+        policy_id,
+    ) = args
     protocol = build_fcfs_protocol(
         scenario,
         ddl,
@@ -56,9 +66,11 @@ def _generate_seed_record(args) -> dict:
         "fuzzy_use_deadline_constraint": False,
     })
     env = FuzzyBaselineEnv(**kwargs)
+
+    policy = make_policy(policy_id)
     run_episode(
         env,
-        FCFSFCFSPolicy(),
+        policy,
         seed=int(seed),
         training=False,
     )
@@ -88,13 +100,28 @@ def generate_exact_deadline_cache(
     workflows_per_episode: int = 50,
     workers: int = 1,
     output_path: str | Path | None = None,
+    policy_id: str = "fcfs_fcfs",
 ) -> Path:
-    """Run FCFS-FCFS and atomically write one exact-mix scenario cache."""
+"""Run one deterministic FCFS policy and write an exact-mix cache."""
+    policy_id = str(policy_id).strip().lower()
+    if policy_id not in POLICY_TYPES:
+        raise ValueError(
+            f"unknown policy_id {policy_id!r}; "
+            f"expected one of {sorted(POLICY_TYPES)}"
+        )
+    if policy_id != "fcfs_fcfs" and output_path is None:
+        raise ValueError(
+            "FCFS-Fixed cache generation requires an explicit --output "
+            "to avoid overwriting the formal FCFS-FCFS cache."
+        )
+
     scenario_id = str(scenario).strip().upper()
     spec = SCENARIO_REGISTRY[scenario_id]
+
     seed_values = tuple(sorted({int(value) for value in seeds}))
     if not seed_values:
         raise ValueError("deadline-cache generation requires at least one seed")
+
     jobs = [
         (
             scenario_id,
@@ -102,6 +129,7 @@ def generate_exact_deadline_cache(
             str(Path(config_path).resolve()),
             int(workflows_per_episode),
             seed,
+            policy_id,
         )
         for seed in seed_values
     ]
@@ -118,7 +146,13 @@ def generate_exact_deadline_cache(
     payload = {
         "meta": {
             "schema_version": "exact_workload_mix_v1",
-            "policy": "FCFS_task + VM_earliest_available_then_id",
+            # "policy": "FCFS_task + VM_earliest_available_then_id",
+            "policy_id": policy_id,
+            "policy": (
+                "FCFS_task + VM_earliest_available_then_id"
+                if policy_id == "fcfs_fcfs"
+                else "FCFS_task + shared_select_vm_deterministic"
+            ),
             "scenario": scenario_id,
             "task_scale": spec.task_code,
             "resource_scale": spec.resource_code,
@@ -149,6 +183,7 @@ def main(argv=None) -> None:
     parser.add_argument("--workflows", type=int, default=50)
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--output")
+    parser.add_argument("--policy",default="fcfs_fcfs", choices=sorted(POLICY_TYPES),)
     args = parser.parse_args(argv)
     print(generate_exact_deadline_cache(
         args.scenario,
@@ -157,6 +192,7 @@ def main(argv=None) -> None:
         workflows_per_episode=args.workflows,
         workers=args.workers,
         output_path=args.output,
+        policy_id=args.policy,
     ))
 
 
