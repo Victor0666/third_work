@@ -25,6 +25,10 @@ from __future__ import annotations
 import argparse  # Python 标准库中的命令行参数解析模块
 
 from hrl_mix.train_runner import train
+from hrl_mix.train_config import (
+    parse_deadline_cache_overrides,
+    validate_single_deadline_cache_paths,
+)
 
 
 def main(argv=None):
@@ -68,8 +72,9 @@ def main(argv=None):
     )
     parser.add_argument(
         "--deadline-cache",
+        action="append",
         default=None,
-        help="Optional deadline-cache path overriding the scenario default.",
+        help="Single cache mapping as SCENARIO=PATH; repeat per test scenario.",
     )
     parser.add_argument(
         "--episodes",
@@ -203,6 +208,16 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.episodes not in (None, 600):
         parser.error("formal Safe-HRL training requires exactly 600 total episodes")
+    source_scenario = args.source_scenario or args.scenario or "SS"
+    deadline_cache_paths = parse_deadline_cache_overrides(
+        args.deadline_cache,
+        default_scenario=source_scenario,
+    )
+    deadline_cache_paths = validate_single_deadline_cache_paths(
+        args.protocol,
+        deadline_cache_paths,
+        source_scenario=(source_scenario if args.protocol == "single" else None),
+    )
     train(
         scenario=args.scenario,
         ddl=args.ddl,
@@ -244,7 +259,8 @@ def main(argv=None):
             not args.without_curriculum
         ),
         optimizer_seed=args.optimizer_seed,
-        deadline_cache_override=args.deadline_cache,
+        deadline_cache_override=deadline_cache_paths.get(source_scenario),
+        deadline_cache_paths=deadline_cache_paths,
         protocol=args.protocol,
         source_scenario=args.source_scenario,
         resource_scale=args.resource_scale,

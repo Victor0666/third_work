@@ -844,7 +844,7 @@ class ReplayAggregationIntegrationTests(unittest.TestCase):
             result = evaluate_candidate(
                 candidate,
                 problem_config,
-                [0],
+                [1],
                 counterfactual_options={
                     "config": counterfactual_config,
                     "metadata": {
@@ -853,7 +853,7 @@ class ReplayAggregationIntegrationTests(unittest.TestCase):
                         "frozen_rule_hash": frozen_hash,
                         "parameter_hash": parameter_hash,
                         "scenario_id": scenario,
-                        "seed": 0,
+                        "seed": 1,
                         "archive_ready_features": True,
                     },
                     "output_dir": output_root,
@@ -894,8 +894,8 @@ class ReplayAggregationIntegrationTests(unittest.TestCase):
         archive = make_archive(
             replay_config,
             archive_path,
-            train=(0,),
-            validation=(1,),
+            train=(1,),
+            validation=(2,),
             test=(100,),
         )
         algorithm = object.__new__(SeEvo)
@@ -915,12 +915,12 @@ class ReplayAggregationIntegrationTests(unittest.TestCase):
         algorithm._attach_critical_state_replay([historical])
         self.assertTrue(archive.records)
         self.assertTrue(archive_path.is_file())
-        self.assertTrue(all(row.source_seed == 0 for row in archive.records.values()))
+        self.assertTrue(all(row.source_seed == 1 for row in archive.records.values()))
         restored_algorithm = object.__new__(SeEvo)
         restored_algorithm.generated_dir = str(artifact_root)
         restored_algorithm.critical_state_replay_config = replay_config
         restored_algorithm.critical_state_archive = None
-        restored_algorithm._optimization_seed_sets = lambda: ([0], [1], [100])
+        restored_algorithm._optimization_seed_sets = lambda: ([1], [2], [100])
         restored_archive = restored_algorithm._critical_state_archive_instance()
         self.assertEqual(restored_archive.archive_hash, archive.archive_hash)
         self.assertEqual(

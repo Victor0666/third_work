@@ -76,6 +76,7 @@ def test_deadline_cache_and_optimizer_seed_are_manifested():
         elapsed_seconds=0.0,
     )
     assert manifest["optimizer_seed"] == 37
+    assert manifest["deadline_cache_paths"] == config.deadline_cache_paths
 
 
 def test_cross_scenario_cache_mapping_reaches_adapter():
@@ -128,14 +129,14 @@ def test_actual_adapter_episode_uses_registered_workload_mix(scenario, expected)
 
 @pytest.fixture(scope="module")
 def adapter(smoke_config):
-    value = CEWSEnvAdapter(smoke_config, 31)
+    value = CEWSEnvAdapter(smoke_config, 1)
     value.reset()
     return value
 
 
 def test_instance_seed_and_fingerprint_reproducible(smoke_config):
-    first = CEWSEnvAdapter(smoke_config, 31)
-    second = CEWSEnvAdapter(smoke_config, 31)
+    first = CEWSEnvAdapter(smoke_config, 1)
+    second = CEWSEnvAdapter(smoke_config, 1)
     for adapter in (first, second):
         adapter.reset()
         while len(adapter.env.workflows) < 3:
@@ -245,7 +246,7 @@ def test_nonterminal_zero_next_mask_rejected():
 
 
 def test_no_idle_vm_advances_without_transition(smoke_config):
-    adapter = CEWSEnvAdapter(smoke_config, 32)
+    adapter = CEWSEnvAdapter(smoke_config, 2)
     adapter.reset()
     task_id = adapter.advance_until_actionable()
     adapter.execute(task_id, adapter.legal_vm_ids(task_id)[0])

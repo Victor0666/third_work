@@ -9,7 +9,10 @@ import sys
 import hydra
 from omegaconf import DictConfig, ListConfig
 
-from protocol_config import configure_seevo_protocol
+from protocol_config import (
+    configure_seevo_protocol,
+    parse_deadline_cache_overrides,
+)
 from seevo import SeEvo
 from utils.utils import init_client
 
@@ -42,6 +45,25 @@ def _translate_protocol_cli_args(args: list[str]) -> list[str]:
     index = 0
     while index < len(args):
         argument = str(args[index])
+        if argument == "--deadline-cache" or argument.startswith(
+            "--deadline-cache="
+        ):
+            if argument == "--deadline-cache":
+                if index + 1 >= len(args):
+                    raise ValueError(
+                        "--deadline-cache requires SCENARIO=PATH"
+                    )
+                value = str(args[index + 1])
+                index += 2
+            else:
+                value = argument.split("=", 1)[1]
+                index += 1
+            mapping = parse_deadline_cache_overrides([value])
+            scenario, path = next(iter(mapping.items()))
+            translated.append(
+                f"+deadline_cache_paths.{scenario}={path}"
+            )
+            continue
         matched = False
         for option, hydra_key in _PROTOCOL_CLI_OPTIONS.items():
             if argument == option:

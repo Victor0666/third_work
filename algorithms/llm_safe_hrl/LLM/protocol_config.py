@@ -19,6 +19,10 @@ from algorithms.llm_safe_hrl.scenario_registry import (  # noqa: E402
     resolve_experiment_protocol,
     validate_component_scenarios,
 )
+from algorithms.llm_safe_hrl.hrl_mix.train_config import (  # noqa: E402
+    parse_deadline_cache_overrides,
+    validate_single_deadline_cache_paths,
+)
 
 
 def _mapping(value) -> dict:
@@ -42,6 +46,42 @@ def _bind_component_scenarios(
     component_config.scenario_ids = list(context.training_scenarios)
 
 
+def apply_seevo_scenario_config(
+    config,
+    scenario: str,
+    deadline_cache_paths,
+    *,
+    require_files: bool = False,
+) -> dict:
+    """Apply registry inputs, then restore the explicit scenario cache."""
+    result = apply_scenario_to_problem_config(
+        config,
+        scenario,
+        require_files=False,
+    )
+    cache_path = parse_deadline_cache_overrides(
+        deadline_cache_paths
+    ).get(str(scenario).strip().upper())
+    if cache_path is not None:
+        result["dataset"]["deadline_cache_path"] = cache_path
+    if require_files:
+        missing = [
+            str(_PROJECT_ROOT / "data" / "dax" / name)
+            for name in result["dataset"]["dax_files"]
+            if not (_PROJECT_ROOT / "data" / "dax" / name).is_file()
+        ]
+        if missing:
+            raise FileNotFoundError(f"missing scenario DAX files: {missing}")
+        selected_cache = Path(result["dataset"]["deadline_cache_path"])
+        if not selected_cache.is_absolute():
+            selected_cache = _PROJECT_ROOT / selected_cache
+        if not selected_cache.is_file():
+            raise FileNotFoundError(
+                f"missing scenario deadline cache: {selected_cache}"
+            )
+    return result
+
+
 def configure_seevo_protocol(
     cfg: DictConfig,
     *,
@@ -58,11 +98,30 @@ def configure_seevo_protocol(
         validation_seeds=dataset.get("validation_seeds", (4, 5)),
     )
     primary_scenario = context.training_scenarios[0]
-    problem = apply_scenario_to_problem_config(
+    deadline_cache_paths = parse_deadline_cache_overrides(
+        getattr(cfg, "deadline_cache_paths", None)
+        or problem.get("deadline_cache_paths")
+    )
+    deadline_cache_override = getattr(
+        cfg, "deadline_cache_override", None
+    ) or dataset.get("deadline_cache_override")
+    if deadline_cache_override is not None:
+        deadline_cache_paths[primary_scenario] = str(
+            deadline_cache_override
+        )
+    deadline_cache_paths = validate_single_deadline_cache_paths(
+        context.protocol,
+        deadline_cache_paths,
+        source_scenario=context.source_scenario,
+        required_scenarios=context.test_scenarios,
+    )
+    problem = apply_seevo_scenario_config(
         problem,
         primary_scenario,
+        deadline_cache_paths,
         require_files=True,
     )
+    problem["deadline_cache_paths"] = dict(deadline_cache_paths)
     problem["experiment_protocol"] = context.identity()
     problem["dataset"]["train_seeds"] = list(context.llm_train_seeds)
     problem["dataset"]["validation_seeds"] = list(context.llm_validation_seeds)
@@ -110,11 +169,13 @@ def configure_seevo_protocol(
         llm_root / "cfg" / "problem" / "cews_task_constructive_hrl_ss_admission.yaml"
     )
     admission = _mapping(OmegaConf.load(admission_template))
-    admission = apply_scenario_to_problem_config(
+    admission = apply_seevo_scenario_config(
         admission,
         primary_scenario,
+        deadline_cache_paths,
         require_files=True,
     )
+    admission["deadline_cache_paths"] = dict(deadline_cache_paths)
     admission["experiment_protocol"] = context.identity()
     admission["dataset"]["train_seeds"] = list(context.llm_train_seeds)
     admission["dataset"]["validation_seeds"] = list(context.llm_validation_seeds)
@@ -140,6 +201,12 @@ def configure_seevo_protocol(
     OmegaConf.update(cfg, "experiment_protocol", context.identity(), force_add=True)
     OmegaConf.update(
         cfg,
+        "deadline_cache_paths",
+        dict(deadline_cache_paths),
+        force_add=True,
+    )
+    OmegaConf.update(
+        cfg,
         "protocol_paths",
         {
             "output_root": str(output_root),
@@ -154,6 +221,7 @@ def configure_seevo_protocol(
         "output_root": str(output_root),
         "checkpoint_root": str(context.checkpoint_root.resolve()),
         "heuristic_library": str(context.library_path.resolve()),
+        "deadline_cache_paths": dict(deadline_cache_paths),
     }
     (output_root / "experiment_protocol_manifest.json").write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n",
@@ -162,4 +230,4 @@ def configure_seevo_protocol(
     return context
 
 
-__all__ = ["configure_seevo_protocol"]
+__all__ = ["apply_seevo_scenario_config", "configure_seevo_protocol"]

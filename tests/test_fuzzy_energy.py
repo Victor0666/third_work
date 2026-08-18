@@ -44,7 +44,7 @@ def _small_config(*, fuzzy_enabled=True):
     return config
 
 
-def _run_small_environment(seed=0):
+def _run_small_environment(seed=1):
     """用 reference 规则运行一个完整工作流，并返回结束后的真实环境。"""
     config = _small_config(fuzzy_enabled=True)
     environment = build_environment(config, seed)
@@ -204,7 +204,7 @@ class FuzzyEnergyReplayTests(unittest.TestCase):
         )
 
     def test_shadow_finish_order(self):
-        environment = _run_small_environment(seed=0)
+        environment = _run_small_environment(seed=1)
         self.assertGreater(len(environment.assignment_history), 0)
         for assignment in environment.assignment_history:
             self.assertLessEqual(
@@ -326,7 +326,7 @@ class FuzzyResultProtocolTests(unittest.TestCase):
         result = evaluate_candidate(
             REFERENCE_PATH,
             config,
-            seeds=[0],
+            seeds=[1],
         )
         required = {
             "fuzzy_total_energy_lower",
@@ -365,7 +365,7 @@ class FuzzyResultProtocolTests(unittest.TestCase):
         self.assertEqual(parsed["energy"], parsed["objective"])
         self.assertEqual(parsed["modal_energy"], parsed["total_energy"])
 
-        # 当前测试只使用 seeds=[0]，因此跨 seed 标准差必须为 0。
+        # 当前测试只使用 seeds=[1]，因此跨 seed 标准差必须为 0。
         self.assertEqual(
             parsed["objective_std_across_seeds"],
             0.0,
@@ -398,11 +398,11 @@ class FuzzyResultProtocolTests(unittest.TestCase):
         self.assertTrue(parsed["all_evaluation_seeds_completed"])
         self.assertEqual(parsed["evaluation_seed_count"], 1)
         self.assertEqual(parsed["completed_seed_count"], 1)
-        self.assertEqual(parsed["seeds"], [0])
+        self.assertEqual(parsed["seeds"], [1])
         self.assertEqual(len(parsed["candidate_sha256"]), 64)
         self.assertEqual(len(parsed["evaluation_config_sha256"]), 64)
         self.assertEqual(len(parsed["per_seed_metrics"]), 1)
-        self.assertEqual(parsed["per_seed_metrics"][0]["seed"], 0)
+        self.assertEqual(parsed["per_seed_metrics"][0]["seed"], 1)
 
 
 if __name__ == "__main__":

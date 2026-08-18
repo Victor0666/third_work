@@ -115,6 +115,7 @@ def experiment_manifest(
         "ddl": config.ddl,
         "algorithm_seed": config.algorithm_seed,
         "optimizer_seed": int(config.algorithm_seed),
+        "deadline_cache_paths": dict(config.deadline_cache_paths),
         "stage": str(stage),
         "source_hash": source_hash(),
         "train_seeds": list(config.train_seeds),

@@ -474,6 +474,7 @@ class TrainConfig:
     save_dir: str
     log_path: str
     deadline_cache_path: str
+    deadline_cache_paths: dict[str, str]
 
     # 安全强化学习分阶段配置。enabled=False 时保持原 HRL reward/replay 语义。
     safe_rl: SafeRLConfig
@@ -523,6 +524,39 @@ def parse_deadline_cache_overrides(
             raise ValueError("deadline cache path must not be empty")
         result[scenario] = path.strip()
     return result
+
+
+def validate_single_deadline_cache_paths(
+    protocol: str,
+    deadline_cache_paths,
+    *,
+    source_scenario: str | None = None,
+    required_scenarios=None,
+) -> dict[str, str]:
+    """Require and resolve every cache used by a formal Single protocol."""
+    paths = parse_deadline_cache_overrides(deadline_cache_paths)
+    if str(protocol).strip().lower() != "single":
+        return paths
+    required = tuple(
+        required_scenarios
+        or resolve_experiment_protocol(
+            "single",
+            source_scenario=source_scenario,
+        ).test_scenarios
+    )
+    missing = [scenario for scenario in required if scenario not in paths]
+    if missing:
+        raise ValueError(
+            "formal Single requires deadline cache mappings for: "
+            + ", ".join(missing)
+        )
+    resolved = {}
+    for scenario, value in paths.items():
+        path = Path(value).expanduser()
+        if not path.is_absolute():
+            path = ROOT_DIR / path
+        resolved[scenario] = str(path.resolve())
+    return resolved
 
 
 def normalize_ddl(ddl: str) -> str:
@@ -625,6 +659,7 @@ def build_train_config(
     resource_scale: str | None = None,
     require_deadline_cache: bool = True,
     deadline_cache_override: str | Path | None = None,
+    deadline_cache_paths: Mapping[str, str] | None = None,
 ) -> TrainConfig:
     """根据命令行参数构造完整训练配置。
 
@@ -808,12 +843,16 @@ def build_train_config(
 
     ddl_name = normalize_ddl(ddl)
     environment_values = environment_scenario_values(scenario)
+    normalized_cache_paths = parse_deadline_cache_overrides(
+        deadline_cache_paths
+    )
     if deadline_cache_override is not None:
         override_path = Path(deadline_cache_override).expanduser()
         if not override_path.is_absolute():
             override_path = ROOT_DIR / override_path
         override_path = override_path.resolve()
         environment_values["deadline_cache_path"] = str(override_path)
+        normalized_cache_paths[scenario] = str(override_path)
 
     task_code = environment_values["task_code"]
     res_code = environment_values["resource_code"]
@@ -916,6 +955,9 @@ def build_train_config(
     deadline_cache_path = Path(
         environment_values["deadline_cache_path"]
     )
+    normalized_cache_paths.setdefault(
+        scenario, str(deadline_cache_path.resolve())
+    )
     if require_deadline_cache and not deadline_cache_path.exists():
         raise FileNotFoundError(
             f"deadline cache 不存在：{deadline_cache_path}\n"
@@ -985,6 +1027,7 @@ def build_train_config(
         save_dir=str(save_dir),
         log_path=str(log_path),
         deadline_cache_path=str(deadline_cache_path),
+        deadline_cache_paths=normalized_cache_paths,
         safe_rl=SafeRLConfig(
             enabled=bool(safe_rl_enabled),
             safety_discount=0.95,

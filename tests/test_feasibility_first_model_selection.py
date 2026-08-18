@@ -321,7 +321,10 @@ class CheckpointBundleTests(unittest.TestCase):
                 },
                 config_snapshot={
                     "config_snapshot_schema_version": 1,
-                    "config": {"safe_rl": {"enabled": True}},
+                    "config": {
+                        "safe_rl": {"enabled": True},
+                        "optimizer_seed": 0,
+                    },
                 },
             )
             payload = json.loads(

@@ -29,7 +29,10 @@ from .sequencing_agent import (
 from algorithms.comparisons.fuzzy_common.evaluation import (
     aggregate_paper_final_metrics,
 )
-from algorithms.llm_safe_hrl.hrl_mix.train_config import parse_deadline_cache_overrides
+from algorithms.llm_safe_hrl.hrl_mix.train_config import (
+    parse_deadline_cache_overrides,
+    validate_single_deadline_cache_paths,
+)
 
 
 def evaluate_frozen(
@@ -134,6 +137,12 @@ def main(argv=None):
         args.deadline_cache,
         default_scenario=args.scenario,
     )
+    if not args.smoke:
+        deadline_cache_paths = validate_single_deadline_cache_paths(
+            args.protocol,
+            deadline_cache_paths,
+            source_scenario=(args.scenario if args.protocol == "single" else None),
+        )
     config = build_config(
         args.scenario,
         args.ddl,

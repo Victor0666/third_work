@@ -7,6 +7,10 @@ import argparse
 from .config import build_config
 from .checkpointing import portable_path
 from .routing_agent import train_routing
+from algorithms.llm_safe_hrl.hrl_mix.train_config import (
+    parse_deadline_cache_overrides,
+    validate_single_deadline_cache_paths,
+)
 
 
 def parser() -> argparse.ArgumentParser:
@@ -21,7 +25,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--episodes", type=int)
     result.add_argument("--reward-mode", default="deadline_energy")
     result.add_argument("--smoke", action="store_true")
-    result.add_argument("--deadline-cache", dest="deadline_cache_path")
+    result.add_argument("--deadline-cache", action="append")
     return result
 
 
@@ -29,6 +33,16 @@ def main(argv=None):
     args = parser().parse_args(argv)
     if not args.smoke and args.episodes not in (None, 300):
         parser().error("formal DRL-EA training requires exactly 300 episodes")
+    deadline_cache_paths = parse_deadline_cache_overrides(
+        args.deadline_cache,
+        default_scenario=args.scenario,
+    )
+    if not args.smoke:
+        deadline_cache_paths = validate_single_deadline_cache_paths(
+            args.protocol,
+            deadline_cache_paths,
+            source_scenario=(args.scenario if args.protocol == "single" else None),
+        )
     config = build_config(
         args.scenario,
         args.ddl,
@@ -36,7 +50,7 @@ def main(argv=None):
         ra_episodes=args.episodes or 300,
         reward_mode=args.reward_mode,
         smoke=args.smoke,
-        deadline_cache_path=args.deadline_cache_path,
+        deadline_cache_paths=deadline_cache_paths,
         protocol=args.protocol,
         source_scenario=(args.scenario if args.protocol == "single" else None),
         resource_scale=args.resource_scale,

@@ -639,6 +639,9 @@ def save_best_checkpoint_bundle(
         "optimizer_seed": int(
             config_snapshot["config"]["optimizer_seed"]
         ),
+        "deadline_cache_paths": dict(
+            config_snapshot["config"].get("deadline_cache_paths", {})
+        ),
         "model_selection_metrics": model_metrics.to_dict(),
         "agent_checkpoints": checkpoint_files,
         "agent_checkpoint_contents": {

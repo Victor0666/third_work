@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+from algorithms.comparisons.fcfs import train_fcfs
 from algorithms.comparisons.fcfs.policies import (
     FCFSFCFSPolicy,
     FCFSFixedPolicy,
@@ -198,12 +199,18 @@ def test_both_methods_share_environment_and_final_test_seeds():
 )
 def test_formal_runner_smoke(tmp_path: Path, method_id, display_name):
     destination = tmp_path / method_id / "metrics.json"
+    cache_path = (
+        Path(__file__).resolve().parents[1]
+        / "data" / "deadlines" / "fcfs" / "diagnostic"
+        / "fcfs_fixed_SS_exactmix_formal38.json"
+    )
     payload = run_formal_evaluation(
         method_id,
         "SS",
         "T",
         output_path=destination,
         workflows_per_episode=1,
+        deadline_cache_paths={"SS": str(cache_path)},
     )
     assert payload["method_id"] == method_id
     assert payload["display_name"] == display_name
@@ -215,6 +222,44 @@ def test_formal_runner_smoke(tmp_path: Path, method_id, display_name):
     restored = json.loads(destination.read_text(encoding="utf-8"))
     assert restored["method_id"] == method_id
     assert restored["display_name"] == display_name
+    assert restored["deadline_cache_paths"]["SS"] == str(
+        cache_path.resolve()
+    )
+
+
+def test_single_runner_requires_and_records_complete_cache_mapping(
+    tmp_path: Path,
+    monkeypatch,
+):
+    cache_paths = {
+        scenario: str(tmp_path / f"cache_{scenario}.json")
+        for scenario in ("SS", "MS", "LS")
+    }
+    monkeypatch.setattr(
+        train_fcfs,
+        "evaluate_policy",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            aggregate={},
+            records=(),
+        ),
+    )
+    payload = train_fcfs.run_single_generalization(
+        "fcfs_fcfs",
+        "SS",
+        output_root=tmp_path / "out",
+        deadline_cache_paths=cache_paths,
+    )
+    assert payload["deadline_cache_paths"] == {
+        scenario: str(Path(path).resolve())
+        for scenario, path in cache_paths.items()
+    }
+    with pytest.raises(ValueError, match="MS, LS"):
+        train_fcfs.run_single_generalization(
+            "fcfs_fixed",
+            "SS",
+            output_root=tmp_path / "missing",
+            deadline_cache_paths={"SS": cache_paths["SS"]},
+        )
 
 
 def test_policy_does_not_modify_task_order_input():

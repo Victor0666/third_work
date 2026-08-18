@@ -36,8 +36,9 @@ for import_root in (str(_BOOTSTRAP_PROJECT_ROOT), str(LLM_ROOT)):
         sys.path.insert(0, import_root)
 
 from algorithms.llm_safe_hrl.paths import PROJECT_ROOT
-from algorithms.llm_safe_hrl.scenario_registry import (
-    apply_scenario_to_problem_config,
+from algorithms.llm_safe_hrl.LLM.protocol_config import (
+    apply_seevo_scenario_config,
+    parse_deadline_cache_overrides,
 )
 from base.hrl_env import HrlFcfsCacheEnv, NoFeasibleVMError
 from base.heuristic_admission import (
@@ -61,6 +62,29 @@ DEFAULT_CONFIG_PATH = LLM_ROOT / "cfg" / "problem" / "cews_task_constructive.yam
 LLM_EVOLUTION_FORBIDDEN_SEEDS = frozenset({101, 102, 103}).union(range(201, 231))
 
 
+def _apply_eval_scenario_config(
+    config: dict,
+    scenario: str,
+    deadline_cache_paths,
+    *,
+    require_files: bool = False,
+) -> dict:
+    """Apply scenario inputs while leaving cache fallback to this evaluator."""
+    cache_paths = parse_deadline_cache_overrides(deadline_cache_paths)
+    result = apply_seevo_scenario_config(
+        config,
+        scenario,
+        cache_paths,
+        require_files=(
+            require_files
+            and str(scenario).strip().upper() in cache_paths
+        ),
+    )
+    if str(scenario).strip().upper() not in cache_paths:
+        result["dataset"].pop("deadline_cache_path", None)
+    return result
+
+
 def load_problem_config(config_path: str | Path = DEFAULT_CONFIG_PATH) -> dict:
     """直接读取问题 YAML，使评价子进程不依赖 Hydra 的运行时状态。
 
@@ -81,11 +105,12 @@ def load_problem_config(config_path: str | Path = DEFAULT_CONFIG_PATH) -> dict:
     dataset = config.get("dataset")
     if not isinstance(dataset, dict):
         raise ValueError("Problem config must contain a dataset mapping")
-    return apply_scenario_to_problem_config(
-        config,
-        dataset.get("scenario", "SS"),
-        project_root=PROJECT_ROOT,
-        require_files=False,
+    scenario = dataset.get("scenario", "SS")
+    cache_paths = config.get("deadline_cache_paths", {})
+    if not cache_paths and dataset.get("deadline_cache_path"):
+        cache_paths = {scenario: dataset["deadline_cache_path"]}
+    return _apply_eval_scenario_config(
+        config, scenario, cache_paths, require_files=False
     )
 
 
@@ -843,10 +868,10 @@ def main(argv=None):
     if args.scenario is not None:
         scenario = str(args.scenario).strip().upper()
         _scenario_names(scenario)
-        config = apply_scenario_to_problem_config(
+        config = _apply_eval_scenario_config(
             config,
             scenario,
-            project_root=PROJECT_ROOT,
+            config.get("deadline_cache_paths", {}),
             require_files=True,
         )
     seeds = _resolve_seeds(config, args.dataset_mode, args.cases)

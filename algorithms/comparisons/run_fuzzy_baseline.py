@@ -21,7 +21,10 @@ from algorithms.comparisons.irws import IRWSPolicy
 from algorithms.comparisons.marl import MARLPolicy
 from algorithms.comparisons.pd3qn import PD3QNPolicy
 from algorithms.llm_safe_hrl.scenario_registry import resolve_experiment_protocol
-from hrl_mix.train_config import parse_deadline_cache_overrides
+from hrl_mix.train_config import (
+    parse_deadline_cache_overrides,
+    validate_single_deadline_cache_paths,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -125,6 +128,13 @@ def main(argv: list[str] | None = None) -> int:
         args.deadline_cache,
         default_scenario=experiment_context.source_scenario,
     )
+    if not args.smoke:
+        deadline_cache_paths = validate_single_deadline_cache_paths(
+            args.protocol,
+            deadline_cache_paths,
+            source_scenario=experiment_context.source_scenario,
+            required_scenarios=experiment_context.test_scenarios,
+        )
     protocol = protocol_from_config(
         config,
         scenario=experiment_context.training_scenarios[0],
@@ -166,11 +176,12 @@ def main(argv: list[str] | None = None) -> int:
         )
         / protocol.ddl_setting.lower()
     )
-    if args.deadline_cache is not None:
+    source_cache = deadline_cache_paths.get(protocol.source_scenario)
+    if source_cache is not None:
         default_output = (
             default_output
             / "deadline_cache_override"
-            / Path(args.deadline_cache).stem
+            / Path(source_cache).stem
         )
 
     output = (

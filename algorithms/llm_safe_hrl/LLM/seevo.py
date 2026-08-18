@@ -55,11 +55,11 @@ from counterfactual_feedback import (
     strict_replay_gate_triggered,
 )
 from algorithms.llm_safe_hrl.scenario_registry import (
-    apply_scenario_to_problem_config,
     resolve_experiment_protocol,
     validate_component_scenarios,
     validate_protocol_identity,
 )
+from protocol_config import apply_seevo_scenario_config
 
 
 RESULT_JSON_PREFIX = "RESULT_JSON="
@@ -996,9 +996,10 @@ class SeEvo:
                     handle.write(frozen_source)
             group = []
             for scenario_id in scenario_ids:
-                scenario_config = apply_scenario_to_problem_config(
+                scenario_config = apply_seevo_scenario_config(
                     problem_config,
                     scenario_id,
+                    problem_config.get("deadline_cache_paths", {}),
                     require_files=True,
                 )
                 evaluation_config_hash = rule_json_sha256(scenario_config)

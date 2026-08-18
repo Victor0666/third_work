@@ -22,6 +22,9 @@ from algorithms.llm_safe_hrl.scenario_registry import (
     apply_scenario_to_problem_config,
     resolve_experiment_protocol,
 )
+from algorithms.llm_safe_hrl.LLM.protocol_config import (
+    apply_seevo_scenario_config,
+)
 
 if str(LLM_ROOT) not in sys.path:
     sys.path.insert(0, str(LLM_ROOT))
@@ -805,10 +808,13 @@ class StagedEvaluationConfigurationTests(unittest.TestCase):
                 )
 
             with mock.patch(
-                "seevo.apply_scenario_to_problem_config",
-                side_effect=lambda config, scenario, **_kwargs: (
-                    apply_scenario_to_problem_config(
-                        config, scenario, require_files=False
+                "seevo.apply_seevo_scenario_config",
+                side_effect=lambda config, scenario, cache_paths, **_kwargs: (
+                    apply_seevo_scenario_config(
+                        config,
+                        scenario,
+                        cache_paths,
+                        require_files=False,
                     )
                 ),
             ), mock.patch("seevo.subprocess.run", side_effect=fake_run) as run:
@@ -880,10 +886,13 @@ class StagedEvaluationConfigurationTests(unittest.TestCase):
                 )
 
             with mock.patch(
-                "seevo.apply_scenario_to_problem_config",
-                side_effect=lambda config, scenario, **_kwargs: (
-                    apply_scenario_to_problem_config(
-                        config, scenario, require_files=False
+                "seevo.apply_seevo_scenario_config",
+                side_effect=lambda config, scenario, cache_paths, **_kwargs: (
+                    apply_seevo_scenario_config(
+                        config,
+                        scenario,
+                        cache_paths,
+                        require_files=False,
                     )
                 ),
             ), mock.patch("seevo.subprocess.run", side_effect=fake_run) as run:
@@ -966,10 +975,13 @@ class StagedEvaluationConfigurationTests(unittest.TestCase):
                 for weight in (0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0)
             ]
             with mock.patch(
-                "seevo.apply_scenario_to_problem_config",
-                side_effect=lambda config, scenario, **_kwargs: (
-                    apply_scenario_to_problem_config(
-                        config, scenario, require_files=False
+                "seevo.apply_seevo_scenario_config",
+                side_effect=lambda config, scenario, cache_paths, **_kwargs: (
+                    apply_seevo_scenario_config(
+                        config,
+                        scenario,
+                        cache_paths,
+                        require_files=False,
                     )
                 ),
             ), mock.patch("seevo.subprocess.run", side_effect=fake_run) as run:

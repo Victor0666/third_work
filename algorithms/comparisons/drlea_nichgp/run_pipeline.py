@@ -13,7 +13,10 @@ from .checkpointing import (
     write_json,
 )
 from .config import build_config, config_for_scenario, protocol_artifact_identity
-from algorithms.llm_safe_hrl.hrl_mix.train_config import parse_deadline_cache_overrides
+from algorithms.llm_safe_hrl.hrl_mix.train_config import (
+    parse_deadline_cache_overrides,
+    validate_single_deadline_cache_paths,
+)
 from .decision_situations import collect_decision_situations
 from .evaluate import evaluate_frozen
 from .niching_gp import evolve_niching_gp, load_rules
@@ -138,6 +141,12 @@ def main(argv=None):
         args.deadline_cache,
         default_scenario=args.scenario,
     )
+    if not args.smoke:
+        deadline_cache_paths = validate_single_deadline_cache_paths(
+            args.protocol,
+            deadline_cache_paths,
+            source_scenario=(args.scenario if args.protocol == "single" else None),
+        )
     result = run_pipeline(
         build_config(
             args.scenario,

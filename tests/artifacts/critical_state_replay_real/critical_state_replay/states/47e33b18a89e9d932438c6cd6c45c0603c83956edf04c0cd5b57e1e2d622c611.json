@@ -1,0 +1,287 @@
+{
+  "archive_priority": [
+    1.0,
+    1.0,
+    1.0,
+    0.0,
+    3.50294202629334,
+    1.0,
+    2.0,
+    1.1280014903535402
+  ],
+  "auxiliary_risk_categories": [],
+  "confidence": "medium",
+  "config_hash": "c3f3007eeea4f4f085a5fc0ef5592ce7cbef2a7985d3fb945ec6a688c38a20a7",
+  "consecutive_failure_count": 0,
+  "consecutive_success_count": 0,
+  "content_hash": "64c5d9cb77edc06be90d557ea63124d267b38123adabf73b1241c256aaa81d59",
+  "counterfactual_comparisons": [
+    {
+      "alternative_outcome": {
+        "communication_time": 19.277001703008086,
+        "ddl_risk": 273.6092477570736,
+        "evidence_quality": "high",
+        "execution_time": 64.03092732337204,
+        "host_id": 0,
+        "host_load_after": 0.4117647058823529,
+        "host_load_before": 0.38235294117647056,
+        "host_load_delta": 0.02941176470588236,
+        "marginal_fuzzy_energy": 64.96812702294876,
+        "modal_finish": 119.07556323879808,
+        "optimistic_finish": 109.5098735274531,
+        "pessimistic_finish": 137.96924035138778,
+        "predicted_finish": 119.0755632387981,
+        "predicted_violation": 0.0,
+        "queue_time": 0.0,
+        "released_critical_successors": 0,
+        "released_successors": 0,
+        "remaining_critical_path": 136.58469126131533,
+        "safety_margin": 1551.0982431539799,
+        "server_active_time_extension": 0.0,
+        "task_id": 0,
+        "task_safe_deadline": 1688.1227996497382,
+        "uncertainty_low_slack_risk": 0.0,
+        "uncertainty_width": 28.459366823934687,
+        "vm_id": 0,
+        "workflow_id": 0,
+        "workflow_modal_finish": 246.31207950551212,
+        "workflow_optimistic_finish": 225.09577451554134,
+        "workflow_pessimistic_finish": 275.0459408229453
+      },
+      "alternative_task_id": 0,
+      "communication_delta": -6.447175772652189,
+      "ddl_risk_delta": 3.5029420262934536,
+      "decision_id": "critical-state-real-next_improved:SS:1:d000003",
+      "dominance": "alternative_dominates",
+      "elapsed_ms": 27.36079995520413,
+      "estimator_type": "local_one_step",
+      "evidence_quality": "high",
+      "marginal_fuzzy_energy_delta": 1.1280014903535402,
+      "pessimistic_finish_delta": 2.5376822437839905,
+      "predicted_finish_delta": 0.9103536036875965,
+      "predicted_violation_delta": 0.0,
+      "released_critical_successor_delta": 0,
+      "released_successor_delta": 0,
+      "remaining_critical_path_delta": 1.0466262145142764,
+      "safety_margin_delta": 3.50294202629334,
+      "selected_outcome": {
+        "communication_time": 12.829825930355897,
+        "ddl_risk": 277.11218978336706,
+        "evidence_quality": "high",
+        "execution_time": 71.38845669971184,
+        "host_id": 0,
+        "host_load_after": 0.4117647058823529,
+        "host_load_before": 0.38235294117647056,
+        "host_load_delta": 0.02941176470588236,
+        "marginal_fuzzy_energy": 66.0961285133023,
+        "modal_finish": 119.9859168424857,
+        "optimistic_finish": 109.44961970112675,
+        "pessimistic_finish": 140.50692259517177,
+        "predicted_finish": 119.9859168424857,
+        "predicted_violation": 0.0,
+        "queue_time": 0.0,
+        "released_critical_successors": 0,
+        "released_successors": 0,
+        "remaining_critical_path": 137.6313174758296,
+        "safety_margin": 1547.5953011276865,
+        "server_active_time_extension": 0.0,
+        "task_id": 1,
+        "task_safe_deadline": 1687.076173435224,
+        "uncertainty_low_slack_risk": 0.0,
+        "uncertainty_width": 31.057302894045023,
+        "vm_id": 0,
+        "workflow_id": 0,
+        "workflow_modal_finish": 248.22267742355672,
+        "workflow_optimistic_finish": 225.90722980874477,
+        "workflow_pessimistic_finish": 278.6326904338834
+      },
+      "selected_task_id": 1,
+      "state_fingerprint_after": "c36dfa6dfbffa2aff5e8f81d6aba0974342bc67e6a8d747c0f64ec9e9b1e92be",
+      "state_fingerprint_before": "c36dfa6dfbffa2aff5e8f81d6aba0974342bc67e6a8d747c0f64ec9e9b1e92be",
+      "uncertainty_risk_delta": 0.0
+    }
+  ],
+  "created_generation": 1,
+  "critical_reasons": [
+    "close_rule_scores",
+    "small_energy_gap_possible_ddl_risk_difference"
+  ],
+  "criticality_score": 2.547151152906796,
+  "current_time": 35.76763421241797,
+  "ddl_evidence": {
+    "max_counterfactual_ddl_regret": 3.50294202629334,
+    "negative_slack": false,
+    "reports": [
+      {
+        "agent_name": "ddl_diagnostic_agent",
+        "confidence": "medium",
+        "decision_id": "critical-state-real-next_improved:SS:1:d000003",
+        "diagnosis_code": "critical_path_or_successor_blocked+higher_ddl_risk_choice",
+        "evidence": {
+          "alternative_pessimistic_finish": 137.96924035138778,
+          "alternative_safety_margin": 1551.0982431539799,
+          "alternative_slack": 1308.046261876076,
+          "alternative_upward_rank": 305.8889053222479,
+          "selected_pessimistic_finish": 140.50692259517177,
+          "selected_safety_margin": 1547.5953011276865,
+          "selected_slack": 1304.3198380851538,
+          "selected_upward_rank": 308.3645464662878
+        },
+        "limitations": [
+          "local one-step evidence is not a long-horizon causal proof"
+        ],
+        "preferred_task": 0,
+        "quantitative_deltas": {
+          "critical_successor_release_regret": 0.0,
+          "predicted_violation_regret": 0.0,
+          "remaining_critical_path_regret": 1.0466262145142764,
+          "safety_margin_regret": 3.50294202629334
+        },
+        "rejected_task": 1,
+        "scenario_id": "SS",
+        "seed": 1,
+        "severity": "medium",
+        "state_conditions": {
+          "critical_reasons": [
+            "close_rule_scores",
+            "small_energy_gap_possible_ddl_risk_difference"
+          ],
+          "negative_slack_present": false,
+          "queue_size": 2
+        },
+        "suggested_structural_actions": [
+          "add_upward_rank_remaining_work_interaction",
+          "add_successor_release_interaction",
+          "add_conditional_ddl_protection_gate"
+        ]
+      }
+    ]
+  },
+  "diagnosis_codes": [
+    "avoidable_marginal_energy_or_load_cost",
+    "critical_path_or_successor_blocked+higher_ddl_risk_choice"
+  ],
+  "dominated_task_ids": [
+    1
+  ],
+  "energy_evidence": {
+    "max_energy_regret_within_ddl_class": 1.1280014903535402,
+    "reports": [
+      {
+        "agent_name": "energy_diagnostic_agent",
+        "confidence": "medium",
+        "decision_id": "critical-state-real-next_improved:SS:1:d000003",
+        "diagnosis_code": "avoidable_marginal_energy_or_load_cost",
+        "evidence": {
+          "alternative_active_time_extension": 0.0,
+          "alternative_energy": 64.96812702294876,
+          "alternative_host_load_after": 0.4117647058823529,
+          "ddl_priority_applied": true,
+          "relative_energy_difference": 0.017066075059547884,
+          "selected_active_time_extension": 0.0,
+          "selected_energy": 66.0961285133023,
+          "selected_host_load_after": 0.4117647058823529
+        },
+        "limitations": [
+          "marginal energy and active-time extension are local proxies"
+        ],
+        "preferred_task": 0,
+        "quantitative_deltas": {
+          "communication_regret": -6.447175772652189,
+          "host_load_delta_difference": 0.0,
+          "marginal_fuzzy_energy_regret": 1.1280014903535402,
+          "predicted_violation_regret": 0.0
+        },
+        "rejected_task": 1,
+        "scenario_id": "SS",
+        "seed": 1,
+        "severity": "medium",
+        "state_conditions": {
+          "host_load_maximum": 0.38235294117647056,
+          "queue_size": 2
+        },
+        "suggested_structural_actions": [
+          "add_host_load_conditional_gate"
+        ]
+      }
+    ]
+  },
+  "eviction_reason": null,
+  "exact_signature": "ea70c65b287615742460a9aed6602681a6a8d049568684022c85ef9aaf21eb09",
+  "failure_count": 0,
+  "failure_generations": [],
+  "last_replayed_generation": null,
+  "merged_evidence_count": 1,
+  "preferred_task_ids": [
+    0
+  ],
+  "ready_task_features": {
+    "0": {
+      "min_comm_time": 2.4096252128760107,
+      "min_exec_time": 8.003865915421505,
+      "min_incremental_energy": 64.96812702294876,
+      "ready_wait_time": 0.0,
+      "remaining_work": 1077.1404007607898,
+      "slack": 1308.046261876076,
+      "uncertainty": 0.15075346903431117,
+      "upward_rank": 305.8889053222479
+    },
+    "1": {
+      "min_comm_time": 1.603728241294487,
+      "min_exec_time": 8.92355708746398,
+      "min_incremental_energy": 66.0961285133023,
+      "ready_wait_time": 0.0,
+      "remaining_work": 1328.5367695788486,
+      "slack": 1304.3198380851538,
+      "uncertainty": 0.13134138072631973,
+      "upward_rank": 308.3645464662878
+    }
+  },
+  "ready_task_ids": [
+    0,
+    1
+  ],
+  "ready_task_scores": {
+    "0": 1308.046261876076,
+    "1": 1304.3198380851538
+  },
+  "replay_count": 0,
+  "replay_outcomes": [],
+  "replay_structure_hashes": [],
+  "risk_category": "COUNTERFACTUAL_DOMINATED_CHOICE",
+  "selected_task_id": 1,
+  "selected_task_rank": 1,
+  "selected_task_score": 1304.3198380851538,
+  "semantic_signature": "50b2ad7ce0c8a3bfa83b17803f80fe0e7ad703d65fbcf61cf6f42f53796c5a8a",
+  "source_decision_index": 3,
+  "source_frozen_rule_hash": "ccd71c853152e365b023d2191c9e3a41367c0336a5ec9f1ea94d8e6d5a894019",
+  "source_generation": 1,
+  "source_parameter_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "source_run_id": "critical-state-real-next_improved:SS:1",
+  "source_scenario_id": "SS",
+  "source_scenarios": [
+    "SS"
+  ],
+  "source_seed": 1,
+  "source_seeds": [
+    1
+  ],
+  "source_structure_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "source_structures": [
+    "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  ],
+  "state_id": "47e33b18a89e9d932438c6cd6c45c0603c83956edf04c0cd5b57e1e2d622c611",
+  "state_signature": "ea70c65b287615742460a9aed6602681a6a8d049568684022c85ef9aaf21eb09",
+  "status": "NEW",
+  "success_count": 0,
+  "success_generations": [],
+  "uncertainty_evidence": {
+    "max_uncertainty_regret": 0.0,
+    "reports": []
+  },
+  "unresolved_count": 0,
+  "unverified_task_ids": [],
+  "verified_coverage": 1.0,
+  "workflow_id": 0,
+  "workflow_type": "Montage"
+}

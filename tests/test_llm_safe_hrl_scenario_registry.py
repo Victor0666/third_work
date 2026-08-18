@@ -14,7 +14,9 @@ from algorithms.llm_safe_hrl.scenario_registry import (
 )
 from algorithms.llm_safe_hrl.LLM.protocol_config import (
     _bind_component_scenarios,
+    apply_seevo_scenario_config,
 )
+from hrl_mix.train_config import validate_single_deadline_cache_paths
 from omegaconf import OmegaConf
 
 
@@ -87,6 +89,25 @@ def test_apply_scenario_switches_all_environment_inputs_without_mutation():
     assert configured["resources"]["num_edge_hosts"] == 3
     assert configured["resources"]["cloud_vms_per_host"] == [9, 9, 8]
     assert configured["fuzzy"] == {"enabled": True}
+
+
+def test_seevo_explicit_cache_survives_registry_scenario_switch():
+    configured = apply_seevo_scenario_config(
+        _base_config(),
+        "MS",
+        {"MS": "diagnostic_MS.json"},
+        require_files=False,
+    )
+    assert configured["dataset"]["deadline_cache_path"] == "diagnostic_MS.json"
+
+
+def test_formal_single_requires_complete_cache_mapping():
+    with pytest.raises(ValueError, match="MS, LS"):
+        validate_single_deadline_cache_paths(
+            "single",
+            {"SS": "cache_SS.json"},
+            source_scenario="SS",
+        )
 
 
 def test_all_registered_dax_inputs_exist_and_cache_paths_are_versioned():

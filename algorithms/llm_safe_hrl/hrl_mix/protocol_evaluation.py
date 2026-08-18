@@ -31,6 +31,7 @@ from hrl_mix.train_config import (
     ROOT_DIR,
     environment_scenario_values,
     parse_deadline_cache_overrides,
+    validate_single_deadline_cache_paths,
 )
 from hrl_mix.train_eval import evaluate_hrl_three_layer_multi_seed
 
@@ -440,6 +441,12 @@ def run_frozen_protocol_evaluation(
         source_scenario=source_scenario,
         resource_scale=resource_scale,
     )
+    deadline_cache_overrides = validate_single_deadline_cache_paths(
+        context.protocol,
+        deadline_cache_overrides,
+        source_scenario=context.source_scenario,
+        required_scenarios=context.test_scenarios,
+    )
     identity = context.identity()
     source = _resolve_checkpoint_path(context, checkpoint_manifest)
     manifest = read_best_checkpoint_manifest(
@@ -542,6 +549,7 @@ def run_frozen_protocol_evaluation(
                 ),
             )
         ),
+        "deadline_cache_paths": dict(deadline_cache_overrides),
         "heuristic_library": str(library_path),
         "heuristic_library_sha256": actual_library_hash,
         "test_scenarios": result["test_scenarios"],

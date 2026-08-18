@@ -19,6 +19,9 @@ if str(LLM_ROOT) not in sys.path:
 from algorithms.llm_safe_hrl.scenario_registry import (  # noqa: E402
     resolve_experiment_protocol,
 )
+from algorithms.llm_safe_hrl.LLM.main import (  # noqa: E402
+    _translate_protocol_cli_args,
+)
 from seevo import _resolve_seevo_protocol_context  # noqa: E402
 
 
@@ -50,3 +53,18 @@ def test_seevo_rejects_problem_protocol_mismatch():
 def test_seevo_requires_materialized_protocol_identity():
     with pytest.raises(ValueError, match="cfg.experiment_protocol is required"):
         _resolve_seevo_protocol_context(OmegaConf.create({"problem": {}}))
+
+
+def test_seevo_cli_translates_repeated_deadline_cache_mappings():
+    translated = _translate_protocol_cli_args(
+        [
+            "--deadline-cache", "SS=cache_SS.json",
+            "--deadline-cache", "MS=cache_MS.json",
+            "--deadline-cache=LS=cache_LS.json",
+        ]
+    )
+    assert translated == [
+        "+deadline_cache_paths.SS=cache_SS.json",
+        "+deadline_cache_paths.MS=cache_MS.json",
+        "+deadline_cache_paths.LS=cache_LS.json",
+    ]

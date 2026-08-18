@@ -188,6 +188,17 @@ def test_single_frozen_evaluation_uses_explicit_scenario_cache_mapping():
         scenario: f"cache_{scenario}.json"
         for scenario in context.test_scenarios
     }
+    for scenario in context.test_scenarios:
+        kwargs = build_frozen_scenario_env_kwargs(
+            _saved_config(),
+            context,
+            scenario,
+            "library.json",
+            overrides,
+        )
+        assert Path(kwargs["deadline_cache_path"]).name == (
+            f"cache_{scenario}.json"
+        )
 
 
 def test_safe_hrl_deadline_cache_cli_reaches_train_config(monkeypatch):
@@ -197,8 +208,15 @@ def test_safe_hrl_deadline_cache_cli_reaches_train_config(monkeypatch):
         captured.update(kwargs)
 
     monkeypatch.setattr(train_cli, "train", fake_train)
-    train_cli.main(["--deadline-cache", "custom_cache.json"])
-    assert captured["deadline_cache_override"] == "custom_cache.json"
+    train_cli.main(
+        [
+            "--deadline-cache", "SS=cache_SS.json",
+            "--deadline-cache", "MS=cache_MS.json",
+            "--deadline-cache", "LS=cache_LS.json",
+        ]
+    )
+    assert Path(captured["deadline_cache_override"]).name == "cache_SS.json"
+    assert set(captured["deadline_cache_paths"]) == {"SS", "MS", "LS"}
 
     class _StopBuild(Exception):
         pass
@@ -215,15 +233,6 @@ def test_safe_hrl_deadline_cache_cli_reaches_train_config(monkeypatch):
     with pytest.raises(_StopBuild):
         train_runner.train(deadline_cache_override="custom_cache.json")
     assert captured["deadline_cache_override"] == "custom_cache.json"
-    for scenario in context.test_scenarios:
-        kwargs = build_frozen_scenario_env_kwargs(
-            _saved_config(),
-            context,
-            scenario,
-            "library.json",
-            overrides,
-        )
-        assert Path(kwargs["deadline_cache_path"]).name == f"cache_{scenario}.json"
 
 
 def test_test_seed_overlap_is_rejected():

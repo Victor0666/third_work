@@ -344,6 +344,19 @@ def _scenario_env_kwargs(base, cfg, scenario, seed):
             f'scenario {scenario_id} is outside training_scenarios {allowed}'
         )
     values = environment_scenario_values(scenario_id)
+    cache_paths = getattr(cfg, 'deadline_cache_paths', {}) or {}
+    deadline_cache_path = cache_paths.get(scenario_id)
+    if deadline_cache_path is None:
+        source_scenario = getattr(cfg, 'source_scenario', None)
+        if source_scenario is None:
+            source_scenario = getattr(cfg, 'scenario', None)
+        if (
+            source_scenario is not None
+            and str(source_scenario).strip().upper() == scenario_id
+        ):
+            deadline_cache_path = getattr(cfg, 'deadline_cache_path', None)
+    if deadline_cache_path is None:
+        deadline_cache_path = values['deadline_cache_path']
     result = dict(base)
     result.update({
         'dax_paths': list(values['dax_list']),
@@ -355,7 +368,7 @@ def _scenario_env_kwargs(base, cfg, scenario, seed):
         'edge_pc_tiers': values['edge_pc_tiers'],
         'cloud_bw_tiers': values['cloud_bw_tiers'],
         'edge_bw_tiers': values['edge_bw_tiers'],
-        'deadline_cache_path': values['deadline_cache_path'],
+        'deadline_cache_path': deadline_cache_path,
         'scenario_code': scenario_id,
         'task_code': values['task_code'],
         'resource_code': values['resource_code'],
@@ -561,6 +574,7 @@ def train(
     safe_rl_curriculum_enabled: bool = True,
     optimizer_seed: int = 0,
     deadline_cache_override: str | None = None,
+    deadline_cache_paths: dict[str, str] | None = None,
     protocol: str | None = None,
     source_scenario: str | None = None,
     resource_scale: str | None = None,
@@ -613,6 +627,7 @@ def train(
         safe_rl_curriculum_enabled=safe_rl_curriculum_enabled,
         optimizer_seed=optimizer_seed,
         deadline_cache_override=deadline_cache_override,
+        deadline_cache_paths=deadline_cache_paths,
         protocol=protocol,
         source_scenario=source_scenario,
         resource_scale=resource_scale,

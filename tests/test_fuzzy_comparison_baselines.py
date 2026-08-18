@@ -4,6 +4,7 @@ import inspect
 from pathlib import Path
 import tempfile
 import unittest
+from types import SimpleNamespace
 
 import numpy as np
 
@@ -18,6 +19,7 @@ from algorithms.comparisons.fuzzy_common.training import train_baseline
 from algorithms.comparisons.irws import IRWSPolicy
 from algorithms.comparisons.marl import MARLPolicy
 from algorithms.comparisons.pd3qn import PD3QNPolicy
+from algorithms.comparisons import run_fuzzy_baseline
 from hrl_mix.model_selection import (
     FeasibilityFirstModelMetrics,
     is_better_model,
@@ -80,7 +82,6 @@ class FuzzyComparisonProtocolTests(unittest.TestCase):
                 "fcfs_fixed_MS_exactmix_formal38.json"
             )
         )
-
     def test_checkpoint_selection_is_strictly_feasibility_first(self):
         feasible = FeasibilityFirstModelMetrics(
             deadline_violation_rate=0.0,
@@ -106,6 +107,34 @@ class FuzzyComparisonProtocolTests(unittest.TestCase):
         )
         self.assertFalse(is_better_model(infeasible_low_energy, feasible))
         self.assertTrue(is_better_model(feasible, infeasible_low_energy))
+
+
+def test_repeated_deadline_cache_cli_uses_source_path(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(run_fuzzy_baseline, "make_environment", lambda *a, **k: object())
+    monkeypatch.setattr(run_fuzzy_baseline, "_policy", lambda *a, **k: object())
+    monkeypatch.setattr(run_fuzzy_baseline, "seed_everything", lambda *a, **k: None)
+
+    def fake_train(*args, **kwargs):
+        captured["output_dir"] = kwargs["output_dir"]
+        return SimpleNamespace(
+            checkpoint_path="checkpoint.pt",
+            manifest_path="manifest.json",
+            best_validation={},
+        )
+
+    monkeypatch.setattr(run_fuzzy_baseline, "train_baseline", fake_train)
+    run_fuzzy_baseline.main(
+        [
+            "--method", "irws",
+            "--scenario", "SS",
+            "--smoke",
+            "--deadline-cache", "SS=cache_SS.json",
+            "--deadline-cache", "MS=cache_MS.json",
+            "--deadline-cache", "LS=cache_LS.json",
+        ]
+    )
+    assert Path(captured["output_dir"]).name == "cache_SS"
 
 
 class FuzzyComparisonPolicyTests(unittest.TestCase):

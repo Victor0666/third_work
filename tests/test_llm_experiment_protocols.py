@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+from copy import deepcopy
 from pathlib import Path
 from unittest.mock import patch
 
@@ -26,6 +27,12 @@ from hrl_mix.train_runner import (
     _seed_for_training_episode,
     _validate_pipeline_protocol_seed_split,
     scenario_for_training_episode,
+)
+from algorithms.llm_safe_hrl.LLM.protocol_config import (
+    apply_seevo_scenario_config,
+)
+from algorithms.llm_safe_hrl.LLM.problems.cews_task_constructive import (
+    eval as seevo_eval,
 )
 
 
@@ -412,6 +419,52 @@ def test_safe_hrl_episode_kwargs_switch_real_scenario_inputs():
         _scenario_env_kwargs(base, config, "SM", 1)
 
 
+def test_safe_hrl_episode_kwargs_preserve_explicit_deadline_cache():
+    cache_path = (
+        PROJECT_ROOT
+        / "data"
+        / "deadlines"
+        / "fcfs"
+        / "diagnostic"
+        / "fcfs_fixed_SS_exactmix_formal38.json"
+    ).resolve()
+    with patch("hrl_mix.train_config.os.makedirs"):
+        config = build_train_config(
+            "SS",
+            deadline_cache_paths={"SS": str(cache_path)},
+            require_deadline_cache=False,
+        )
+    values = _scenario_env_kwargs({}, config, "SS", 1)
+    assert Path(values["deadline_cache_path"]) == cache_path
+
+
+def test_seevo_eval_uses_diagnostic_or_explicit_deadline_cache(monkeypatch):
+    captured = {}
+
+    class FakeEnv:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setattr(seevo_eval, "HrlFcfsCacheEnv", FakeEnv)
+    config = seevo_eval.load_problem_config()
+    seevo_eval.build_environment(config, 1)
+    assert Path(captured["deadline_cache_path"]).name == (
+        "fcfs_fixed_SS_exactmix_formal38.json"
+    )
+
+    explicit = deepcopy(config)
+    explicit["deadline_cache_paths"] = {"SS": "custom.json"}
+    explicit = apply_seevo_scenario_config(
+        explicit,
+        "SS",
+        explicit["deadline_cache_paths"],
+        require_files=False,
+    )
+    captured.clear()
+    seevo_eval.build_environment(explicit, 1)
+    assert Path(captured["deadline_cache_path"]).name == "custom.json"
+
+
 def test_safe_hrl_multi_validation_calls_every_training_scenario():
     with patch("hrl_mix.train_config.os.makedirs"):
         config = build_train_config(
@@ -526,13 +579,33 @@ def test_legacy_python_train_config_call_remains_compatible():
 
 
 def test_safe_hrl_cli_forwards_single_and_multi_protocol_switches():
+    cache_root = (
+        PROJECT_ROOT / "data" / "deadlines" / "fcfs" / "diagnostic"
+    )
+    single_caches = {
+        scenario: cache_root / f"fcfs_fixed_{scenario}_exactmix_formal38.json"
+        for scenario in ("SM", "MM", "LM")
+    }
     with patch.object(safe_hrl_cli, "train") as mocked_train:
         safe_hrl_cli.main(
-            ["--protocol", "single", "--source-scenario", "SM"]
+            [
+                "--protocol", "single", "--source-scenario", "SM",
+                *[
+                    value
+                    for scenario, path in single_caches.items()
+                    for value in (
+                        "--deadline-cache", f"{scenario}={path}"
+                    )
+                ],
+            ]
         )
     assert mocked_train.call_args.kwargs["protocol"] == "single"
     assert mocked_train.call_args.kwargs["source_scenario"] == "SM"
     assert mocked_train.call_args.kwargs["resource_scale"] is None
+    assert mocked_train.call_args.kwargs["deadline_cache_paths"] == {
+        scenario: str(path.resolve())
+        for scenario, path in single_caches.items()
+    }
 
     with patch.object(safe_hrl_cli, "train") as mocked_train:
         safe_hrl_cli.main(

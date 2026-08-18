@@ -47,7 +47,10 @@ def _identity_config(context):
     return {
         "config_snapshot_schema_version": 1,
         "sha256": "unused-in-boundary-test",
-        "config": context.identity(),
+        "config": {
+            **context.identity(),
+            "optimizer_seed": 0,
+        },
     }
 
 
@@ -199,7 +202,10 @@ class ProtocolArtifactBoundaryTests(unittest.TestCase):
                 heuristic_library_version={"manifest_version": "legacy"},
                 config_snapshot={
                     "config_snapshot_schema_version": 1,
-                    "config": {"safe_rl": {"enabled": True}},
+                    "config": {
+                        "safe_rl": {"enabled": True},
+                        "optimizer_seed": 0,
+                    },
                 },
             )
             self.assertNotIn(

@@ -9,6 +9,10 @@ from .checkpointing import portable_path
 from .decision_situations import collect_decision_situations
 from .niching_gp import evolve_niching_gp
 from .routing_agent import RoutingAgent
+from algorithms.llm_safe_hrl.hrl_mix.train_config import (
+    parse_deadline_cache_overrides,
+    validate_single_deadline_cache_paths,
+)
 
 
 def parser() -> argparse.ArgumentParser:
@@ -22,18 +26,28 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--population", type=int)
     result.add_argument("--generations", type=int)
     result.add_argument("--smoke", action="store_true")
-    result.add_argument("--deadline-cache", dest="deadline_cache_path")
+    result.add_argument("--deadline-cache", action="append")
     return result
 
 
 def main(argv=None):
     args = parser().parse_args(argv)
+    deadline_cache_paths = parse_deadline_cache_overrides(
+        args.deadline_cache,
+        default_scenario=args.scenario,
+    )
+    if not args.smoke:
+        deadline_cache_paths = validate_single_deadline_cache_paths(
+            "single",
+            deadline_cache_paths,
+            source_scenario=args.scenario,
+        )
     config = build_config(
         args.scenario,
         args.ddl,
         args.algorithm_seed,
         smoke=args.smoke,
-        deadline_cache_path=args.deadline_cache_path,
+        deadline_cache_paths=deadline_cache_paths,
     )
     if args.population or args.generations:
         from dataclasses import replace
