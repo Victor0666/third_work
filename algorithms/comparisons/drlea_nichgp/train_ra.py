@@ -21,6 +21,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--episodes", type=int)
     result.add_argument("--reward-mode", default="deadline_energy")
     result.add_argument("--smoke", action="store_true")
+    result.add_argument("--deadline-cache", dest="deadline_cache_path")
     return result
 
 
@@ -35,6 +36,7 @@ def main(argv=None):
         ra_episodes=args.episodes or 300,
         reward_mode=args.reward_mode,
         smoke=args.smoke,
+        deadline_cache_path=args.deadline_cache_path,
         protocol=args.protocol,
         source_scenario=(args.scenario if args.protocol == "single" else None),
         resource_scale=args.resource_scale,

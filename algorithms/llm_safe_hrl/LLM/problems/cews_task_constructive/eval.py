@@ -153,7 +153,8 @@ def build_environment(config: dict, seed: int):
     fuzzy_resource_seed = int(seed) + int(
         fuzzy.get("resource_seed_offset", 0)
     )
-    task_size, resource_size = _scenario_names(dataset.get("scenario", "SS"))
+    scenario_code = str(dataset.get("scenario", "SS")).strip().upper()
+    task_size, resource_size = _scenario_names(scenario_code)
     # YAML 中只保存 DAX 文件名；实际路径相对项目 data/dax 解析。
     dax_paths = [PROJECT_ROOT / "data" / "dax" / name for name in dataset["dax_files"]]
     missing = [str(path) for path in dax_paths if not path.is_file()]
@@ -168,7 +169,8 @@ def build_environment(config: dict, seed: int):
             / "data"
             / "deadlines"
             / "fcfs"
-            / f"fcfs_{task_size}Task_{resource_size}Res_seed0-1000.json"
+            / "diagnostic"
+            / f"fcfs_fixed_{scenario_code}_exactmix_formal38.json"
         )
     else:
         deadline_cache = Path(deadline_cache)
@@ -210,6 +212,9 @@ def build_environment(config: dict, seed: int):
         fuzzy_use_deadline_constraint=bool(
             fuzzy.get("use_fuzzy_deadline_constraint", True)
         ),
+        scenario_code=scenario_code,
+        task_code=scenario_code[0],
+        resource_code=scenario_code[1],
     )
 
 

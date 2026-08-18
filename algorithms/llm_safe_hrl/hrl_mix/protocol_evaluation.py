@@ -27,7 +27,11 @@ from base.d3qn_agent import D3QNAgent
 from base.hrl_env import CloudWorkflowEnv_VMAgents
 from base.manager_heuristics import load_manager_heuristic_library
 from hrl_mix.model_selection import read_best_checkpoint_manifest
-from hrl_mix.train_config import environment_scenario_values
+from hrl_mix.train_config import (
+    ROOT_DIR,
+    environment_scenario_values,
+    parse_deadline_cache_overrides,
+)
 from hrl_mix.train_eval import evaluate_hrl_three_layer_multi_seed
 
 
@@ -113,6 +117,7 @@ def build_frozen_scenario_env_kwargs(
     context: ExperimentProtocolContext,
     scenario: str,
     library_path: str | os.PathLike[str],
+    deadline_cache_overrides: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     """Build one real registry-backed test environment from saved config.
 
@@ -127,6 +132,14 @@ def build_frozen_scenario_env_kwargs(
             f"{list(context.test_scenarios)}"
         )
     values = environment_scenario_values(scenario_id)
+    cache_path = parse_deadline_cache_overrides(
+        deadline_cache_overrides
+    ).get(scenario_id)
+    if cache_path is not None:
+        resolved_cache = Path(cache_path).expanduser()
+        if not resolved_cache.is_absolute():
+            resolved_cache = ROOT_DIR / resolved_cache
+        values["deadline_cache_path"] = str(resolved_cache.resolve())
     safe = _required(config, "safe_rl", "checkpoint config")
     if not isinstance(safe, Mapping):
         raise ValueError("checkpoint safe_rl config must be a mapping")
@@ -333,6 +346,7 @@ def evaluate_frozen_protocol_scenarios(
     library_path: str | os.PathLike[str],
     agents: Mapping[str, Any],
     test_seeds: Sequence[int] = DEFAULT_FINAL_TEST_SEEDS,
+    deadline_cache_overrides: Mapping[str, str] | None = None,
     env_cls=CloudWorkflowEnv_VMAgents,
     evaluator=evaluate_hrl_three_layer_multi_seed,
 ) -> dict[str, Any]:
@@ -351,6 +365,7 @@ def evaluate_frozen_protocol_scenarios(
             context,
             scenario,
             library_path,
+            deadline_cache_overrides,
         )
         result = evaluator(
             env_cls,
@@ -413,8 +428,13 @@ def run_frozen_protocol_evaluation(
     checkpoint_manifest: str | os.PathLike[str] | None = None,
     test_seeds: Sequence[int] = DEFAULT_FINAL_TEST_SEEDS,
     device: str = "cpu",
+    deadline_cache_overrides: Mapping[str, str] | None = None,
 ) -> str:
     """Load one protocol-bound frozen bundle and persist read-only results."""
+    if deadline_cache_overrides and str(protocol).strip().lower() != "single":
+        raise ValueError(
+            "deadline cache mapping is supported only for protocol=single"
+        )
     context = resolve_experiment_protocol(
         protocol,
         source_scenario=source_scenario,
@@ -481,6 +501,7 @@ def run_frozen_protocol_evaluation(
         library_path=library_path,
         agents=agents,
         test_seeds=test_seeds,
+        deadline_cache_overrides=deadline_cache_overrides,
     )
 
     output_dir = (
@@ -509,6 +530,18 @@ def run_frozen_protocol_evaluation(
         **identity,
         "checkpoint_manifest": str(source),
         "checkpoint_manifest_sha256": _sha256_file(source),
+        "optimizer_seed": int(
+            manifest.get(
+                "optimizer_seed",
+                _required(
+                    _required(
+                        manifest, "config_snapshot", "checkpoint manifest"
+                    )["config"],
+                    "optimizer_seed",
+                    "checkpoint config snapshot",
+                ),
+            )
+        ),
         "heuristic_library": str(library_path),
         "heuristic_library_sha256": actual_library_hash,
         "test_scenarios": result["test_scenarios"],
@@ -542,6 +575,12 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument("--resource-scale", choices=("S", "M", "L"), default=None)
     parser.add_argument("--checkpoint-manifest", default=None)
     parser.add_argument(
+        "--deadline-cache",
+        action="append",
+        default=None,
+        help="Scenario cache override as SCENARIO=PATH; repeat per test scenario.",
+    )
+    parser.add_argument(
         "--test-seeds",
         nargs="+",
         type=int,
@@ -555,6 +594,12 @@ def main(argv: Sequence[str] | None = None) -> None:
         if args.source_scenario is not None:
             parser.error("--source-scenario is only valid for protocol=single")
         source = None
+    if args.deadline_cache and args.protocol != "single":
+        parser.error("--deadline-cache mapping is supported only for protocol=single")
+    deadline_cache_overrides = parse_deadline_cache_overrides(
+        args.deadline_cache,
+        default_scenario=source,
+    )
     manifest = run_frozen_protocol_evaluation(
         protocol=args.protocol,
         source_scenario=source,
@@ -562,6 +607,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         checkpoint_manifest=args.checkpoint_manifest,
         test_seeds=args.test_seeds,
         device=args.device,
+        deadline_cache_overrides=deadline_cache_overrides,
     )
     print(f"Frozen protocol evaluation manifest: {manifest}")
 

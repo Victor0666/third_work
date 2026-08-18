@@ -114,6 +114,7 @@ def experiment_manifest(
         "scenario": config.scenario,
         "ddl": config.ddl,
         "algorithm_seed": config.algorithm_seed,
+        "optimizer_seed": int(config.algorithm_seed),
         "stage": str(stage),
         "source_hash": source_hash(),
         "train_seeds": list(config.train_seeds),

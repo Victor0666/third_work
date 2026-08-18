@@ -60,6 +60,27 @@ class FuzzyComparisonProtocolTests(unittest.TestCase):
                 test_seeds=(4,),
             )
 
+    def test_single_target_scenario_uses_its_own_cache(self):
+        cache_root = Path("data/deadlines/fcfs/diagnostic")
+        protocol = FuzzyComparisonProtocol(
+            scenario="SS",
+            ddl_setting="T",
+            train_seeds=(1,),
+            validation_seeds=(101,),
+            test_seeds=(201,),
+            deadline_cache_paths={
+                "SS": str(cache_root / "fcfs_fixed_SS_exactmix_formal38.json"),
+                "MS": str(cache_root / "fcfs_fixed_MS_exactmix_formal38.json"),
+            },
+        )
+        target = protocol.for_scenario("MS")
+        env = make_environment(target, 201)
+        self.assertTrue(
+            str(env.deadline_cache_path).endswith(
+                "fcfs_fixed_MS_exactmix_formal38.json"
+            )
+        )
+
     def test_checkpoint_selection_is_strictly_feasibility_first(self):
         feasible = FeasibilityFirstModelMetrics(
             deadline_violation_rate=0.0,

@@ -29,6 +29,7 @@ from .sequencing_agent import (
 from algorithms.comparisons.fuzzy_common.evaluation import (
     aggregate_paper_final_metrics,
 )
+from algorithms.llm_safe_hrl.hrl_mix.train_config import parse_deadline_cache_overrides
 
 
 def evaluate_frozen(
@@ -123,16 +124,22 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--sa-checkpoint", required=True)
     result.add_argument("--rules-file", required=True)
     result.add_argument("--smoke", action="store_true")
+    result.add_argument("--deadline-cache", action="append")
     return result
 
 
 def main(argv=None):
     args = parser().parse_args(argv)
+    deadline_cache_paths = parse_deadline_cache_overrides(
+        args.deadline_cache,
+        default_scenario=args.scenario,
+    )
     config = build_config(
         args.scenario,
         args.ddl,
         args.algorithm_seed,
         smoke=args.smoke,
+        deadline_cache_paths=deadline_cache_paths,
         protocol=args.protocol,
         source_scenario=(args.scenario if args.protocol == "single" else None),
         resource_scale=args.resource_scale,

@@ -13,6 +13,8 @@ from hrl_mix.protocol_evaluation import (
     build_frozen_scenario_env_kwargs,
     evaluate_frozen_protocol_scenarios,
 )
+from hrl_mix import train as train_cli
+from hrl_mix import train_runner
 
 
 def _saved_config() -> dict:
@@ -178,6 +180,50 @@ def test_registry_inputs_change_task_resource_and_deadline():
     assert small["num_cloud_hosts"] == large["num_cloud_hosts"] == 3
     assert small["cloud_vms_per_host"] == large["cloud_vms_per_host"]
     assert small["experiment_protocol_identity"] == context.identity()
+
+
+def test_single_frozen_evaluation_uses_explicit_scenario_cache_mapping():
+    context = resolve_experiment_protocol("single", source_scenario="SS")
+    overrides = {
+        scenario: f"cache_{scenario}.json"
+        for scenario in context.test_scenarios
+    }
+
+
+def test_safe_hrl_deadline_cache_cli_reaches_train_config(monkeypatch):
+    captured = {}
+
+    def fake_train(**kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(train_cli, "train", fake_train)
+    train_cli.main(["--deadline-cache", "custom_cache.json"])
+    assert captured["deadline_cache_override"] == "custom_cache.json"
+
+    class _StopBuild(Exception):
+        pass
+
+    def fake_build_train_config(**kwargs):
+        captured.update(kwargs)
+        raise _StopBuild
+
+    monkeypatch.setattr(
+        train_runner,
+        "build_train_config",
+        fake_build_train_config,
+    )
+    with pytest.raises(_StopBuild):
+        train_runner.train(deadline_cache_override="custom_cache.json")
+    assert captured["deadline_cache_override"] == "custom_cache.json"
+    for scenario in context.test_scenarios:
+        kwargs = build_frozen_scenario_env_kwargs(
+            _saved_config(),
+            context,
+            scenario,
+            "library.json",
+            overrides,
+        )
+        assert Path(kwargs["deadline_cache_path"]).name == f"cache_{scenario}.json"
 
 
 def test_test_seed_overlap_is_rejected():

@@ -13,6 +13,7 @@ from .checkpointing import (
     write_json,
 )
 from .config import build_config, config_for_scenario, protocol_artifact_identity
+from algorithms.llm_safe_hrl.hrl_mix.train_config import parse_deadline_cache_overrides
 from .decision_situations import collect_decision_situations
 from .evaluate import evaluate_frozen
 from .niching_gp import evolve_niching_gp, load_rules
@@ -127,17 +128,23 @@ def parser() -> argparse.ArgumentParser:
         "--algorithm-seed", dest="algorithm_seed", type=int, default=0
     )
     result.add_argument("--smoke", action="store_true")
+    result.add_argument("--deadline-cache", action="append")
     return result
 
 
 def main(argv=None):
     args = parser().parse_args(argv)
+    deadline_cache_paths = parse_deadline_cache_overrides(
+        args.deadline_cache,
+        default_scenario=args.scenario,
+    )
     result = run_pipeline(
         build_config(
             args.scenario,
             args.ddl,
             args.algorithm_seed,
             smoke=args.smoke,
+            deadline_cache_paths=deadline_cache_paths,
             protocol=args.protocol,
             source_scenario=(args.scenario if args.protocol == "single" else None),
             resource_scale=args.resource_scale,

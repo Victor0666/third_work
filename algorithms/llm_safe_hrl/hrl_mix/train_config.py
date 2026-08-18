@@ -25,6 +25,7 @@ import os
 import math
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Mapping
 
 from algorithms.llm_safe_hrl.paths import LLM_ROOT, PROJECT_ROOT
 from algorithms.llm_safe_hrl.scenario_registry import (
@@ -489,6 +490,39 @@ def normalize_scenario(scenario: str) -> str:
     if len(value) != 2 or value[0] not in SIZE_FULL or value[1] not in SIZE_FULL:
         raise ValueError("scenario must be one of SS, SM, SL, MS, MM, ML, LS, LM, LL")
     return value
+
+
+def parse_deadline_cache_overrides(
+    values,
+    *,
+    default_scenario: str | None = None,
+) -> dict[str, str]:
+    """Parse ``SCENARIO=PATH`` entries, preserving one plain source path."""
+    if values is None:
+        return {}
+    if isinstance(values, Mapping):
+        entries = [f"{key}={value}" for key, value in values.items()]
+    elif isinstance(values, (str, Path)):
+        entries = [values]
+    else:
+        entries = list(values)
+    result: dict[str, str] = {}
+    for entry in entries:
+        text = str(entry).strip()
+        if "=" in text:
+            scenario, path = text.split("=", 1)
+            scenario = normalize_scenario(scenario)
+        elif default_scenario is not None and len(entries) == 1:
+            scenario = normalize_scenario(default_scenario)
+            path = text
+        else:
+            raise ValueError(
+                "deadline cache overrides must use SCENARIO=PATH"
+            )
+        if not path.strip():
+            raise ValueError("deadline cache path must not be empty")
+        result[scenario] = path.strip()
+    return result
 
 
 def normalize_ddl(ddl: str) -> str:

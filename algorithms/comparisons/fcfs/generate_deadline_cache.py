@@ -102,7 +102,7 @@ def generate_exact_deadline_cache(
     output_path: str | Path | None = None,
     policy_id: str = "fcfs_fcfs",
 ) -> Path:
-"""Run one deterministic FCFS policy and write an exact-mix cache."""
+    """Run one deterministic FCFS policy and write an exact-mix cache."""
     policy_id = str(policy_id).strip().lower()
     if policy_id not in POLICY_TYPES:
         raise ValueError(

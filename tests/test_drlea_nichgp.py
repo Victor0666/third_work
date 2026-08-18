@@ -13,9 +13,11 @@ from algorithms.comparisons.drlea_nichgp.action_mask import (
     masked_argmax_torch,
 )
 from algorithms.comparisons.drlea_nichgp.checkpointing import write_json
+from algorithms.comparisons.drlea_nichgp.checkpointing import experiment_manifest
 from algorithms.comparisons.drlea_nichgp.config import (
     AgentConfig,
     build_config,
+    config_for_scenario,
     ensure_disjoint_seeds,
     protocol_artifact_identity,
 )
@@ -40,11 +42,88 @@ from algorithms.comparisons.drlea_nichgp.niching_gp import (
 )
 from algorithms.comparisons.drlea_nichgp.replay_buffer import ReplayBatch
 from algorithms.comparisons.drlea_nichgp.run_pipeline import run_pipeline
+from algorithms.llm_safe_hrl.scenario_registry import (
+    WORKLOAD_CATEGORY_REGISTRY,
+    workload_category_counts,
+)
 
 
 @pytest.fixture(scope="module")
 def smoke_config():
     return build_config("SS", "T", 31, smoke=True)
+
+
+def test_formal_workload_category_quota_matches_registry():
+    assert workload_category_counts("M", 50) == {
+        "30": 15,
+        "50": 35,
+    }
+    assert workload_category_counts("L", 50) == {
+        "30": 10,
+        "50": 15,
+        "100": 25,
+    }
+
+
+def test_deadline_cache_and_optimizer_seed_are_manifested():
+    config = build_config("SS", "T", 37, smoke=True, protocol="legacy")
+    assert config.deadline_cache_path.endswith(
+        "data/deadlines/fcfs/diagnostic/fcfs_fixed_SS_exactmix_formal38.json"
+    )
+    manifest = experiment_manifest(
+        config,
+        stage="test",
+        elapsed_seconds=0.0,
+    )
+    assert manifest["optimizer_seed"] == 37
+
+
+def test_cross_scenario_cache_mapping_reaches_adapter():
+    cache_root = Path("data/deadlines/fcfs/diagnostic")
+    config = build_config(
+        "SS",
+        "T",
+        0,
+        protocol="single",
+        deadline_cache_paths={
+            "SS": str(cache_root / "fcfs_fixed_SS_exactmix_formal38.json"),
+            "MS": str(cache_root / "fcfs_fixed_MS_exactmix_formal38.json"),
+        },
+    )
+    target = config_for_scenario(config, "MS")
+    adapter = CEWSEnvAdapter(target, 201)
+    assert Path(adapter.env.deadline_cache_path).name == (
+        "fcfs_fixed_MS_exactmix_formal38.json"
+    )
+
+
+@pytest.mark.parametrize(
+    ("scenario", "expected"),
+    (
+        ("MS", {"30": 15, "50": 35}),
+        ("LS", {"30": 10, "50": 15, "100": 25}),
+    ),
+)
+def test_actual_adapter_episode_uses_registered_workload_mix(scenario, expected):
+    config = build_config(
+        scenario,
+        "T",
+        0,
+        workflows_per_episode=50,
+        protocol="legacy",
+    )
+    adapter = CEWSEnvAdapter(config, 1)
+    adapter.reset()
+    category_by_dax = {
+        dax: category
+        for category, dax_names in WORKLOAD_CATEGORY_REGISTRY.items()
+        for dax in dax_names
+    }
+    actual = {}
+    for dax_name in adapter.env.episode_dax_sequence:
+        category = category_by_dax[dax_name]
+        actual[category] = actual.get(category, 0) + 1
+    assert actual == expected
 
 
 @pytest.fixture(scope="module")

@@ -234,6 +234,7 @@ def train_baseline(
         "protocol": protocol.to_manifest(),
         "episodes": int(episodes),
         "validation_interval": int(validation_interval),
+        "optimizer_seed": int(optimizer_seed),
         "best_episode": int(best_episode),
         "best_validation": incumbent.to_dict(),
         "checkpoint_path": checkpoint.name,

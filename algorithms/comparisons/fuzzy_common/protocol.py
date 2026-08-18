@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, field, replace
 import hashlib
 import json
 import math
@@ -10,7 +10,12 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from . import LLM_SAFE_HRL_ROOT  # noqa: F401  Ensures legacy imports resolve.
-from hrl_mix.train_config import TrainConfig, build_train_config, normalize_ddl
+from hrl_mix.train_config import (
+    TrainConfig,
+    build_train_config,
+    normalize_ddl,
+    parse_deadline_cache_overrides,
+)
 from algorithms.llm_safe_hrl.scenario_registry import (
     FINAL_TEST_SEEDS,
     ExperimentProtocolContext,
@@ -63,6 +68,7 @@ class FuzzyComparisonProtocol:
     validation_seeds: tuple[int, ...]
     test_seeds: tuple[int, ...]
     deadline_cache_path: str | None = None
+    deadline_cache_paths: Mapping[str, str] = field(default_factory=dict)
     protocol_mode: str = "legacy"
     source_scenario: str | None = None
     resource_scale: str | None = None
@@ -80,6 +86,10 @@ class FuzzyComparisonProtocol:
         if len(scenario) != 2 or any(value not in "SML" for value in scenario):
             raise ValueError("scenario must be one of SS, SM, SL, MS, MM, ML, LS, LM, LL")
         object.__setattr__(self, "scenario", scenario)
+        cache_paths = parse_deadline_cache_overrides(self.deadline_cache_paths)
+        if self.deadline_cache_path is not None:
+            cache_paths.setdefault(scenario, str(self.deadline_cache_path))
+        object.__setattr__(self, "deadline_cache_paths", cache_paths)
         mode = str(self.protocol_mode).strip().lower()
         if mode not in {"legacy", "single", "multi"}:
             raise ValueError("protocol_mode must be legacy, single, or multi")
@@ -140,7 +150,12 @@ class FuzzyComparisonProtocol:
 
     def for_scenario(self, scenario: str) -> "FuzzyComparisonProtocol":
         """Return a read-only evaluation view with identical frozen seed roles."""
-        return replace(self, scenario=str(scenario).strip().upper())
+        target = str(scenario).strip().upper()
+        return replace(
+            self,
+            scenario=target,
+            deadline_cache_path=self.deadline_cache_paths.get(target),
+        )
 
     @property
     def ddl_small_probability(self) -> float:
@@ -302,6 +317,7 @@ def protocol_from_config(
     workflows_per_episode: int | None = None,
     experiment_context: ExperimentProtocolContext | None = None,
     deadline_cache_path: str | Path | None = None,
+    deadline_cache_paths: Mapping[str, str] | None = None,
 ) -> FuzzyComparisonProtocol:
     seeds = payload.get("seeds", {})
     fuzzy = payload.get("fuzzy", {})
@@ -317,6 +333,7 @@ def protocol_from_config(
             if deadline_cache_path is not None
             else None
         ),
+        deadline_cache_paths=dict(deadline_cache_paths or {}),
         protocol_mode=(
             experiment_context.protocol if experiment_context is not None else "legacy"
         ),

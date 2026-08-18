@@ -636,6 +636,9 @@ def save_best_checkpoint_bundle(
             BEST_CHECKPOINT_MANIFEST_SCHEMA_VERSION
         ),
         "selection_policy": "feasibility_first_lexicographic",
+        "optimizer_seed": int(
+            config_snapshot["config"]["optimizer_seed"]
+        ),
         "model_selection_metrics": model_metrics.to_dict(),
         "agent_checkpoints": checkpoint_files,
         "agent_checkpoint_contents": {

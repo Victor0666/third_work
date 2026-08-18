@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from algorithms.llm_safe_hrl.scenario_registry import (
     FINAL_TEST_SEEDS,
@@ -13,6 +13,9 @@ from algorithms.llm_safe_hrl.scenario_registry import (
     resolve_experiment_protocol,
 )
 from project_paths import PROJECT_ROOT
+from algorithms.llm_safe_hrl.hrl_mix.train_config import (
+    parse_deadline_cache_overrides,
+)
 
 from . import METHOD_ID, SCHEMA_VERSION
 
@@ -148,6 +151,7 @@ class ComparisonConfig:
     deadline_alpha_small_prob: float
     dax_paths: tuple[str, ...]
     deadline_cache_path: str
+    deadline_cache_paths: Mapping[str, str]
     num_cloud_hosts: int
     num_edge_hosts: int
     cloud_vms_per_host: tuple[int, ...]
@@ -250,6 +254,8 @@ def build_config(
     sa_episodes: int = 300,
     reward_mode: str = "deadline_energy",
     smoke: bool = False,
+    deadline_cache_path: str | None = None,
+    deadline_cache_paths: Mapping[str, str] | None = None,
     protocol: str = "single",
     source_scenario: str | None = None,
     resource_scale: str | None = None,
@@ -267,6 +273,9 @@ def build_config(
         )
         scenario = protocol_context.training_scenarios[0]
     scenario = normalize_scenario(scenario)
+    cache_overrides = parse_deadline_cache_overrides(deadline_cache_paths)
+    if deadline_cache_path is not None:
+        cache_overrides[scenario] = str(deadline_cache_path)
     ddl_name = normalize_ddl(ddl)
     spec = SCENARIO_REGISTRY[scenario]
     dax_paths = tuple(
@@ -280,14 +289,11 @@ def build_config(
     ]
     if missing:
         raise FileNotFoundError(f"Missing current-project DAX files: {missing}")
-    cache_path = (
-        Path("data")
-        / "deadlines"
-        / "fcfs"
-        / (
-            f"fcfs_{spec.task_size}Task_{spec.resource_size}Res_"
-            "seed0-1000.json"
-        )
+    cache_path = Path(
+        cache_overrides[scenario]
+        if scenario in cache_overrides
+        else Path("data") / "deadlines" / "fcfs" / "diagnostic"
+        / f"fcfs_fixed_{scenario}_exactmix_formal38.json"
     )
     if not (PROJECT_ROOT / cache_path).is_file():
         raise FileNotFoundError(
@@ -362,6 +368,7 @@ def build_config(
         deadline_alpha_small_prob=DDL_SMALL_PROBABILITY[ddl_name],
         dax_paths=dax_paths,
         deadline_cache_path=cache_path.as_posix(),
+        deadline_cache_paths=cache_overrides,
         num_cloud_hosts=int(spec.num_cloud_hosts),
         num_edge_hosts=int(spec.num_edge_hosts),
         cloud_vms_per_host=tuple(spec.cloud_vms_per_host),
@@ -393,6 +400,7 @@ def config_for_scenario(config: ComparisonConfig, scenario: str) -> ComparisonCo
         ra_episodes=config.ra_episodes,
         sa_episodes=config.sa_episodes,
         reward_mode=config.reward.mode,
+        deadline_cache_paths=config.deadline_cache_paths,
         protocol="legacy",
     )
     environment_fields = (

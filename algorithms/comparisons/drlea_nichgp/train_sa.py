@@ -24,6 +24,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--rules-file", required=True)
     result.add_argument("--episodes", type=int)
     result.add_argument("--smoke", action="store_true")
+    result.add_argument("--deadline-cache", dest="deadline_cache_path")
     return result
 
 
@@ -37,6 +38,7 @@ def main(argv=None):
         args.algorithm_seed,
         sa_episodes=args.episodes or 300,
         smoke=args.smoke,
+        deadline_cache_path=args.deadline_cache_path,
         protocol=args.protocol,
         source_scenario=(args.scenario if args.protocol == "single" else None),
         resource_scale=args.resource_scale,

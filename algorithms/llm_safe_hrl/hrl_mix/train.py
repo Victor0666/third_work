@@ -67,6 +67,11 @@ def main(argv=None):
         help="Algorithm/network seed; environment seeds remain protocol-controlled.",
     )
     parser.add_argument(
+        "--deadline-cache",
+        default=None,
+        help="Optional deadline-cache path overriding the scenario default.",
+    )
+    parser.add_argument(
         "--episodes",
         type=int,
         default=None,
@@ -239,6 +244,7 @@ def main(argv=None):
             not args.without_curriculum
         ),
         optimizer_seed=args.optimizer_seed,
+        deadline_cache_override=args.deadline_cache,
         protocol=args.protocol,
         source_scenario=args.source_scenario,
         resource_scale=args.resource_scale,

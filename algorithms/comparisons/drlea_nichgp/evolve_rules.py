@@ -22,6 +22,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--population", type=int)
     result.add_argument("--generations", type=int)
     result.add_argument("--smoke", action="store_true")
+    result.add_argument("--deadline-cache", dest="deadline_cache_path")
     return result
 
 
@@ -32,6 +33,7 @@ def main(argv=None):
         args.ddl,
         args.algorithm_seed,
         smoke=args.smoke,
+        deadline_cache_path=args.deadline_cache_path,
     )
     if args.population or args.generations:
         from dataclasses import replace

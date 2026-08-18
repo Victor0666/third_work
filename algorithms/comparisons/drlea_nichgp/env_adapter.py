@@ -69,6 +69,9 @@ class CEWSEnvAdapter:
             safe_rl_enabled=False,
             safe_rl_shield_enabled=False,
             safe_rl_state_enabled=False,
+            scenario_code=config.scenario,
+            task_code=config.scenario[0],
+            resource_code=config.scenario[1],
         )
         self.no_legal_vm_advances = 0
         self.assignment_count = 0

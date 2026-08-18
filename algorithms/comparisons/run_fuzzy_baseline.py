@@ -21,6 +21,7 @@ from algorithms.comparisons.irws import IRWSPolicy
 from algorithms.comparisons.marl import MARLPolicy
 from algorithms.comparisons.pd3qn import PD3QNPolicy
 from algorithms.llm_safe_hrl.scenario_registry import resolve_experiment_protocol
+from hrl_mix.train_config import parse_deadline_cache_overrides
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -73,6 +74,7 @@ def _smoke_protocol(
         training_scenarios=protocol.training_scenarios,
         test_scenarios=protocol.test_scenarios,
         deadline_cache_path=protocol.deadline_cache_path,
+        deadline_cache_paths=protocol.deadline_cache_paths,
     )
 
 
@@ -88,7 +90,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--episodes", type=int, default=None)
     parser.add_argument("--validation-interval", type=int, default=None)
     parser.add_argument("--workflows-per-episode", type=int, default=None)
-    parser.add_argument( "--deadline-cache", type=Path,default=None, help=("Optional deadline-cache override for Single protocol. " "If omitted, use the cache defined by scenario_registry."),)
+    parser.add_argument(
+        "--deadline-cache",
+        action="append",
+        default=None,
+        help="Single cache override as SCENARIO=PATH; one plain source path is allowed.",
+    )
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--optimizer-seed", type=int, default=0)
     parser.add_argument("--smoke", action="store_true")
@@ -114,13 +121,20 @@ def main(argv: list[str] | None = None) -> int:
         source_scenario=(args.scenario if args.protocol == "single" else None),
         resource_scale=args.resource_scale,
     )
+    deadline_cache_paths = parse_deadline_cache_overrides(
+        args.deadline_cache,
+        default_scenario=experiment_context.source_scenario,
+    )
     protocol = protocol_from_config(
         config,
         scenario=experiment_context.training_scenarios[0],
         ddl=args.ddl,
         workflows_per_episode=args.workflows_per_episode,
         experiment_context=experiment_context,
-        deadline_cache_path=args.deadline_cache,
+        deadline_cache_path=deadline_cache_paths.get(
+            experiment_context.training_scenarios[0]
+        ),
+        deadline_cache_paths=deadline_cache_paths,
     )
     training = dict(config.get("training", {}))
     if args.smoke:
