@@ -54,6 +54,9 @@ def _policy(
     )
 
 
+build_policy = _policy
+
+
 def _smoke_protocol(
     protocol: FuzzyComparisonProtocol,
     smoke: dict[str, Any],
