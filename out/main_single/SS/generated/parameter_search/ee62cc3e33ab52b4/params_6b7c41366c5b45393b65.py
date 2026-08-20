@@ -1,0 +1,67 @@
+import numpy as np
+
+def get_task_priority_v2(min_exec_time, min_comm_time, min_incremental_energy, slack, upward_rank, remaining_work, ready_wait_time, uncertainty):
+    """Hybrid priority rule combining Parent 2's superior gradient properties and quantile normalization
+       with Parent 1's congestion-thresholded starvation relief — now implemented via load-suppressed benefit.
+       Structural changes:
+         - Removed 'criticality_boost_slope' (reducing parameter count to 12).
+         - Replaced tunable criticality boost with fixed-slope linear amplification: 1.0 + 1.0 * (1 - load_gate) * slack_sensitivity_gate,
+           clipped to [1.0, 2.0] — preserves intent without new parameter.
+         - All 12 parameters are used; no numeric literals outside [-2, -1, 0, 1, 2].
+         - Robust quantile normalization preserved; sign-preserving MAD for slack."""
+    eps = 0.0001755875093262434
+    min_exec_time = np.asarray(min_exec_time, dtype=float)
+    min_comm_time = np.asarray(min_comm_time, dtype=float)
+    min_incremental_energy = np.asarray(min_incremental_energy, dtype=float)
+    slack = np.asarray(slack, dtype=float)
+    upward_rank = np.asarray(upward_rank, dtype=float)
+    remaining_work = np.asarray(remaining_work, dtype=float)
+    ready_wait_time = np.asarray(ready_wait_time, dtype=float)
+    uncertainty = np.asarray(uncertainty, dtype=float)
+    N = len(min_exec_time)
+
+    def robust_range_normalize(x):
+        x = np.copy(x)
+        if N == 1:
+            q1 = q3 = x[0]
+        else:
+            q1 = np.quantile(x, 0.11003552383394233)
+            q3 = np.quantile(x, 0.6049512865600213)
+        iqr = q3 - q1
+        spread = iqr if iqr > eps else eps
+        return (x - q1) / spread
+    norm_energy = robust_range_normalize(min_incremental_energy)
+    norm_exec = robust_range_normalize(min_exec_time)
+    norm_comm = robust_range_normalize(min_comm_time)
+    norm_rank = robust_range_normalize(upward_rank)
+    norm_work = robust_range_normalize(remaining_work)
+    norm_wait = robust_range_normalize(ready_wait_time)
+    norm_uncert = robust_range_normalize(uncertainty)
+    if N == 1:
+        slack_med = slack[0]
+        slack_mad = eps
+    else:
+        slack_med = np.median(slack)
+        slack_mad = np.median(np.abs(slack - slack_med))
+    slack_spread = slack_mad if slack_mad > eps else eps
+    norm_slack = (slack - slack_med) / slack_spread
+    load_proxy = norm_wait + norm_uncert
+    load_gate = 1.0 / (1.0 + np.exp(-2.035144282672208 * load_proxy))
+    ddl_gate = 1.0 / (1.0 + np.exp(-2.035144282672208 * slack))
+    slack_sensitivity_gate = 1.0 / (1.0 + np.exp(-2.035144282672208 * (slack - -0.07433615785432085)))
+    criticality_boost = 1.0 + 1.0 * (1.0 - load_gate) * slack_sensitivity_gate
+    boosted_rank = norm_rank * np.clip(criticality_boost, 1.0, 2.0)
+    raw_slack_penalty = np.maximum(-slack, 0.0) ** 3.2513197702399395
+    norm_slack_penalty = robust_range_normalize(raw_slack_penalty)
+    successor_release_prob = 1.0 - np.clip(norm_wait, 0.0, 1.0)
+    successor_blocking_penalty = norm_rank * (1.0 - successor_release_prob) * 0.9473749972536628
+    starvation_benefit = 1.0 - np.exp(-norm_wait)
+    load_suppressed_starvation = starvation_benefit * (1.0 - load_gate)
+    ddl_breach = (slack <= -0.07433615785432085).astype(float)
+    exec_penalty = 0.9241439893622032 * norm_exec * ddl_breach
+    comm_penalty = (1.0 - 0.9241439893622032) * norm_comm * ddl_breach
+    uncert_gate = 1.0 / (1.0 + np.exp(-2.035144282672208 * (norm_uncert - 0.11003552383394233)))
+    energy_uncert_penalty = norm_energy * norm_uncert * uncert_gate * ddl_breach
+    score = +np.clip(norm_slack_penalty, -2.0, 2.0) - np.clip(boosted_rank, -2.0, 2.0) - 1.143838452000458 * np.clip(norm_energy * ddl_gate, -2.0, 2.0) - np.clip(load_suppressed_starvation, -2.0, 2.0) + np.clip(1.3879577624447523 * load_proxy * ddl_gate, -2.0, 2.0) + 0.4427973331402143 * np.clip(energy_uncert_penalty, -2.0, 2.0) + 0.7244529594469975 * np.clip(norm_work * ddl_gate, -2.0, 2.0) + np.clip(exec_penalty, -2.0, 2.0) + np.clip(comm_penalty, -2.0, 2.0) + np.clip(successor_blocking_penalty, -2.0, 2.0)
+    score = np.nan_to_num(score, nan=0.0, posinf=np.finfo(float).max, neginf=-np.finfo(float).max)
+    return score.reshape(-1)

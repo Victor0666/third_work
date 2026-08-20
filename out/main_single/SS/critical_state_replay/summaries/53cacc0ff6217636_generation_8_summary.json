@@ -1,0 +1,95 @@
+{
+  "archive_hash": "36318fd023a40c664aaa6fdc8b22fe57743e7b3779b46fc8a04d760e456de1db",
+  "archive_version": "critical_state_archive_v1",
+  "cross_generation_failure_patterns": [],
+  "failure_by_risk_category": {
+    "COUNTERFACTUAL_DOMINATED_CHOICE": 1,
+    "CRITICAL_PATH_STARVATION": 1
+  },
+  "failure_by_scenario": {
+    "SS": 2
+  },
+  "failure_by_workflow_type": {
+    "CyberShake": 1,
+    "Montage": 1
+  },
+  "frozen_rule_hash": "d5420c0280f592c21e69746bc86ffe9d0adf9595fc5bcfc35fa17fe2958a94e8",
+  "generation": 8,
+  "hard_state_failure_patterns": [],
+  "high_confidence_structural_actions": [],
+  "limitations": [
+    "feature-level replay is a deterministic stress test, not a full dynamic simulation",
+    "unverified and partial outcomes are never counted as success or failure",
+    "energy is inspected only after DDL ordering is not worse",
+    "1 verified failures were excluded from structural-action confidence because candidate coverage was below 0.500"
+  ],
+  "medium_confidence_actions": [],
+  "repeated_historical_error_count": 2,
+  "replay_config_hash": "952b98a5eec8a8cd62868c7c92c12c86eb85d2daef1bd52255f242e937a5abd3",
+  "replayed_state_count": 40,
+  "representative_failures": [
+    {
+      "coverage_sufficient": true,
+      "dominated_task_ranks": {
+        "3": 1
+      },
+      "preferred_task_ranks": {
+        "11": 3,
+        "9": 5
+      },
+      "risk_category": "COUNTERFACTUAL_DOMINATED_CHOICE",
+      "scenario_id": "SS",
+      "selected_task_id": 3,
+      "state_id": "3970d6aa199de975d072ac44c3b7a10c4cfb7de281b84e7692c757c154aa3190",
+      "verified_coverage": 0.6,
+      "workflow_type": "CyberShake"
+    },
+    {
+      "coverage_sufficient": false,
+      "dominated_task_ranks": {
+        "119": 1
+      },
+      "preferred_task_ranks": {
+        "117": 4
+      },
+      "risk_category": "CRITICAL_PATH_STARVATION",
+      "scenario_id": "SS",
+      "selected_task_id": 119,
+      "state_id": "463b093a533b5d4954899ad79bcc62622c1358d182bc4be0ddda5f8490559269",
+      "verified_coverage": 0.4,
+      "workflow_type": "Montage"
+    }
+  ],
+  "representative_successes": [
+    {
+      "risk_category": "COUNTERFACTUAL_DOMINATED_CHOICE",
+      "scenario_id": "SS",
+      "selected_task_id": 119,
+      "state_id": "0288255769960cc51b921257739cbab6b42b2ebdd22925f3de2e7b181290eab9"
+    },
+    {
+      "risk_category": "COUNTERFACTUAL_DOMINATED_CHOICE",
+      "scenario_id": "SS",
+      "selected_task_id": 223,
+      "state_id": "c226a4a0c29c8fcef6bde82e4ae6815e3bf8544f59fe4003fcdbd278357b197c"
+    },
+    {
+      "risk_category": "COUNTERFACTUAL_DOMINATED_CHOICE",
+      "scenario_id": "SS",
+      "selected_task_id": 119,
+      "state_id": "7d54458c0e919ccb13da92296e28a019cd41d00a753adf26ef0972c8c2a9e78e"
+    }
+  ],
+  "resolved_state_regressions": [],
+  "structure_hash": "53cacc0ff6217636f2a0353960f8ff3a1865931353423a102b999ca45fe6fa95",
+  "success_by_risk_category": {
+    "COUNTERFACTUAL_DOMINATED_CHOICE": 18,
+    "CRITICAL_PATH_STARVATION": 3
+  },
+  "summary_hash": "43709d49870dea70072b7c8ea632dfaa0481ef3298bcfc4741c4708773a56aba",
+  "unverified_state_count": 17,
+  "used_test_seed": false,
+  "verified_failure_count": 2,
+  "verified_state_count": 23,
+  "verified_success_count": 21
+}

@@ -1,0 +1,5 @@
+- Enforce strict DDL-first priority via crisp binary `ddl_feasible_mask` (validated across 19+ decisions, 2 seeds, 1 scenario).  
+- Prioritize bottleneck-proximal tasks using raw `|slack|⁻ˢʰᵃʳᵖⁿᵉˢˢ` and `upward_rank × remaining_work` (confirmed in 3+ critical-path replays and 19+ counterfactuals).  
+- Gate energy scoring *only* under DDL feasibility—never soft-coupled—eliminating 18+ avoidable marginal energy costs.  
+- Normalize features semantically: `abs_quantile` for temporal features (e.g., slack), `pos_quantile` for structural ones (e.g., rank)—robust across 32+ traces.  
+- Mitigate starvation with bounded exponential saturation (`1 − exp(−wait/θ)`), resolving 21 flip behaviors.

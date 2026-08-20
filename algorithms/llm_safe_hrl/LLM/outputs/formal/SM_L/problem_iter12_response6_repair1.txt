@@ -1,0 +1,221 @@
+```python
+import numpy as np
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 0.001,
+            "lower_bound": 1e-6,
+            "upper_bound": 0.1,
+            "semantic_description": "Numerical guard for stable normalization and division.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "slack_risk_penalty",
+            "initial_value": 5.0,
+            "lower_bound": 0.5,
+            "upper_bound": 12.0,
+            "semantic_description": "Strong linear penalty multiplier for negative slack (deadline violation risk).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "slack_urgency_gain",
+            "initial_value": 2.5,
+            "lower_bound": 0.1,
+            "upper_bound": 6.0,
+            "semantic_description": "Linear gain for positive slack to mildly de-prioritize non-urgent tasks.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_efficiency_weight",
+            "initial_value": 1.2,
+            "lower_bound": 0.05,
+            "upper_bound": 4.0,
+            "semantic_description": "Weight for inverse energy efficiency: lower incremental energy → higher priority.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "criticality_weight",
+            "initial_value": 0.9,
+            "lower_bound": 0.0,
+            "upper_bound": 3.0,
+            "semantic_description": "Weight for upward_rank, applied only under DDL protection gating.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "bottleneck_proximity_weight",
+            "initial_value": 1.5,
+            "lower_bound": 0.1,
+            "upper_bound": 5.0,
+            "semantic_description": "Weight for bottleneck-proximal prioritization: upward_rank * remaining_work interaction.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "ddl_sigmoid_steepness",
+            "initial_value": 2.0,
+            "lower_bound": 0.5,
+            "upper_bound": 8.0,
+            "semantic_description": "Steepness of smooth sigmoid DDL gate: higher → sharper transition at slack=0.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "wait_clip_threshold",
+            "initial_value": 10.0,
+            "lower_bound": 1.0,
+            "upper_bound": 100.0,
+            "semantic_description": "Hard clipping threshold for ready_wait_time to prevent unbounded starvation correction.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "upward_rank_normalization_floor",
+            "initial_value": 0.01,
+            "lower_bound": 1e-4,
+            "upper_bound": 0.1,
+            "semantic_description": "Floor value added before median normalization of upward_rank to avoid degeneracy when all ranks are near zero.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "finfo_max_scale",
+            "initial_value": 1e6,
+            "lower_bound": 1e3,
+            "upper_bound": 1e9,
+            "semantic_description": "Scale factor to safely clamp infinities using machine epsilon bounds.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "duration_uncertainty_ratio",
+            "initial_value": 0.7,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Relative weight of uncertainty in bounded linear duration-uncertainty blend.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "starvation_exponent",
+            "initial_value": 1.3,
+            "lower_bound": 0.8,
+            "upper_bound": 2.0,
+            "semantic_description": "Exponent to sharpen wait-time priority ramp — monotonic, avoids hard clip while strengthening long-wait bias.",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Self-evolved priority rule with:
+      - Smooth sigmoid DDL gate (replacing piecewise linear) for differentiability and stronger monotonic feasibility.
+      - Preserves sharpened power-law starvation mitigation and robust median normalization.
+      - Removes load_interaction_weight (reducing parameter count to 12) while retaining all core structural improvements.
+      - All operations guarded against NaN/inf/zero; no hidden constants beyond {-2,-1,0,1,2}.
+      - Final clamping uses tunable finfo_max_scale for safety and portability.
+    """
+    eps = PARAMS["epsilon"]
+    N = len(min_exec_time)
+    
+    # Cast inputs safely; no in-place modification
+    exec_t = np.asarray(min_exec_time, dtype=np.float64)
+    comm_t = np.asarray(min_comm_time, dtype=np.float64)
+    energy = np.asarray(min_incremental_energy, dtype=np.float64)
+    slk = np.asarray(slack, dtype=np.float64)
+    rank = np.asarray(upward_rank, dtype=np.float64)
+    work = np.asarray(remaining_work, dtype=np.float64)
+    wait = np.asarray(ready_wait_time, dtype=np.float64)
+    uncert = np.asarray(uncertainty, dtype=np.float64)
+    
+    # === Robust median-based normalization with explicit floor ===
+    def normalize(x, floor=eps):
+        x = np.asarray(x)
+        abs_x = np.abs(x)
+        finite_mask = np.isfinite(abs_x)
+        if np.any(finite_mask):
+            med = np.median(abs_x[finite_mask])
+            scale = np.maximum(med, floor)
+        else:
+            scale = floor
+        return x / (scale + eps)
+    
+    # === Smooth sigmoid DDL protection gate: differentiable, monotonic, bounded ∈ [0,1] ===
+    steep = PARAMS["ddl_sigmoid_steepness"]
+    ddl_gate = 1.0 / (1.0 + np.exp(-steep * slk))
+    
+    # === Slack-driven base penalty/gain: signed, normalized via absolute median ===
+    abs_slk = np.abs(slk)
+    finite_abs_slk = abs_slk[np.isfinite(abs_slk)]
+    slk_scale = np.median(finite_abs_slk) if len(finite_abs_slk) > 0 else eps
+    slk_scale = np.where(slk_scale > eps, slk_scale, eps)
+    slack_norm = slk / (slk_scale + eps)
+    
+    slack_penalty = (
+        np.where(slk < 0, PARAMS["slack_risk_penalty"], -PARAMS["slack_urgency_gain"]) 
+        * np.abs(slack_norm)
+    )
+    
+    # === Energy efficiency: inverse energy, normalized with floor ===
+    inv_energy = 1.0 / (energy + eps)
+    energy_score = -PARAMS["energy_efficiency_weight"] * normalize(inv_energy)
+    
+    # === Criticality: gated by smooth sigmoid, rank normalized with floor to avoid degeneracy ===
+    rank_stable = rank + PARAMS["upward_rank_normalization_floor"]
+    rank_score = -PARAMS["criticality_weight"] * ddl_gate * normalize(rank_stable)
+    
+    # === Bottleneck-proximal term: upward_rank * remaining_work — critical-path blocking impact ===
+    bottleneck = rank * work
+    bottleneck_score = -PARAMS["bottleneck_proximity_weight"] * normalize(bottleneck + eps)
+    
+    # === Duration-uncertainty coupling: bounded linear blend, median-normalized ===
+    duration = exec_t + comm_t
+    dur_norm = normalize(duration + eps)
+    uncert_norm = normalize(uncert + eps)
+    dur_uncert_blend = dur_norm + PARAMS["duration_uncertainty_ratio"] * uncert_norm
+    dur_score = normalize(dur_uncert_blend)
+    
+    # === Starvation mitigation: sharpened power-law ramp — monotonic, bounded, stronger bias than linear ===
+    wait_clipped = np.clip(wait, 0.0, PARAMS["wait_clip_threshold"])
+    wait_sharpened = np.power(wait_clipped + eps, PARAMS["starvation_exponent"])
+    wait_score = -normalize(wait_sharpened)
+    
+    # === Assemble final score: smaller = higher priority ===
+    score = (
+        slack_penalty
+        + energy_score
+        + rank_score
+        + bottleneck_score
+        + dur_score
+        + wait_score
+    )
+    
+    # Final safeguard: replace NaN/inf with machine-safe finite values
+    finfo = np.finfo(np.float64)
+    max_safe = finfo.max / PARAMS["finfo_max_scale"]
+    min_safe = -finfo.max / PARAMS["finfo_max_scale"]
+    score = np.nan_to_num(score, nan=0.0, posinf=max_safe, neginf=min_safe)
+    
+    # Enforce shape and finiteness
+    assert score.shape == (N,), f"Expected shape (N,), got {score.shape}"
+    assert np.all(np.isfinite(score)), "Non-finite values detected in priority score"
+    
+    return score
+```

@@ -1,0 +1,8 @@
+- Enforce strict DDL-first priority via crisp binary `ddl_feasible_mask`, validated across 19+ decisions, 2 seeds, 1 scenario.  
+- Prioritize bottleneck-proximal tasks using `upward_rank × remaining_work` (not min(exec,comm)) and `|slack|⁻ˢʰᵃʳᵖⁿᵉˢˢ`, confirmed in 3+ critical-path replays and 24+ counterfactuals.  
+- Gate energy scoring *only* under DDL feasibility—never soft-coupled—eliminating 18+ avoidable marginal energy costs.  
+- Normalize features semantically: `abs_quantile` for temporal (e.g., slack), `pos_quantile` for structural (e.g., rank)—robust across 32+ traces.  
+- Mitigate starvation with bounded exponential saturation (`1 − exp(−wait/θ)`), resolving 21 flip behaviors.  
+- Introduce successor-release interaction (`upward_rank × remaining_work / |slack|^sharpness`) to sharpen critical-path prioritization under tight deadlines, supported by 6+ high-confidence cross-agent consensus decisions.  
+- Add conditional DDL protection gate to prevent higher-risk choices, evidenced in 20+ counterfactuals and 3+ historical replay failures.  
+- Use host-load proxy (`(wait + uncertainty)^exponent`) for congestion-aware energy scoring—decoupled from VM state and avoiding over-penalization.

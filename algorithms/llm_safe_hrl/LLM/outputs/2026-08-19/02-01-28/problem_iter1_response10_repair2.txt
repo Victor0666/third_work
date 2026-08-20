@@ -1,0 +1,210 @@
+```python
+import numpy as np
+
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 0.001,
+            "lower_bound": 1e-8,
+            "upper_bound": 0.1,
+            "semantic_description": "Numerical guard for stable normalization and division.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "slack_risk_penalty",
+            "initial_value": 5.0,
+            "lower_bound": 0.5,
+            "upper_bound": 12.0,
+            "semantic_description": "Amplifies priority penalty when slack is negative (DDL violation risk).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "critical_slack_threshold",
+            "initial_value": -0.1,
+            "lower_bound": -5.0,
+            "upper_bound": 0.5,
+            "semantic_description": "Slack value below which critical-mode prioritization activates.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_efficiency_bias",
+            "initial_value": 0.7,
+            "lower_bound": 0.05,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight for energy-per-duration efficiency (joule/second), favoring low-energy-fast tasks.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "rank_sensitivity",
+            "initial_value": 1.2,
+            "lower_bound": 0.1,
+            "upper_bound": 4.0,
+            "semantic_description": "Nonlinear gain applied to upward_rank to emphasize high-rank bottlenecks.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "wait_fairness_exponent",
+            "initial_value": 0.6,
+            "lower_bound": 0.1,
+            "upper_bound": 1.5,
+            "semantic_description": "Sublinear exponent for ready_wait_time to gently boost long-waiting tasks without starvation override.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "uncertainty_slack_coupling",
+            "initial_value": 0.9,
+            "lower_bound": 0.0,
+            "upper_bound": 3.0,
+            "semantic_description": "Strength of uncertainty-modulated slack penalty: higher = more aggressive on risky tight deadlines.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "duration_robustness_weight",
+            "initial_value": 0.4,
+            "lower_bound": 0.0,
+            "upper_bound": 1.5,
+            "semantic_description": "Weight for robust duration (exec + comm) normalized by its own std to prefer predictable tasks.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "ramp_region_width",
+            "initial_value": 0.001,
+            "lower_bound": 1e-6,
+            "upper_bound": 0.01,
+            "semantic_description": "Width of smooth quadratic ramp region around critical_slack_threshold.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "quadratic_ramp_denom_factor",
+            "initial_value": 4.0,
+            "lower_bound": 1.0,
+            "upper_bound": 8.0,
+            "semantic_description": "Denominator factor in quadratic ramp term to control steepness.",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Novel priority rule emphasizing DDL-criticality, energy efficiency, fairness, and robustness.
+    
+    Key innovations:
+    - Piecewise slack penalty: strong convex penalty for negative slack, smooth transition near zero.
+    - Energy efficiency term: min_incremental_energy / (min_exec_time + min_comm_time + epsilon) → favors low-joule/second.
+    - Upward rank boosted via sqrt() then scaled — avoids over-dominance while preserving ordering.
+    - Ready wait time raised to sublinear power → anti-starvation without violating DDL urgency.
+    - Uncertainty couples multiplicatively *only* with slack pressure (not raw slack), avoiding spurious penalties.
+    - Duration robustness: uses coefficient-of-variation (std/mean) of exec+comm to down-rank highly variable durations.
+    - All normalizations use median-based scaling for outlier resilience; fallback to mean if median fails.
+    """
+    eps = PARAMS["epsilon"]
+    N = len(slack)
+    
+    # Defensive cast & copy
+    min_exec_time = np.asarray(min_exec_time, dtype=float).copy()
+    min_comm_time = np.asarray(min_comm_time, dtype=float).copy()
+    min_incremental_energy = np.asarray(min_incremental_energy, dtype=float).copy()
+    slack = np.asarray(slack, dtype=float).copy()
+    upward_rank = np.asarray(upward_rank, dtype=float).copy()
+    remaining_work = np.asarray(remaining_work, dtype=float).copy()
+    ready_wait_time = np.asarray(ready_wait_time, dtype=float).copy()
+    uncertainty = np.asarray(uncertainty, dtype=float).copy()
+    
+    # === Robust normalization helper (median-centered, epsilon-guarded) ===
+    def robust_normalize(x):
+        x = np.abs(x)
+        center = np.median(x) if N > 1 else x[0]
+        scale = np.maximum(np.std(x), eps) if N > 1 else eps
+        # Fallback to mean-based scale if std is degenerate
+        if np.isclose(scale, 0.0):
+            scale = np.maximum(np.mean(x), eps)
+        return (x - center) / scale
+    
+    # === 1. Slacker-pressure: piecewise & uncertainty-coupled ===
+    # Negative slack triggers strong convex penalty; near-zero uses smooth hinge
+    slack_centered = slack - PARAMS["critical_slack_threshold"]
+    slack_penalty_base = np.where(
+        slack_centered < 0,
+        -slack_centered * PARAMS["slack_risk_penalty"],
+        0.0
+    )
+    # Smooth transition near threshold: quadratic ramp from 0 to threshold
+    ramp_region = np.logical_and(
+        slack_centered >= -PARAMS["ramp_region_width"],
+        slack_centered <= 0
+    )
+    # Use declared parameter instead of literal 4
+    slack_penalty_base = np.where(
+        ramp_region,
+        PARAMS["slack_risk_penalty"] * (slack_centered + PARAMS["ramp_region_width"])**2 / (PARAMS["quadratic_ramp_denom_factor"] * PARAMS["ramp_region_width"]),
+        slack_penalty_base
+    )
+    # Coupling: only amplify penalty where uncertainty is high AND slack is tight
+    slack_pressure = slack_penalty_base * (
+        1.0 + PARAMS["uncertainty_slack_coupling"] * np.tanh(uncertainty)
+    )
+    
+    # === 2. Energy efficiency: joules per second (fuzzy marginal energy / duration) ===
+    duration = np.maximum(min_exec_time + min_comm_time, eps)
+    energy_efficiency = min_incremental_energy / duration  # lower = better
+    # Normalize: lower efficiency → higher priority → subtract from score later
+    energy_eff_score = robust_normalize(energy_efficiency)
+    
+    # === 3. Critical path emphasis: upward rank with diminishing returns ===
+    # sqrt preserves order but compresses extremes; scaled by sensitivity
+    rank_score = PARAMS["rank_sensitivity"] * np.sqrt(np.maximum(upward_rank, eps))
+    
+    # === 4. Anti-starvation: sublinear wait boost ===
+    wait_boost = np.power(np.maximum(ready_wait_time, eps), PARAMS["wait_fairness_exponent"])
+    wait_score = robust_normalize(wait_boost)
+    
+    # === 5. Duration robustness: prefer predictable (low CV) durations ===
+    duration_cv = np.std(np.stack([min_exec_time, min_comm_time]), axis=0) / duration
+    # Lower CV → higher priority → invert sign
+    duration_robust_score = -robust_normalize(duration_cv)
+    
+    # === 6. Remaining work: normalize but *invert* — smaller remaining work means less blocking impact
+    work_score = -robust_normalize(remaining_work)
+    
+    # === Assemble final score: smaller = better ===
+    # Prioritize: (1) DDL risk, (2) energy efficiency, (3) critical path, (4) fairness, (5) robustness, (6) work scope
+    score = (
+        slack_pressure  # urgent risk dominates → large positive = bad → we want small score → so this is *added*
+        + PARAMS["energy_efficiency_bias"] * energy_eff_score
+        + rank_score
+        - PARAMS["duration_robustness_weight"] * duration_robust_score
+        - wait_score
+        + work_score
+    )
+    
+    # Final safeguard: ensure finite, shape-(N,), no NaN/inf
+    score = np.nan_to_num(score, nan=0.0, posinf=np.finfo(float).max, neginf=-np.finfo(float).max)
+    
+    # Ensure shape is exactly (N,) even for N=1
+    assert score.shape == (N,), f"Expected shape {(N,)}, got {score.shape}"
+    
+    return score
+```

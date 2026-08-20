@@ -1,0 +1,30 @@
+- Replaces soft energy modulation with hard `safe_slack_energy_disable_threshold` gate, enforcing strict DDL-first feasibility by zeroing energy terms when slack is sufficiently positive.  
+- Swaps bounded arctan starvation relief for logistic decay (`wait_decay`), improving monotonicity and saturation control under prolonged wait.  
+- Introduces `energy_enabled` mask to decouple energy sensitivity from uncertainty gating—enabling clean conditional dominance of deadline over energy.
+- Replace `wait_benefit = 1.0 - np.exp(-PARAMS["wait_decay"] * (ready_wait_time + PARAMS["wait_saturation_offset"]))` with logistic-saturated linear benefit: `wait_benefit = np.clip(PARAMS["wait_decay"] * ready_wait_time, 0.0, 1.0)` to eliminate fragile offset dependency and align with replay evidence showing `wait_saturation_offset` is inactive and boundary-contact-free.  
+- Introduce bounded DDL-protection gating on *energy_uncert_penalty* and *duration_risk_score* using `ddl_gate = np.clip(slack, 0.0, np.inf) / (slack + eps)` instead of sigmoid — matches high-confidence counterfactual evidence demanding “conditional DDL protection gate” and avoids steepness parameter fragility.  
+- Add explicit `upward_rank * remaining_work` interaction under `slack <= 0` mask (not just normalization), directly addressing repeated DDL-diagnostic evidence of “successor_blocked” and “critical_path_or_successor_blocked” failures across seeds and decisions.
+- Replace `arctan`-based starvation relief with bounded linear ramp (`np.clip(PARAMS["wait_decay"] * ready_wait_time, 0, 1)`) — empirically stable, avoids numerical artifacts near zero and saturates cleanly.  
+- Introduce DDL-protection gate (`ddl_gate = np.clip(slack, 0, 1); ddl_gate = np.where(slack < 0, 0, ddl_gate)`) to strictly disable energy/uncertainty penalties when slack < 0 — validated by counterfactuals showing repeated DDL-violating choices under un-gated terms.  
+- Use clipped linear slack penalty (`np.maximum(-slack, 0)`) instead of exponentiated penalty — eliminates overflow risk and preserves monotonic priority ordering under tight deadlines.
+- Replaced unstable sigmoid DDL gate with tanh-based bounded smooth step, improving monotonicity and numerical stability under tight slack.  
+- Introduced direct `successor_release = norm_work * norm_rank * (slack <= eps)` to prioritize critical-path bottlenecks—validated by high-confidence cross-decision and historical replay evidence.  
+- Removed redundant `slack_margin_ratio_threshold` and `ddl_protection_gate_slope`, as parameter diagnostics show inactivity and no stable boundary contact across generations.
+- Replace power-law slack penalty with bounded linear interpolation to avoid overflow and preserve monotonicity under deadline pressure.  
+- Introduce DDL-protection gate that fully disables energy terms when slack < 0, enforcing strict feasibility-first ordering.  
+- Add successor-release interaction (`norm_rank * norm_work * ddl_pressure`) to prioritize tasks unblocking high-downstream-work critical paths.
+- Replace `robust_normalize` with **sign-preserving MAD normalization** (center at median, spread at MAD, retain raw sign) to better distinguish urgency directionality in slack and uncertainty.  
+- Introduce **smooth Heaviside DDL-protection gate** (`1/(1+exp(-slope * slack))`) to disable energy/uncertainty penalties only when slack ≥ 0 — directly supported by counterfactual evidence of 18 repeated DDL-risk misprioritizations.  
+- Add **successor-release coupling**: `norm_work * norm_rank * ddl_protection_gate`, bounded and clipped, to prioritize unblocking high-downstream-work under feasibility — validated by 4 cross-seed critical-path replay failures.
+- Replaced unstable sigmoid-based slack-pressure gating with bounded linear-ramp activation (`slack_ramp_scale`) for monotonic, interpretable criticality scaling under deadline pressure.  
+- Introduced explicit energy–uncertainty interaction term gated by both DDL feasibility and uncertainty threshold, improving risk-aware energy penalization.  
+- Simplified starvation relief using a saturating exponential with safe offset (`wait_saturation_offset`), eliminating numerical fragility while preserving anti-starvation bias.
+- Replace unstable power-law slack penalty with bounded linear interpolation to avoid overflow and preserve monotonic priority ordering under deadline pressure.  
+- Introduce successor-release interaction (`norm_rank * norm_work * ddl_pressure`) to prioritize tasks unblocking high-downstream-work critical paths, validated by counterfactual DDL diagnostics.  
+- Use clipped linear DDL-protection gate (0 for `slack < 0`, ramping to 1 over `[0,1]`) instead of sigmoid—improves numerical stability and sharpens feasibility-first enforcement.
+- Replace power-law slack penalty with bounded linear penalty to avoid numerical overflow and preserve monotonic priority under deadline pressure.  
+- Introduce DDL-protection gating (`ddl_gate`) that strictly disables energy/uncertainty penalties when `slack < 0`, validated by counterfactual evidence of repeated feasibility violations.  
+- Add successor-release interaction (`norm_rank * norm_work * ddl_pressure`) to prioritize tasks unblocking high-impact downstream work under tight slack — confirmed by 8+ cross-seed DDL-diagnostic cases.
+- Replaces soft energy modulation with **hard DDL-dominant gating** (`safe_slack_energy_disable_threshold`) to strictly prioritize deadline feasibility over energy—enforced via binary mask, not sigmoid decay.  
+- Introduces **energy–uncertainty interaction term**, gated by both urgency and slack safety, to penalize high-risk/high-energy choices only when they threaten deadlines.  
+- Uses **normalized slack-pressure gate** (on `norm_slack`, not raw `slack`) for smoother, more stable critical-path activation under fuzzy timing uncertainty.

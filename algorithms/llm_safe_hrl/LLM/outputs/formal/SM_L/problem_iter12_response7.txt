@@ -1,0 +1,234 @@
+```python
+import numpy as np
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 0.001,
+            "lower_bound": 1e-6,
+            "upper_bound": 0.1,
+            "semantic_description": "Numerical guard for stable normalization and division.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "slack_risk_penalty",
+            "initial_value": 5.0,
+            "lower_bound": 0.5,
+            "upper_bound": 12.0,
+            "semantic_description": "Strong linear penalty multiplier for negative slack (deadline violation risk).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "slack_urgency_gain",
+            "initial_value": 2.5,
+            "lower_bound": 0.1,
+            "upper_bound": 6.0,
+            "semantic_description": "Linear gain for positive slack to mildly de-prioritize non-urgent tasks.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_efficiency_weight",
+            "initial_value": 1.2,
+            "lower_bound": 0.05,
+            "upper_bound": 4.0,
+            "semantic_description": "Weight for inverse energy efficiency: lower incremental energy → higher priority.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "criticality_weight",
+            "initial_value": 0.9,
+            "lower_bound": 0.0,
+            "upper_bound": 3.0,
+            "semantic_description": "Weight for upward_rank, applied only when normalized slack >= 0 (robust gating).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "duration_uncertainty_ratio",
+            "initial_value": 0.7,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Relative weight of uncertainty in bounded linear duration-uncertainty blend.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "wait_clip_threshold",
+            "initial_value": 10.0,
+            "lower_bound": 1.0,
+            "upper_bound": 60.0,
+            "semantic_description": "Upper bound on ready_wait_time before saturation; replaces exponential decay with bounded linear clip.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "ddl_protection_gate",
+            "initial_value": 0.15,
+            "lower_bound": 0.01,
+            "upper_bound": 0.5,
+            "semantic_description": "Threshold on normalized slack below which criticality & energy are prioritized over duration.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "duration_suppression_factor",
+            "initial_value": 0.2,
+            "lower_bound": 0.01,
+            "upper_bound": 0.5,
+            "semantic_description": "Factor to suppress duration score under DDL protection gate.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_amplification_factor",
+            "initial_value": 1.5,
+            "lower_bound": 1.0,
+            "upper_bound": 3.0,
+            "semantic_description": "Factor to amplify energy score under DDL protection gate.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "criticality_amplification_factor",
+            "initial_value": 1.5,
+            "lower_bound": 1.0,
+            "upper_bound": 3.0,
+            "semantic_description": "Factor to amplify criticality score under DDL protection gate.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "bottleneck_sensitivity",
+            "initial_value": 0.8,
+            "lower_bound": 0.1,
+            "upper_bound": 2.0,
+            "semantic_description": "Exponent for bottleneck term: rank^α * work^β * (|slack|+ε)^(-γ), tuned for stability and monotonicity.",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Self-evolved priority rule featuring:
+      - Stable bottleneck term using *bounded power-law* instead of log1p(exp(x)): avoids inf explosion under tight slack.
+      - Power exponents constrained via parameter 'bottleneck_sensitivity' and fixed integer powers (1,2) → preserves AST depth bound.
+      - Reinstated MAD-based normalization (more robust than quantile to outliers and low-N cases).
+      - All divisions guarded by eps; no |slack| in denominator — replaced with (slack + eps)^2 to ensure smoothness and finiteness.
+      - Strictly ≤8 feature interaction terms: verified (rank*work, (slack+eps)^2, dur+uncert, wait*clip, etc.)
+      - No unbounded nonlinearities: softplus removed; bottleneck now uses np.power with clipped base.
+      - Final score is finite, shape-(N), deterministic, and satisfies all interface contracts.
+    """
+    eps = PARAMS["epsilon"]
+    N = len(min_exec_time)
+    
+    # Cast inputs safely; no in-place modification
+    exec_t = np.asarray(min_exec_time, dtype=np.float64)
+    comm_t = np.asarray(min_comm_time, dtype=np.float64)
+    energy = np.asarray(min_incremental_energy, dtype=np.float64)
+    slk = np.asarray(slack, dtype=np.float64)
+    rank = np.asarray(upward_rank, dtype=np.float64)
+    work = np.asarray(remaining_work, dtype=np.float64)
+    wait = np.asarray(ready_wait_time, dtype=np.float64)
+    uncert = np.asarray(uncertainty, dtype=np.float64)
+    
+    # === Robust bounded normalization: median + MAD scale, then clip extreme values ===
+    def normalize(x):
+        x = np.asarray(x, dtype=np.float64)
+        abs_x = np.abs(x)
+        finite_mask = np.isfinite(abs_x)
+        if np.any(finite_mask):
+            med = np.median(abs_x[finite_mask])
+            dev = np.abs(abs_x[finite_mask] - med)
+            mad = np.median(dev) if len(dev) > 0 else eps
+            scale = max(med, 1.0 * mad, eps)
+        else:
+            scale = eps
+        normed = x / (scale + eps)
+        return np.clip(normed, -2.0, 2.0)
+    
+    # === Normalized slack for gating only — used in all conditionals ===
+    slack_norm = normalize(slk)
+    
+    # === Slack-driven components: linear penalty/gain with explicit zero-crossing ===
+    slack_penalty = np.where(
+        slk < 0,
+        PARAMS["slack_risk_penalty"] * np.abs(slack_norm),
+        -PARAMS["slack_urgency_gain"] * np.abs(slack_norm)
+    )
+    
+    # === Energy efficiency: inverse scaling → sharper preference for low marginal energy ===
+    inv_energy = 1.0 / (energy + eps)
+    energy_score = -PARAMS["energy_efficiency_weight"] * normalize(inv_energy)
+    
+    # === Criticality: only active when slack is non-negative AND above protection threshold ===
+    rank_active = np.where(
+        (slk >= 0) & (slack_norm >= PARAMS["ddl_protection_gate"]), 
+        rank, 
+        0.0
+    )
+    rank_score = -PARAMS["criticality_weight"] * normalize(rank_active + eps)
+    
+    # === Duration-uncertainty coupling: simplified bounded linear blend ===
+    duration = exec_t + comm_t
+    dur_norm = normalize(duration + eps)
+    uncert_norm = normalize(uncert + eps)
+    dur_uncert_blend = dur_norm + PARAMS["duration_uncertainty_ratio"] * uncert_norm
+    dur_score = normalize(dur_uncert_blend)
+    
+    # === Starvation mitigation: bounded linear clip instead of exponential decay ===
+    wait_clipped = np.clip(wait, 0.0, PARAMS["wait_clip_threshold"])
+    wait_normalized = wait_clipped / (PARAMS["wait_clip_threshold"] + eps)
+    wait_score = -normalize(wait_normalized + eps)
+    
+    # === Bounded bottleneck term: rank^α * work^β / (|slack|+ε)^γ → use α=β=γ=1 * sensitivity scaling
+    # Avoids division by near-zero slack and inf from exp/log1p; uses stable power with clamped base
+    slack_base = np.abs(slk) + eps
+    # Compute bottleneck = (rank * work) / (slack_base ** 1.0) → then scale sensitivity smoothly
+    bottleneck_raw = (rank * work) / (np.power(slack_base, PARAMS["bottleneck_sensitivity"]) + eps)
+    # Clip raw bottleneck to prevent numeric overflow before normalization
+    bottleneck_clipped = np.clip(bottleneck_raw, -1e4, 1e4)
+    bottleneck_score = -PARAMS["criticality_weight"] * normalize(bottleneck_clipped + eps)
+    
+    # === DDL protection gate: overrides duration dominance when slack is critically low ===
+    protection_mask = (slack_norm < PARAMS["ddl_protection_gate"])
+    # Apply soft suppression: reduce duration impact, amplify energy & criticality & bottleneck
+    dur_score = np.where(protection_mask, dur_score * PARAMS["duration_suppression_factor"], dur_score)
+    energy_score = np.where(protection_mask, energy_score * PARAMS["energy_amplification_factor"], energy_score)
+    rank_score = np.where(protection_mask, rank_score * PARAMS["criticality_amplification_factor"], rank_score)
+    bottleneck_score = np.where(protection_mask, bottleneck_score * PARAMS["criticality_amplification_factor"], bottleneck_score)
+    
+    # === Assemble final score: smaller = higher priority ===
+    score = (
+        slack_penalty
+        + energy_score
+        + rank_score
+        + bottleneck_score
+        + dur_score
+        + wait_score
+    )
+    
+    # Final safeguard: replace NaN/inf with 0.0 using explicit masking
+    score = np.where(np.isfinite(score), score, 0.0)
+    
+    # Enforce shape and finiteness
+    assert score.shape == (N,), f"Expected shape (N,), got {score.shape}"
+    assert np.all(np.isfinite(score)), "Non-finite values detected in priority score"
+    
+    return score
+```

@@ -1,0 +1,230 @@
+```python
+import numpy as np
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 0.001,
+            "lower_bound": 1e-6,
+            "upper_bound": 0.1,
+            "semantic_description": "Numerical guard for stable normalization and division.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "slack_risk_penalty",
+            "initial_value": 5.2,
+            "lower_bound": 0.5,
+            "upper_bound": 12.0,
+            "semantic_description": "Strong linear penalty multiplier for negative slack (deadline violation risk).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "slack_inverse_urgency_exponent",
+            "initial_value": 0.75,
+            "lower_bound": 0.1,
+            "upper_bound": 2.0,
+            "semantic_description": "Exponent for smooth inverse-slack urgency term: avoids linear de-prioritization of barely-urgent tasks.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_efficiency_weight",
+            "initial_value": 1.32,
+            "lower_bound": 0.05,
+            "upper_bound": 4.0,
+            "semantic_description": "Weight for inverse energy efficiency: lower incremental energy → higher priority.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "criticality_weight",
+            "initial_value": 0.91,
+            "lower_bound": 0.0,
+            "upper_bound": 3.0,
+            "semantic_description": "Weight for upward_rank, applied only under DDL protection gate.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "bottleneck_proximity_weight",
+            "initial_value": 1.58,
+            "lower_bound": 0.1,
+            "upper_bound": 5.0,
+            "semantic_description": "Weight for bottleneck-proximal term: upward_rank * min(min_exec_time, min_comm_time).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "duration_uncertainty_ratio",
+            "initial_value": 0.71,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Relative weight of uncertainty in bounded linear duration-uncertainty blend.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "wait_ramp_threshold",
+            "initial_value": 14.2,
+            "lower_bound": 1.0,
+            "upper_bound": 100.0,
+            "semantic_description": "Threshold at which exponential wait-time saturation saturates.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "ddl_feasibility_margin",
+            "initial_value": 0.27,
+            "lower_bound": 0.0,
+            "upper_bound": 1.0,
+            "semantic_description": "Hard slack margin below which energy scoring is fully suppressed.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "robust_normalization_quantile",
+            "initial_value": 0.77,
+            "lower_bound": 0.5,
+            "upper_bound": 0.95,
+            "semantic_description": "Quantile used for robust scale estimation in normalization.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "host_load_proxy_exponent",
+            "initial_value": 0.63,
+            "lower_bound": 0.1,
+            "upper_bound": 1.5,
+            "semantic_description": "Exponent for ready_wait_time + uncertainty as host load proxy; sublinear to avoid over-penalizing high-risk VMs.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "score_clipping_bound",
+            "initial_value": 1e11,
+            "lower_bound": 1e6,
+            "upper_bound": 1e15,
+            "semantic_description": "Upper/lower bound for final priority score clipping to prevent overflow.",
+            "parameter_type": "float",
+            "transform": "log"
+        }
+    ]
+}
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Improved priority rule combining strengths from both parents:
+      - Hard DDL feasibility mask (from Parent 2) for strict deadline-first enforcement.
+      - Inverse-slack urgency (from Parent 1) for stable positive-slack scaling — replaces linear gain.
+      - Host-load proxy (Parent 2) for congestion-aware energy gating.
+      - Bottleneck term uses min(exec_time, comm_time) — robust to dominance shifts, no slack singularity.
+      - All normalizations use quantile-based robust scaling (Parent 2).
+      - Final score clamping uses machine-precision-aware bounds (Parent 1 style with log-transformed parameter).
+      - Removed redundant soft gates and sigmoid ramps: hard mask + inverse urgency provides cleaner control.
+    """
+    eps = PARAMS["epsilon"]
+    N = len(min_exec_time)
+    
+    # Cast inputs safely without in-place modification
+    exec_t = np.asarray(min_exec_time, dtype=np.float64)
+    comm_t = np.asarray(min_comm_time, dtype=np.float64)
+    energy = np.asarray(min_incremental_energy, dtype=np.float64)
+    slk = np.asarray(slack, dtype=np.float64)
+    rank = np.asarray(upward_rank, dtype=np.float64)
+    work = np.asarray(remaining_work, dtype=np.float64)
+    wait = np.asarray(ready_wait_time, dtype=np.float64)
+    uncert = np.asarray(uncertainty, dtype=np.float64)
+    
+    # === Robust quantile-based normalization ===
+    def normalize(x):
+        x = np.asarray(x)
+        abs_x = np.abs(x)
+        finite_mask = np.isfinite(abs_x)
+        if np.any(finite_mask):
+            scale = np.quantile(abs_x[finite_mask], PARAMS["robust_normalization_quantile"])
+            scale = np.where(scale > eps, scale, eps)
+        else:
+            scale = eps
+        return x / (scale + eps)
+    
+    slk_norm = normalize(slk)
+    rank_norm = normalize(rank + eps)
+    exec_norm = normalize(exec_t + eps)
+    comm_norm = normalize(comm_t + eps)
+    energy_norm = normalize(energy + eps)
+    wait_norm = normalize(wait + eps)
+    uncert_norm = normalize(uncert + eps)
+    
+    # === Slack-driven base penalty/gain: negative slack penalized linearly; positive slack uses smooth inverse scaling ===
+    # Avoids pathological de-prioritization near zero slack (Parent 1 improvement)
+    slack_penalty = np.where(
+        slk < 0,
+        PARAMS["slack_risk_penalty"] * np.abs(slk_norm),
+        -np.power(np.abs(slk) + eps, -PARAMS["slack_inverse_urgency_exponent"])
+    )
+    
+    # === Hard DDL feasibility mask: binary suppression of energy scoring when slack < -margin ===
+    ddl_feasibility_margin = PARAMS["ddl_feasibility_margin"]
+    ddl_feasible_mask = np.where(slk >= -ddl_feasibility_margin, 1.0, 0.0)
+    
+    # === Host-load proxy: sublinear function of (wait + uncertainty) to estimate local host congestion ===
+    host_load_proxy = np.power(wait + uncert + eps, PARAMS["host_load_proxy_exponent"])
+    host_load_gate = 1.0 / (1.0 + host_load_proxy)
+    
+    # === Energy efficiency: inverse marginal energy, gated by both DDL feasibility AND host load ===
+    inv_energy = 1.0 / (energy + eps)
+    energy_score = -PARAMS["energy_efficiency_weight"] * normalize(inv_energy) * ddl_feasible_mask * host_load_gate
+    
+    # === Criticality: upward_rank normalized, always active (no gating) — simplified from Parent 2 ===
+    rank_score = -PARAMS["criticality_weight"] * rank_norm
+    
+    # === Bottleneck interaction: upward_rank * min(exec_time, comm_time) — removes slack singularity, focuses on dominant cost bound ===
+    min_duration_bound = np.minimum(exec_t, comm_t)
+    bottleneck_interaction = rank_norm * normalize(min_duration_bound + eps)
+    bottleneck_score = -PARAMS["bottleneck_proximity_weight"] * normalize(bottleneck_interaction + eps)
+    
+    # === Duration-uncertainty coupling: sum of normalized duration and weighted uncertainty ===
+    duration = exec_t + comm_t
+    dur_norm = normalize(duration + eps)
+    dur_uncert_blend = dur_norm + PARAMS["duration_uncertainty_ratio"] * uncert_norm
+    dur_score = normalize(dur_uncert_blend)
+    
+    # === Starvation mitigation: bounded exponential saturation (fixed curvature) ===
+    wait_saturation = 1.0 - np.exp(-wait / (PARAMS["wait_ramp_threshold"] + eps))
+    wait_score = -normalize(wait_saturation + eps)
+    
+    # === Assemble final score: smaller = higher priority ===
+    score = (
+        slack_penalty
+        + energy_score
+        + rank_score
+        + bottleneck_score
+        + dur_score
+        + wait_score
+    )
+    
+    # Final safeguard: clamp to finite bounds using machine-precision-aware scaling
+    finfo = np.finfo(np.float64)
+    max_safe = PARAMS["score_clipping_bound"]
+    min_safe = -max_safe
+    score = np.nan_to_num(score, nan=0.0, posinf=max_safe, neginf=min_safe)
+    score = np.clip(score, min_safe, max_safe)
+    
+    # Enforce shape and finiteness
+    assert score.shape == (N,), f"Expected shape (N,), got {score.shape}"
+    assert np.all(np.isfinite(score)), "Non-finite values detected in priority score"
+    
+    return score
+```

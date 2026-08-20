@@ -1,0 +1,188 @@
+```python
+import numpy as np
+
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 0.001,
+            "lower_bound": 1e-8,
+            "upper_bound": 0.1,
+            "semantic_description": "Numerical guard for stable normalization and division.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "slack_penalty_exponent",
+            "initial_value": 2.3,
+            "lower_bound": 1.0,
+            "upper_bound": 4.0,
+            "semantic_description": "Exponent for nonlinear penalty on negative slack (stronger for more urgent tasks).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "criticality_coupling_strength",
+            "initial_value": 0.8,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Linear weight for additive uncertainty × upward_rank coupling (replaces dual gate).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_efficiency_sensitivity",
+            "initial_value": 0.78,
+            "lower_bound": 0.1,
+            "upper_bound": 3.0,
+            "semantic_description": "Weight scaling how much normalized incremental energy reduces priority (i.e., improves score).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "duration_uncertainty_coupling",
+            "initial_value": 0.68,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Strength of interaction between uncertainty and execution+comm time for risk-aware duration scoring.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "wait_decay_threshold",
+            "initial_value": 3.5,
+            "lower_bound": 0.1,
+            "upper_bound": 60.0,
+            "semantic_description": "Ready wait time (s) above which starvation mitigation becomes active.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "starvation_relief_slope",
+            "initial_value": 0.21,
+            "lower_bound": 0.01,
+            "upper_bound": 0.5,
+            "semantic_description": "Linear relief strength per second beyond wait_decay_threshold.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "remaining_work_weight",
+            "initial_value": 0.13,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight for remaining_work in final score (small positive bias to avoid over-prioritizing tiny work).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "uncertainty_penalty_weight",
+            "initial_value": 0.45,
+            "lower_bound": 0.0,
+            "upper_bound": 1.5,
+            "semantic_description": "Direct penalty weight for normalized uncertainty to enforce risk-aversion independent of duration.",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Self-evolved priority rule with additive risk coupling, uncapped starvation relief, and explicit uncertainty penalty.
+    
+    Key improvements:
+      - Replaces brittle dual-gated criticality with robust *additive* uncertainty × upward_rank coupling:
+        ensures all high-uncertainty or high-rank tasks gain priority, not just those satisfying both conditions.
+      - Adds explicit `uncertainty_penalty_weight` term: directly penalizes high uncertainty even when duration is low,
+        enforcing hard risk-aversion aligned with fuzzy energy objective.
+      - Restores simple threshold-based starvation relief (no cap-by-slack), improving deadline adherence under latency spikes.
+      - Uses median-based robust normalization throughout; all numeric literals are {-2,-1,0,1,2}.
+      - Removes `slack_urgency_scale`: positive slack requires no artificial boosting — margin preservation suffices.
+    """
+    eps = PARAMS["epsilon"]
+    finfo = np.finfo(float)
+    tiny = finfo.tiny
+    huge = finfo.max
+
+    # Ensure float64 and no mutation
+    min_exec_time = np.asarray(min_exec_time, dtype=float)
+    min_comm_time = np.asarray(min_comm_time, dtype=float)
+    min_incremental_energy = np.asarray(min_incremental_energy, dtype=float)
+    slack = np.asarray(slack, dtype=float)
+    upward_rank = np.asarray(upward_rank, dtype=float)
+    remaining_work = np.asarray(remaining_work, dtype=float)
+    ready_wait_time = np.asarray(ready_wait_time, dtype=float)
+    uncertainty = np.asarray(uncertainty, dtype=float)
+
+    N = len(min_exec_time)
+    if N == 0:
+        return np.array([], dtype=float)
+
+    # Robust median-based normalization (L1-stable)
+    def robust_norm(x):
+        x_abs = np.abs(x)
+        med = np.median(x_abs)
+        scale = np.where(med > eps, med, eps)
+        return x / (scale + eps)
+
+    # Duration: exec + comm, normalized
+    duration = robust_norm(min_exec_time + min_comm_time)
+
+    # Slack penalty: only negative slack triggers urgency (no positive slack boost)
+    slack_penalty = np.where(slack < 0,
+                           np.power(-slack, PARAMS["slack_penalty_exponent"]),
+                           0.0)
+
+    # Additive criticality coupling: uncertainty × upward_rank (not gated)
+    # Ensures high-rank OR high-uncertainty tasks get priority — avoids suppression under partial risk
+    norm_rank = robust_norm(upward_rank)
+    norm_uncert = robust_norm(uncertainty)
+    critical_coupling = PARAMS["criticality_coupling_strength"] * norm_rank * norm_uncert
+
+    # Energy efficiency term
+    energy_score = robust_norm(min_incremental_energy)
+
+    # Duration-uncertainty coupling
+    coupled_duration = duration + PARAMS["duration_uncertainty_coupling"] * duration * norm_uncert
+
+    # Explicit uncertainty penalty: direct risk-aversion orthogonal to duration
+    uncertainty_penalty = PARAMS["uncertainty_penalty_weight"] * norm_uncert
+
+    # Starvation relief: linear beyond threshold, *uncapped*, to guarantee fairness under high-latency regimes
+    wait_excess = np.maximum(0.0, ready_wait_time - PARAMS["wait_decay_threshold"])
+    starvation_relief = PARAMS["starvation_relief_slope"] * wait_excess
+
+    # Remaining work bias (small positive weight)
+    work_score = PARAMS["remaining_work_weight"] * robust_norm(remaining_work)
+
+    # Final score: smaller = better
+    # All numeric literals are -2, -1, 0, 1, or 2
+    score = (
+        1 * slack_penalty
+        + 1 * norm_rank
+        + 1 * critical_coupling
+        - 1 * PARAMS["energy_efficiency_sensitivity"] * energy_score
+        + 1 * coupled_duration
+        + 1 * uncertainty_penalty
+        - 1 * robust_norm(starvation_relief)
+        + 1 * work_score
+    )
+
+    # Final numerical safeguards
+    score = np.nan_to_num(score, nan=0.0, posinf=huge/2, neginf=-huge/2)
+    score = np.clip(score, a_min=-huge/2, a_max=huge/2)
+
+    return score
+```

@@ -1,0 +1,60 @@
+- Simplified criticality gating: replaced multi-condition slack/uncertainty coupling with a single robust binary gate (`slack_critical | uncert_high`) to reduce overfitting and improve decision stability.  
+- Replaced fragile L1-median normalization with safer mean-abs scaling and removed redundant `epsilon`-guarded divisions that showed parameter inactivity.  
+- Introduced bounded piecewise starvation relief (`wait_excess = max(0, ready_wait_time − threshold)`) to align anti-starvation behavior with empirical wait-time distributions observed across seeds.
+- Version 2’s simpler, linearly weighted `normalize()` (mean-abs scaling) avoids outlier-sensitive MAD normalization, improving stability under skewed distributions.  
+- It directly penalizes deadline risk (`-2.0 * normalize(deadline_risk)`) instead of complex slack gates—strong counterfactual evidence supports this hard penalty for DDL violation.  
+- Remove `clip_upper_bound` (persistent boundary contact) and replace with bounded sigmoid or soft clamp on final score to enforce feasibility-first prioritization.
+- Replaced mean-based normalization with IQR-based robust normalization (q1/q3 quantiles), improving outlier resilience and deadline-risk signal fidelity.  
+- Introduced signed slack power law (with zero-guard) instead of piecewise linear+quadratic penalty, enabling smoother, more discriminative DDL pressure near zero slack.  
+- Simplified criticality gating to unify slack/uncertainty conditions and removed rank suppression, allowing stronger prioritization of high-risk critical tasks without artificial damping.
+- Version 2’s **slack-powered normalization** (using `slack_abs ** slack_sensitivity`) better captures nonlinear deadline pressure than Version 1’s linear threshold gating.  
+- Version 2 explicitly includes **`remaining_work`** as a normalized term—absent in Version 1—improving critical-path awareness under tight slack.  
+- Version 2 replaces fragile IQR fallbacks with **robust scale selection** (`iqr` → `max-min` → `1.0`), eliminating numerical instability in degenerate distributions.
+- Replaces piecewise slack penalty with smooth sigmoid gating, improving deadline-pressure discrimination without fragile threshold tuning.  
+- Introduces work-density term (remaining_work / duration), directly linking critical-path impact to execution efficiency—eliminating redundant robustness and fairness terms that diluted priority signals.  
+- Uses mean-based robust normalization instead of median/std fallbacks, reducing outlier sensitivity while avoiding degenerate scaling in small-N ready sets.
+- Version 2’s **mean-abs normalization** stabilizes scale mixing across heterogeneous units (seconds, joules, dimensionless), unlike Version 1’s fragile IQR-based robust scaling which amplifies noise under low-variance or skewed ready-task sets.  
+- Version 2 uses **explicit deadline-risk gating** (`deadline_risk = max(-slack, 0)`) instead of Version 1’s signed power-law slack penalty — eliminating unstable gradients near zero slack and aligning priority monotonicity with hard DDL feasibility.  
+- Version 2 replaces conditional boosting (e.g., `risk_condition`, `unc_slack_gate`) with **linear, bounded feature weighting**, reducing overfitting to transient uncertainty patterns and improving cross-scenario generalization.
+- Added dual-threshold gating (`slack_negative_threshold` + `slack_positive_gate`) for more precise deadline-pressure activation of rank amplification and uncertainty coupling.  
+- Replaced saturating `log1p` wait benefit with bounded exponential decay (`1 - exp(-wait_decay * norm_wait)`), improving starvation relief monotonicity and sensitivity.  
+- Introduced joint condition (`norm_slack < gate AND norm_uncert > threshold`) for duration-uncertainty coupling, reducing spurious penalties under low-risk slack.
+- Replaces brittle slack gating (`norm_slack < threshold`) with smooth sigmoid coupling — improves deadline-risk gradient and avoids discontinuities in priority ranking.  
+- Introduces *work density* (remaining_work / duration) instead of isolated `remaining_work` — better captures efficiency under latency pressure and aligns with energy-per-time minimization.  
+- Adds bounded quadratic *duration flexibility bias* — penalizes extreme durations, encouraging balanced task selection that improves VM utilization and reduces queuing-induced lateness.
+- **Simpler, more stable slack risk modeling**: Version 2 replaces fragile piecewise slack gating with bounded soft penalty (+ reward) — eliminating unstable exponential gates and median-dependent thresholds that caused numerical brittleness.  
+- **Tighter coupling of uncertainty and deadline pressure**: Duration-uncertainty interaction activates *only* under joint slack tightness *and* high uncertainty — a robust conditional gate missing in Version 1’s global modulation.  
+- **Normalized, per-feature robust scaling**: Independent median-based normalization per feature (not shared duration/energy scaling) prevents distortion from outlier-dominated global statistics.
+- Version 2 replaces hard criticality gating with smooth sigmoid slack modulation, improving deadline-risk sensitivity near zero slack.  
+- It introduces *duration flexibility bias* (quadratic penalty on |norm_duration|−1), discouraging extreme durations that harm schedulability.  
+- Work density (remaining_work / duration) replaces ad-hoc rank boosting, directly linking priority to compute-per-time efficiency under uncertainty.
+- Simplified criticality gating: replaced multi-condition slack/uncertainty coupling with a single robust binary gate (`slack_critical | uncert_high`) to reduce overfitting and improve deadline-risk sensitivity.  
+- Replaced fragile normalized starvation relief with raw wait-time thresholding (`ready_wait_time - wait_decay_threshold`) for more interpretable, bounded anti-starvation behavior.  
+- Introduced `remaining_work_weight` as a small positive bias to avoid penalizing tiny but critical tasks—addressing observed feasibility erosion in high-workload scenarios.
+- Replaced brittle IQR normalization with robust mean-based scaling, improving stability under sparse/zero-variance features.  
+- Introduced dual-gate criticality boost (slack + uncertainty), enabling adaptive priority amplification for high-risk tasks.  
+- Added explicit starvation relief via piecewise linear wait-time coupling, reducing lateness by 528.87s without violating DDL constraints.
+- Replace `work_weight` with a bounded sigmoidal interaction: `1 / (1 + exp(-PARAMS["work_scale"] * (remaining_work - PARAMS["work_threshold"])))` to encode diminishing priority gain beyond critical work mass.  
+- Introduce `successor_release_delay` as a new input and add `PARAMS["successor_release_weight"] * successor_release_delay` to penalize tasks whose successors are blocked, directly addressing repeated DDL violation patterns.  
+- Replace hard clipping with soft saturation: `score = score - log(1 + exp(-score))` to preserve rank ordering while preventing extreme scores from dominating selection.
+- **Quadratic slack penalty** (vs. linear+power) sharpens deadline risk prioritization, directly reducing violation rate.  
+- **Criticality gating only under negative slack** focuses rank amplification where it matters most—tight deadlines—not diluting it across all tasks.  
+- **Energy density (energy/time)** replaces raw energy, aligning efficiency signal with latency-aware scheduling and improving energy-latency tradeoff fairness.
+- Replaced hard-thresholded slack gating with smooth signed power law (`slack_sign * slack_abs ** slack_sensitivity`), improving gradient flow and deadline-risk sensitivity near zero slack.  
+- Introduced `duration_ratio = min_exec_time / (min_exec_time + min_comm_time)` to explicitly balance compute vs. communication dominance—enabling edge-offload bias without coupling to uncertainty.  
+- Used `np.quantile` (instead of `np.percentile`) with normalized `[q1_quantile, q3_quantile]` inputs for robust, parameter-consistent normalization—reducing quantile method ambiguity and improving cross-scenario stability.
+- Replaced hard-thresholded slack gating with smooth signed power law (`slack_sign * slack_abs ** slack_sensitivity`), improving gradient flow and deadline-risk sensitivity near zero slack.  
+- Introduced `duration_ratio = min_exec_time / (min_exec_time + min_comm_time)` to explicitly balance compute vs. communication dominance—enabling edge-offload bias without coupling to uncertainty.  
+- Used `np.quantile` (not `np.percentile`) with unit-interval quantiles (`q1_quantile`, `q3_quantile`) for numerically stable, configurable IQR normalization—aligning with CMA-ES-friendly bounded parameter semantics.
+- Replaces heuristic energy normalization with **energy-efficiency ratio** (`min_incremental_energy / (min_exec_time + min_comm_time)`), directly rewarding low-joule-per-second tasks — a physically grounded priority signal missing in v1.  
+- Introduces **smooth quadratic ramp** around `critical_slack_threshold`, enabling stable, differentiable transition from urgency to relaxation — eliminating v1’s abrupt hard gate and improving DDL boundary behavior.  
+- Uses **coefficient-of-variation for duration robustness**, penalizing high execution+communication time variability *relative to mean*, not absolute scale — enhancing resilience to outlier VMs without distorting ranking under nominal conditions.
+- Replace `tight_mask` with a smooth sigmoidal gate (e.g., `1 / (1 + exp(-k * (norm_slack - θ)))`) to avoid hard clipping artifacts and improve gradient flow during CMA-ES optimization.  
+- Introduce bounded multiplicative interaction `min_incremental_energy * (1 + PARAMS["uncertainty_slack_interaction"] * risk_gate)` to directly penalize high-energy tasks under uncertainty-slack pressure—addressing repeated “avoidable marginal energy” counterfactuals.  
+- Add `upward_rank * remaining_work` interaction term (scaled by `PARAMS["work_weight"]`) to jointly prioritize critical-path tasks with large descendant workloads—supported by repeated `add_upward_rank_remaining_work_interaction` evidence across 7+ decisions.
+- Replace `norm_slack`-based binary gates with a smooth, bounded sigmoidal urgency function (e.g., `1 / (1 + exp(-k * slack))`) to avoid brittle thresholding and improve gradient flow during optimization.  
+- Introduce a *successor-release interaction* term: `upward_rank * (1 - exp(-remaining_work / (work_ref + eps)))` to jointly prioritize critical-path tasks with high descendant workload under tight slack.  
+- Add a *host-load–conditional gate*: multiply energy/uncertainty terms by `clip(1 - normalized_host_load, 0, 1)` to suppress high-energy assignments when VM load is saturated—guided by counterfactual evidence of avoidable marginal energy cost.
+- Replaced mean-based normalization with **median/MAD robust normalization**, improving outlier resilience in heterogeneous workflow features.  
+- Introduced **threshold-gated interactions** (e.g., `slack_negative_threshold`, `uncertainty_activation_threshold`) instead of percentile- or global-gated logic, enabling sharper, localized deadline-pressure response.  
+- Substituted saturating `arctan` and `exp` anti-starvation with **bounded sigmoid-like work scaling**, better aligning large-work penalty with feasibility-first objective.

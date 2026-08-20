@@ -1,0 +1,250 @@
+{
+  "archive_hash": "0e4884857138e3169019919272d4c0867470304aaff8886becdfa30dc0795fc0",
+  "archive_version": "critical_state_archive_v1",
+  "cross_generation_failure_patterns": [
+    {
+      "confidence": "high",
+      "coverage_sufficient_count": 2,
+      "failure_count": 4,
+      "failure_generations": [
+        9,
+        10,
+        11,
+        13,
+        14,
+        15
+      ],
+      "generation_count": 6,
+      "minimum_verified_coverage": 0.15,
+      "risk_category": "CRITICAL_PATH_STARVATION",
+      "scenario_count": 1,
+      "seed_count": 2,
+      "state_ids": [
+        "90a2c989ca1f2302fe9a5cd9f9cc07da601d825ed09c4404528ab623cd6abc95",
+        "a28029c24accfb6c2728e75b9be4bb4c50058265d0cc9f6a8cbd41f00dafd5cc",
+        "9b1e4db4264e49f37697d111fe4a0ea6beea6d8a607d544c11ee0154791aa283",
+        "b1e38321b9d32844c6a65ffc127f526f01fa42a30d03a7c8ceb6cefa18389fe4"
+      ],
+      "structure_count": 11
+    },
+    {
+      "confidence": "high",
+      "coverage_sufficient_count": 1,
+      "failure_count": 1,
+      "failure_generations": [
+        13,
+        15
+      ],
+      "generation_count": 2,
+      "minimum_verified_coverage": 0.6666666666666666,
+      "risk_category": "SUCCESSOR_RELEASE_BLOCKING",
+      "scenario_count": 1,
+      "seed_count": 1,
+      "state_ids": [
+        "ba118a45d7ad28140217f5fba637a83cdc8b69cefcc0a83fd203d583af3eb866"
+      ],
+      "structure_count": 11
+    }
+  ],
+  "failure_by_risk_category": {
+    "COUNTERFACTUAL_DOMINATED_CHOICE": 5,
+    "CRITICAL_PATH_STARVATION": 4,
+    "SUCCESSOR_RELEASE_BLOCKING": 1
+  },
+  "failure_by_scenario": {
+    "SS": 10
+  },
+  "failure_by_workflow_type": {
+    "CyberShake": 1,
+    "Ligo": 1,
+    "Montage": 1,
+    "Sipht": 7
+  },
+  "frozen_rule_hash": "bb4edb923c12cd47ee33a9b1657433004a0321bc982c1d57dca2e7789212c7ef",
+  "generation": 15,
+  "hard_state_failure_patterns": [
+    {
+      "confidence": "low",
+      "coverage_sufficient_count": 0,
+      "failure_count": 5,
+      "generation_count": 1,
+      "minimum_verified_coverage": 0.13333333333333333,
+      "risk_category": "COUNTERFACTUAL_DOMINATED_CHOICE",
+      "scenario_count": 0,
+      "seed_count": 0,
+      "state_ids": [
+        "1fb9464e996f4f182b366ebeeb0f5403bc6783c7996dbeb6c2448400db2f62ba",
+        "15ab52231dfd4ddac8cbbea5d0917180b7601eb697cdfe429243bbab4e0247a2",
+        "ffe2dc1564a87097d9b1472e38762fb22d90738215c9676a21f638ad9821b6e9",
+        "da7123d825fec37865c811fc02040e013501dab6d0d4b1135adbe7faf4422c6a",
+        "6f434cf7bbaf7cc5826fdb3332c1a469a63ceead38927f7243f2ab8ab042b815"
+      ],
+      "structure_count": 1
+    },
+    {
+      "confidence": "high",
+      "coverage_sufficient_count": 2,
+      "failure_count": 4,
+      "generation_count": 6,
+      "minimum_verified_coverage": 0.15,
+      "risk_category": "CRITICAL_PATH_STARVATION",
+      "scenario_count": 1,
+      "seed_count": 2,
+      "state_ids": [
+        "90a2c989ca1f2302fe9a5cd9f9cc07da601d825ed09c4404528ab623cd6abc95",
+        "a28029c24accfb6c2728e75b9be4bb4c50058265d0cc9f6a8cbd41f00dafd5cc",
+        "9b1e4db4264e49f37697d111fe4a0ea6beea6d8a607d544c11ee0154791aa283",
+        "b1e38321b9d32844c6a65ffc127f526f01fa42a30d03a7c8ceb6cefa18389fe4"
+      ],
+      "structure_count": 11
+    },
+    {
+      "confidence": "high",
+      "coverage_sufficient_count": 1,
+      "failure_count": 1,
+      "generation_count": 2,
+      "minimum_verified_coverage": 0.6666666666666666,
+      "risk_category": "SUCCESSOR_RELEASE_BLOCKING",
+      "scenario_count": 1,
+      "seed_count": 1,
+      "state_ids": [
+        "ba118a45d7ad28140217f5fba637a83cdc8b69cefcc0a83fd203d583af3eb866"
+      ],
+      "structure_count": 11
+    }
+  ],
+  "high_confidence_structural_actions": [
+    {
+      "action": "add_upward_rank_remaining_work_interaction",
+      "evidence_state_ids": [
+        "a28029c24accfb6c2728e75b9be4bb4c50058265d0cc9f6a8cbd41f00dafd5cc",
+        "b1e38321b9d32844c6a65ffc127f526f01fa42a30d03a7c8ceb6cefa18389fe4"
+      ],
+      "failure_count": 2,
+      "risk_category": "CRITICAL_PATH_STARVATION"
+    },
+    {
+      "action": "add_successor_release_interaction",
+      "evidence_state_ids": [
+        "ba118a45d7ad28140217f5fba637a83cdc8b69cefcc0a83fd203d583af3eb866"
+      ],
+      "failure_count": 1,
+      "risk_category": "SUCCESSOR_RELEASE_BLOCKING"
+    }
+  ],
+  "limitations": [
+    "feature-level replay is a deterministic stress test, not a full dynamic simulation",
+    "unverified and partial outcomes are never counted as success or failure",
+    "energy is inspected only after DDL ordering is not worse",
+    "7 verified failures were excluded from structural-action confidence because candidate coverage was below 0.500"
+  ],
+  "medium_confidence_actions": [],
+  "repeated_historical_error_count": 10,
+  "replay_config_hash": "952b98a5eec8a8cd62868c7c92c12c86eb85d2daef1bd52255f242e937a5abd3",
+  "replayed_state_count": 40,
+  "representative_failures": [
+    {
+      "coverage_sufficient": false,
+      "dominated_task_ranks": {
+        "343": 1
+      },
+      "preferred_task_ranks": {
+        "349": 2,
+        "351": 9
+      },
+      "risk_category": "COUNTERFACTUAL_DOMINATED_CHOICE",
+      "scenario_id": "SS",
+      "selected_task_id": 343,
+      "state_id": "1fb9464e996f4f182b366ebeeb0f5403bc6783c7996dbeb6c2448400db2f62ba",
+      "verified_coverage": 0.3,
+      "workflow_type": "Sipht"
+    },
+    {
+      "coverage_sufficient": false,
+      "dominated_task_ranks": {
+        "393": 1
+      },
+      "preferred_task_ranks": {
+        "402": 6,
+        "409": 16
+      },
+      "risk_category": "COUNTERFACTUAL_DOMINATED_CHOICE",
+      "scenario_id": "SS",
+      "selected_task_id": 393,
+      "state_id": "15ab52231dfd4ddac8cbbea5d0917180b7601eb697cdfe429243bbab4e0247a2",
+      "verified_coverage": 0.1875,
+      "workflow_type": "Sipht"
+    },
+    {
+      "coverage_sufficient": false,
+      "dominated_task_ranks": {
+        "339": 1
+      },
+      "preferred_task_ranks": {
+        "355": 7,
+        "357": 19
+      },
+      "risk_category": "CRITICAL_PATH_STARVATION",
+      "scenario_id": "SS",
+      "selected_task_id": 339,
+      "state_id": "90a2c989ca1f2302fe9a5cd9f9cc07da601d825ed09c4404528ab623cd6abc95",
+      "verified_coverage": 0.15,
+      "workflow_type": "Sipht"
+    },
+    {
+      "coverage_sufficient": true,
+      "dominated_task_ranks": {
+        "52": 1
+      },
+      "preferred_task_ranks": {
+        "48": 3
+      },
+      "risk_category": "SUCCESSOR_RELEASE_BLOCKING",
+      "scenario_id": "SS",
+      "selected_task_id": 52,
+      "state_id": "ba118a45d7ad28140217f5fba637a83cdc8b69cefcc0a83fd203d583af3eb866",
+      "verified_coverage": 0.6666666666666666,
+      "workflow_type": "Sipht"
+    },
+    {
+      "coverage_sufficient": true,
+      "dominated_task_ranks": {
+        "140": 1
+      },
+      "preferred_task_ranks": {
+        "144": 2
+      },
+      "risk_category": "CRITICAL_PATH_STARVATION",
+      "scenario_id": "SS",
+      "selected_task_id": 140,
+      "state_id": "a28029c24accfb6c2728e75b9be4bb4c50058265d0cc9f6a8cbd41f00dafd5cc",
+      "verified_coverage": 1.0,
+      "workflow_type": "CyberShake"
+    }
+  ],
+  "representative_successes": [
+    {
+      "risk_category": "COUNTERFACTUAL_DOMINATED_CHOICE",
+      "scenario_id": "SS",
+      "selected_task_id": 118,
+      "state_id": "0288255769960cc51b921257739cbab6b42b2ebdd22925f3de2e7b181290eab9"
+    },
+    {
+      "risk_category": "COUNTERFACTUAL_DOMINATED_CHOICE",
+      "scenario_id": "SS",
+      "selected_task_id": 249,
+      "state_id": "7e1625a313dbc7ace79c6d774bcdf36986ec8f457dfd1355f2ab6bb25973ccb0"
+    }
+  ],
+  "resolved_state_regressions": [],
+  "structure_hash": "e37e3f69ea1da9465fe7e9a36b1713ed5e847d49276c8efadc7347d8ca196266",
+  "success_by_risk_category": {
+    "COUNTERFACTUAL_DOMINATED_CHOICE": 2
+  },
+  "summary_hash": "644556a05f644de14cb420f998439aef120a5a4463161b49544b6e8479bf5f99",
+  "unverified_state_count": 28,
+  "used_test_seed": false,
+  "verified_failure_count": 10,
+  "verified_state_count": 12,
+  "verified_success_count": 2
+}

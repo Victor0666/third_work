@@ -1,0 +1,175 @@
+```python
+import numpy as np
+
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 1e-6,
+            "lower_bound": 1e-9,
+            "upper_bound": 1e-3,
+            "semantic_description": "Numerical guard for safe normalization and division.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "slack_risk_exponent",
+            "initial_value": 2.0,
+            "lower_bound": 1.0,
+            "upper_bound": 4.0,
+            "semantic_description": "Nonlinear penalty strength for negative slack (risk amplification).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "criticality_threshold",
+            "initial_value": 0.7,
+            "lower_bound": 0.3,
+            "upper_bound": 0.95,
+            "semantic_description": "Upward-rank percentile threshold to activate critical-path boosting.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_sensitivity",
+            "initial_value": 0.9,
+            "lower_bound": 0.1,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight scaling for risk-adjusted incremental energy in feasible region.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "duration_uncertainty_coupling",
+            "initial_value": 0.6,
+            "lower_bound": 0.0,
+            "upper_bound": 1.5,
+            "semantic_description": "Strength of uncertainty-modulated duration penalty (higher = more conservative).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "wait_decay_rate",
+            "initial_value": 0.05,
+            "lower_bound": 0.0,
+            "upper_bound": 0.5,
+            "semantic_description": "Exponential decay coefficient for waiting-time priority boost.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "uncertainty_penalty_power",
+            "initial_value": 1.5,
+            "lower_bound": 0.5,
+            "upper_bound": 3.0,
+            "semantic_description": "Exponent applied to normalized uncertainty for risk-aware gating.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "rank_normalization_mode",
+            "initial_value": 0.5,
+            "lower_bound": 0.0,
+            "upper_bound": 1.0,
+            "semantic_description": "Blending factor between min-max and mean-based upward-rank normalization.",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Novel priority rule: deadline-risk-first with critical-path gating, uncertainty-coupled duration,
+       exponential anti-starvation, and adaptive rank normalization.
+    
+    Key innovations:
+      - Slack is transformed via smooth piecewise power: negative slack → strong convex penalty;
+        non-negative slack → gentle concave reward (encourages early completion).
+      - Upward rank triggers a conditional boost only above adaptive percentile threshold,
+        avoiding over-prioritization of marginal high-rank tasks.
+      - Duration penalty is scaled by uncertainty^power, making uncertain long tasks more urgent.
+      - Ready wait time uses exp(-decay * wait) → 1 - exp(...) for bounded, saturating priority boost.
+      - Rank normalization blends robust min-max scaling (for outliers) and mean-based scaling (for density),
+        controlled by a tunable blend parameter.
+      - All components are normalized using stable L1-mean scaling with epsilon guard.
+    """
+    eps = PARAMS["epsilon"]
+    
+    # Robust normalization: use L1-mean with epsilon safeguard; avoids sensitivity to outliers vs std
+    def l1_normalize(x):
+        x = np.asarray(x, dtype=float)
+        norm_denom = np.mean(np.abs(x)) + eps
+        return x / norm_denom
+    
+    # --- 1. Slack risk/reward: convex penalty for lateness, concave reward for headroom ---
+    slack_norm = l1_normalize(slack)
+    # Smooth piecewise: for slack_norm < 0 → |x|^exponent; else → -sqrt(|x|) to avoid over-rewarding large slack
+    slack_score = np.where(
+        slack_norm < 0,
+        np.power(-slack_norm, PARAMS["slack_risk_exponent"]),
+        -np.sqrt(slack_norm + eps)
+    )
+    
+    # --- 2. Upward rank: adaptive critical-path gating ---
+    # Normalize upward_rank adaptively: blend min-max (robust) and mean-based (dense)
+    rank_arr = np.asarray(upward_rank, dtype=float)
+    rank_min, rank_max = np.min(rank_arr), np.max(rank_arr)
+    rank_range = rank_max - rank_min + eps
+    rank_minmax_norm = (rank_arr - rank_min) / rank_range
+    rank_mean_norm = l1_normalize(rank_arr)
+    rank_norm = (
+        PARAMS["rank_normalization_mode"] * rank_minmax_norm +
+        (1.0 - PARAMS["rank_normalization_mode"]) * rank_mean_norm
+    )
+    
+    # Criticality gate: only boost top percentile of rank_norm (soft threshold via sigmoid-like weight)
+    rank_percentile = np.percentile(rank_norm, 100.0 * PARAMS["criticality_threshold"])
+    rank_gate = np.where(rank_norm >= rank_percentile, 1.0, 0.0)
+    rank_score = -rank_norm * rank_gate  # Negative → higher priority for critical tasks
+    
+    # --- 3. Energy: direct risk-adjusted marginal energy, normalized ---
+    energy_score = l1_normalize(min_incremental_energy)
+    
+    # --- 4. Duration: exec + comm, amplified by uncertainty coupling ---
+    duration = np.asarray(min_exec_time, dtype=float) + np.asarray(min_comm_time, dtype=float)
+    duration_norm = l1_normalize(duration)
+    unc_norm = l1_normalize(uncertainty)
+    # Uncertainty-coupled penalty: higher uncertainty → stronger duration penalty
+    duration_score = duration_norm * np.power(np.abs(unc_norm) + eps, PARAMS["uncertainty_penalty_power"])
+    
+    # --- 5. Anti-starvation: saturating exponential boost from ready_wait_time ---
+    wait_arr = np.asarray(ready_wait_time, dtype=float)
+    # Bounded boost: 1 - exp(-rate * wait), capped at 0.99 to avoid dominance
+    wait_boost = 1.0 - np.exp(-PARAMS["wait_decay_rate"] * wait_arr)
+    wait_boost = np.clip(wait_boost, 0.0, 0.99)
+    wait_score = -wait_boost  # Negative → higher priority for long-waiting tasks
+    
+    # --- 6. Remaining work: mild anti-dilation — smaller remaining work preferred if other factors align ---
+    work_norm = l1_normalize(remaining_work)
+    work_score = work_norm  # positive → larger work lowers priority (mild preference for small workloads)
+    
+    # --- Aggregate with tunable weights ---
+    score = (
+        1.0 * slack_score
+        + PARAMS["energy_sensitivity"] * energy_score
+        + PARAMS["duration_uncertainty_coupling"] * duration_score
+        + 1.0 * rank_score
+        + 0.8 * wait_score
+        + 0.3 * work_score
+    )
+    
+    # Final safeguard: ensure finite, deterministic output
+    return np.nan_to_num(score, nan=0.0, posinf=np.finfo(float).max, neginf=-np.finfo(float).max)
+```

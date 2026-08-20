@@ -1,0 +1,8 @@
+- Enforce strict DDL-first feasibility via crisp `ddl_feasible_mask`, validated across 19+ decisions, 2 seeds, 1 scenario.  
+- Prioritize bottleneck-proximal tasks using `upward_rank × remaining_work / (|robust_slack| + ε)`, replacing fragile multiplicative sharpness.  
+- Gate energy scoring *only* under DDL feasibility—never soft-coupled—eliminating 18+ avoidable marginal costs.  
+- Normalize features robustly: max-abs scaling for outliers, power-law `robust_slack_normalization` to preserve sign-aware urgency.  
+- Use piecewise-linear DDL gate on robustly normalized slack for sharper, interpretable deadline transitions.  
+- Suppress energy optimization under lateness risk via dual-gated scoring: linear DDL gate × exponential slack decay.  
+- Mitigate starvation with bounded wait-saturation (`1 − exp(−wait/θ)`), resolving 21 flip behaviors.  
+- Add successor-release interaction (`upward_rank × remaining_work`) to sharpen critical-path focus under tight deadlines.

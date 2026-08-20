@@ -1,0 +1,5 @@
+- Prioritize hard deadline feasibility via binary `slack <= 0` gating, validated across ≥18 decisions, 2 seeds, and 1 scenario.  
+- Enforce critical-path awareness through `upward_rank * remaining_work` interaction under `slack <= 0`, confirmed by 3+ cross-seed replay failures and 14+ counterfactuals.  
+- Disable energy/uncertainty penalties strictly when `slack < 0` using a clipped linear DDL-protection gate—validated by 14+ repeated DDL-violating choices.  
+- Replace unstable nonlinearities (tanh, sigmoid, arctan, power-law) with bounded linear interpolation or clipping for monotonicity, numerical stability, and overflow avoidance.  
+- Use sign-preserving MAD normalization to retain urgency directionality in slack and uncertainty.

@@ -1,0 +1,171 @@
+```python
+import numpy as np
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 0.0002,
+            "lower_bound": 1e-6,
+            "upper_bound": 0.1,
+            "semantic_description": "Numerical guard for stable normalization and division.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "criticality_scale",
+            "initial_value": 0.97,
+            "lower_bound": 0.5,
+            "upper_bound": 3.0,
+            "semantic_description": "Amplification factor for upward_rank × remaining_work interaction under tight slack.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_sensitivity",
+            "initial_value": 0.74,
+            "lower_bound": 0.1,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight applied to normalized incremental energy only when slack is non-negative.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "duration_robustness",
+            "initial_value": 0.54,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight for joint slack-uncertainty gating of duration impact.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "wait_saturation_time",
+            "initial_value": 43.45,
+            "lower_bound": 0.1,
+            "upper_bound": 100.0,
+            "semantic_description": "Time scale for bounded starvation relief: longer wait → diminishing return.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "work_leverage_threshold",
+            "initial_value": 1367361.19,
+            "lower_bound": 100.0,
+            "upper_bound": 1e8,
+            "semantic_description": "Remaining work magnitude above which task is deprioritized unless urgent.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "slack_negative_threshold",
+            "initial_value": -0.027,
+            "lower_bound": -2.0,
+            "upper_bound": 0.0,
+            "semantic_description": "Normalized slack threshold to activate critical path coupling.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "slack_positive_gate",
+            "initial_value": -0.11,
+            "lower_bound": -1.0,
+            "upper_bound": 0.0,
+            "semantic_description": "Normalized slack threshold below which uncertainty coupling activates.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "uncertainty_activation_threshold",
+            "initial_value": 0.86,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Normalized uncertainty threshold to activate duration-uncertainty coupling.",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Mutated priority rule: replaces additive feasibility guard with conditional risk-gated priority inversion;
+    replaces arctan wait benefit with bounded linear saturation; replaces isolated rank amplification with
+    upward_rank × remaining_work interaction under joint slack-uncertainty gating; removes redundant parameters;
+    uses per-feature mean-abs scaling for stability; applies energy sensitivity only in safe region."""
+    eps = PARAMS["epsilon"]
+    N = len(slack)
+    
+    # Stable mean-abs normalization (more robust than median/MAD for small N)
+    def mean_abs_normalize(x):
+        x = np.asarray(x, dtype=float)
+        center = np.mean(x)
+        spread = np.mean(np.abs(x - center)) + eps
+        return (x - center) / (spread + eps)
+
+    norm_slack = mean_abs_normalize(slack)
+    norm_energy = mean_abs_normalize(min_incremental_energy)
+    norm_duration = mean_abs_normalize(min_exec_time + min_comm_time)
+    norm_rank = mean_abs_normalize(upward_rank)
+    norm_work = mean_abs_normalize(remaining_work)
+    norm_wait = mean_abs_normalize(ready_wait_time)
+    norm_uncert = mean_abs_normalize(uncertainty)
+
+    # --- Slack risk: smooth sigmoid-based urgency (bounded, monotonic, avoids exponent instability)
+    # Maps slack ∈ ℝ → risk ∈ [0, 1], with steep rise near zero and asymptotic behavior
+    risk_slope = 1.0 / (np.abs(np.median(slack)) + eps)
+    slack_risk_score = 1.0 / (1.0 + np.exp(-risk_slope * slack))
+
+    # --- Critical path leverage: upward_rank × remaining_work interaction, gated by joint slack/uncertainty
+    # Only active when both slack is critically tight AND uncertainty is high → targets high-leverage bottlenecks
+    critical_gate = np.where(
+        (norm_slack < PARAMS["slack_negative_threshold"]) & 
+        (norm_uncert > PARAMS["uncertainty_activation_threshold"]), 
+        1.0, 0.0
+    )
+    critical_leverage = norm_rank * norm_work * critical_gate * PARAMS["criticality_scale"]
+
+    # --- Uncertainty-conditioned duration penalty: only penalize duration when slack is tight AND uncertainty high
+    dur_uncert_gate = np.where(
+        (norm_slack < PARAMS["slack_positive_gate"]) & 
+        (norm_uncert > PARAMS["uncertainty_activation_threshold"]), 
+        1.0, 0.0
+    )
+    dur_uncert_penalty = norm_duration * dur_uncert_gate * PARAMS["duration_robustness"]
+
+    # --- Bounded starvation relief: linear saturation up to wait_saturation_time, then flat
+    wait_benefit = np.clip(ready_wait_time / (PARAMS["wait_saturation_time"] + eps), 0.0, 1.0)
+
+    # --- Conditional energy minimization: apply energy sensitivity only when slack >= 0 (safe region)
+    # Avoids over-penalizing energy on already-risky tasks — DDL feasibility dominates
+    energy_weight = np.where(slack >= 0, PARAMS["energy_sensitivity"], 0.0)
+    energy_contribution = energy_weight * norm_energy
+
+    # --- Work suppression: soft sigmoid suppression for large remaining_work, unconditionally applied
+    work_ratio = remaining_work / (PARAMS["work_leverage_threshold"] + eps)
+    work_suppression = 1.0 / (1.0 + np.exp(work_ratio - 1.0))  # Centered at threshold
+
+    # --- Final score: smaller = higher priority
+    # Order of terms reflects lexicographic priority: risk > critical path > duration > anti-starvation > energy > work
+    score = (
+        slack_risk_score                              # Primary deadline risk signal (0→1)
+        + dur_uncert_penalty                          # Penalty only under joint risk
+        - critical_leverage                           # Boost critical-path leverage (reduces score)
+        - wait_benefit                                # Anti-starvation boost (reduces score)
+        + energy_contribution                         # Energy minimization only in safe zone
+        + work_suppression                            # Suppress large-work tasks (adds cost)
+    )
+
+    # Ensure finite output, shape (N,), no NaN/inf
+    score = np.nan_to_num(score, nan=0.0, posinf=np.finfo(float).max, neginf=-np.finfo(float).max)
+    return score
+```

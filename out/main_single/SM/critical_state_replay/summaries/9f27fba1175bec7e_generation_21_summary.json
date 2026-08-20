@@ -1,0 +1,212 @@
+{
+  "archive_hash": "cdd7ce19ae977264ccb0d3e3b4b4d201336dc4e57bc2e2df88dad96beb6eae23",
+  "archive_version": "critical_state_archive_v1",
+  "cross_generation_failure_patterns": [
+    {
+      "confidence": "high",
+      "coverage_sufficient_count": 1,
+      "failure_count": 3,
+      "failure_generations": [
+        11,
+        19,
+        20,
+        21
+      ],
+      "generation_count": 4,
+      "minimum_verified_coverage": 0.4,
+      "risk_category": "CRITICAL_PATH_STARVATION",
+      "scenario_count": 1,
+      "seed_count": 1,
+      "state_ids": [
+        "ad227456f0b63e17eaa334afc0f7accd7b3befe59e3b950b4ed7d54997975fd5",
+        "901254baeba89ce2bc977523a7253dcc6129b3030f0ef396acc8941e302d4626",
+        "6d5670252378da32ebde9b8775cc09a9ae12058a17429571507de99b55214311"
+      ],
+      "structure_count": 4
+    }
+  ],
+  "failure_by_risk_category": {
+    "COUNTERFACTUAL_DOMINATED_CHOICE": 14,
+    "CRITICAL_PATH_STARVATION": 3
+  },
+  "failure_by_scenario": {
+    "SM": 17
+  },
+  "failure_by_workflow_type": {
+    "Ligo": 1,
+    "Montage": 3,
+    "Sipht": 13
+  },
+  "frozen_rule_hash": "05ae61210e0a1298cd389e5017d3bcb171f01b5a68b3be2681673ccb0c6161ee",
+  "generation": 21,
+  "hard_state_failure_patterns": [
+    {
+      "confidence": "low",
+      "coverage_sufficient_count": 0,
+      "failure_count": 14,
+      "generation_count": 1,
+      "minimum_verified_coverage": 0.1,
+      "risk_category": "COUNTERFACTUAL_DOMINATED_CHOICE",
+      "scenario_count": 0,
+      "seed_count": 0,
+      "state_ids": [
+        "f865cac58ec5c3780e7e19f1920d2b8ceebfac8cd5ff6dde93d5879944c07d43",
+        "64703eb29fe7210655fb73309c8fd2dabf34acb86aee287dd70c8f7afd7688b1",
+        "b46162cfdc3133dc55f34bb9780db6eb56fe93245292ac3529bd82caa699c6d0",
+        "64c8af77411bc79c9cb71f44b21bdc0af6814500385b0853d0d9d7fb0dfe9239",
+        "1fdb0b888e0c9d7121791d9a44c68f36907f6f9afdb3ebcabc061258ea135de4",
+        "55b6f25e234bfcea077a523a09cccec344b8f4788a7f80a4976d3cba183d9191",
+        "cd34c42f4f1c0f20f50777b1778a4353b919ecec502698a0b56ee3bac7b13ec3",
+        "91f7b46e798cad77e6a9b1c4fa66495467ebdd9c9226aff672b9cca4c77bc78f"
+      ],
+      "structure_count": 1
+    },
+    {
+      "confidence": "high",
+      "coverage_sufficient_count": 1,
+      "failure_count": 3,
+      "generation_count": 4,
+      "minimum_verified_coverage": 0.4,
+      "risk_category": "CRITICAL_PATH_STARVATION",
+      "scenario_count": 1,
+      "seed_count": 1,
+      "state_ids": [
+        "ad227456f0b63e17eaa334afc0f7accd7b3befe59e3b950b4ed7d54997975fd5",
+        "901254baeba89ce2bc977523a7253dcc6129b3030f0ef396acc8941e302d4626",
+        "6d5670252378da32ebde9b8775cc09a9ae12058a17429571507de99b55214311"
+      ],
+      "structure_count": 4
+    }
+  ],
+  "high_confidence_structural_actions": [
+    {
+      "action": "add_upward_rank_remaining_work_interaction",
+      "evidence_state_ids": [
+        "901254baeba89ce2bc977523a7253dcc6129b3030f0ef396acc8941e302d4626"
+      ],
+      "failure_count": 1,
+      "risk_category": "CRITICAL_PATH_STARVATION"
+    }
+  ],
+  "limitations": [
+    "feature-level replay is a deterministic stress test, not a full dynamic simulation",
+    "unverified and partial outcomes are never counted as success or failure",
+    "energy is inspected only after DDL ordering is not worse",
+    "16 verified failures were excluded from structural-action confidence because candidate coverage was below 0.500"
+  ],
+  "medium_confidence_actions": [],
+  "repeated_historical_error_count": 17,
+  "replay_config_hash": "c3841a34f9f2373a99a06556b87563d876d4dff95ef6b9daa49a02f67c1ca7dc",
+  "replayed_state_count": 40,
+  "representative_failures": [
+    {
+      "coverage_sufficient": false,
+      "dominated_task_ranks": {
+        "224": 1
+      },
+      "preferred_task_ranks": {
+        "219": 2,
+        "228": 9
+      },
+      "risk_category": "COUNTERFACTUAL_DOMINATED_CHOICE",
+      "scenario_id": "SM",
+      "selected_task_id": 224,
+      "state_id": "f865cac58ec5c3780e7e19f1920d2b8ceebfac8cd5ff6dde93d5879944c07d43",
+      "verified_coverage": 0.3333333333333333,
+      "workflow_type": "Sipht"
+    },
+    {
+      "coverage_sufficient": false,
+      "dominated_task_ranks": {
+        "303": 1
+      },
+      "preferred_task_ranks": {
+        "301": 3
+      },
+      "risk_category": "CRITICAL_PATH_STARVATION",
+      "scenario_id": "SM",
+      "selected_task_id": 303,
+      "state_id": "ad227456f0b63e17eaa334afc0f7accd7b3befe59e3b950b4ed7d54997975fd5",
+      "verified_coverage": 0.4,
+      "workflow_type": "Ligo"
+    },
+    {
+      "coverage_sufficient": true,
+      "dominated_task_ranks": {
+        "119": 1
+      },
+      "preferred_task_ranks": {
+        "117": 4
+      },
+      "risk_category": "CRITICAL_PATH_STARVATION",
+      "scenario_id": "SM",
+      "selected_task_id": 119,
+      "state_id": "901254baeba89ce2bc977523a7253dcc6129b3030f0ef396acc8941e302d4626",
+      "verified_coverage": 0.5,
+      "workflow_type": "Montage"
+    },
+    {
+      "coverage_sufficient": false,
+      "dominated_task_ranks": {
+        "110": 1
+      },
+      "preferred_task_ranks": {
+        "111": 3
+      },
+      "risk_category": "CRITICAL_PATH_STARVATION",
+      "scenario_id": "SM",
+      "selected_task_id": 110,
+      "state_id": "6d5670252378da32ebde9b8775cc09a9ae12058a17429571507de99b55214311",
+      "verified_coverage": 0.4,
+      "workflow_type": "Montage"
+    },
+    {
+      "coverage_sufficient": false,
+      "dominated_task_ranks": {
+        "225": 1
+      },
+      "preferred_task_ranks": {
+        "228": 16,
+        "232": 2
+      },
+      "risk_category": "COUNTERFACTUAL_DOMINATED_CHOICE",
+      "scenario_id": "SM",
+      "selected_task_id": 225,
+      "state_id": "64703eb29fe7210655fb73309c8fd2dabf34acb86aee287dd70c8f7afd7688b1",
+      "verified_coverage": 0.1875,
+      "workflow_type": "Sipht"
+    }
+  ],
+  "representative_successes": [
+    {
+      "risk_category": "COUNTERFACTUAL_DOMINATED_CHOICE",
+      "scenario_id": "SM",
+      "selected_task_id": 135,
+      "state_id": "ee1264cb7bd49b62392e00ba060e88b2446ed7d34ded4a3c42972cf538eba8fc"
+    },
+    {
+      "risk_category": "CRITICAL_PATH_STARVATION",
+      "scenario_id": "SM",
+      "selected_task_id": 154,
+      "state_id": "60bd3405f168b9237d54cb89ca7fc3e1318fe991e039c1028528dae02c3ff3b3"
+    },
+    {
+      "risk_category": "CRITICAL_PATH_STARVATION",
+      "scenario_id": "SM",
+      "selected_task_id": 358,
+      "state_id": "a83ebb45678ee74f1da76e5241532fccc84a6be34a7e8ab82e191cc9db05b862"
+    }
+  ],
+  "resolved_state_regressions": [],
+  "structure_hash": "9f27fba1175bec7e65120fa582bcba351aa2def946faa1f57bb6b3b6bf72dcce",
+  "success_by_risk_category": {
+    "COUNTERFACTUAL_DOMINATED_CHOICE": 6,
+    "CRITICAL_PATH_STARVATION": 13
+  },
+  "summary_hash": "73a5863d5db7ce8cad68b39ba912cd705ef3df636923aa564a8abd78cb3aeefa",
+  "unverified_state_count": 4,
+  "used_test_seed": false,
+  "verified_failure_count": 17,
+  "verified_state_count": 36,
+  "verified_success_count": 19
+}

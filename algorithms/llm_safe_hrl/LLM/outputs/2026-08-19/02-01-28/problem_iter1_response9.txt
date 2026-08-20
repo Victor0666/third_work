@@ -1,0 +1,188 @@
+```python
+import numpy as np
+
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 0.001,
+            "lower_bound": 1e-6,
+            "upper_bound": 0.1,
+            "semantic_description": "Numerical guard for safe normalization and division.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "slack_penalty_scale",
+            "initial_value": 5.0,
+            "lower_bound": 1.0,
+            "upper_bound": 12.0,
+            "semantic_description": "Amplifies priority penalty when slack < 0; steepens deadline risk response.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "slack_sigmoid_k",
+            "initial_value": 0.8,
+            "lower_bound": 0.1,
+            "upper_bound": 3.0,
+            "semantic_description": "Steepness of sigmoid transition around zero slack (soft deadline boundary).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_norm_power",
+            "initial_value": 0.7,
+            "lower_bound": 0.3,
+            "upper_bound": 1.2,
+            "semantic_description": "Exponent for robust energy-based ranking: higher → less sensitive to outliers.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "duration_uncertainty_interaction",
+            "initial_value": 0.6,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Strength of coupling between duration uncertainty and communication time.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "rank_energy_tradeoff",
+            "initial_value": 0.4,
+            "lower_bound": 0.0,
+            "upper_bound": 1.0,
+            "semantic_description": "Blends upward_rank importance with marginal energy cost via convex interpolation.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "wait_decay_rate",
+            "initial_value": 0.05,
+            "lower_bound": 0.0,
+            "upper_bound": 0.3,
+            "semantic_description": "Controls how fast waiting-time priority saturates (avoids over-dominance at high wait).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "uncertainty_slack_gate",
+            "initial_value": 0.9,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Modulates uncertainty influence only when slack is critically low (negative or near-zero).",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Novel priority rule emphasizing deadline risk gating, robust normalization,
+    and conditional tradeoffs — avoids linear dominance while preserving feasibility-first logic.
+    
+    Key innovations:
+      - Uses *sigmoid-gated slack penalty*: strong monotonic push for negative slack,
+        smooth transition near zero, no hard thresholds.
+      - Replaces linear normalize() with *robust Lp-normalization* (tunable power) for energy/duration,
+        reducing outlier sensitivity.
+      - Introduces *uncertainty-slack interaction gate*: uncertainty only amplifies priority
+        when slack ≤ 0, avoiding spurious early promotion of uncertain-but-safe tasks.
+      - Blends upward_rank and energy via *convex tradeoff*, preventing rank from overwhelming
+        energy minimization in feasible regions.
+      - Applies *saturating exponential wait bonus* (not linear) to avoid starvation without biasing long queues.
+      - All operations are finite, epsilon-guarded, and deterministic.
+    """
+    eps = PARAMS["epsilon"]
+    finfo = np.finfo(float)
+    eps_safe = max(eps, finfo.tiny)
+
+    # --- Robust Lp-normalization (p = energy_norm_power) ---
+    def lp_normalize(x, p=1.0):
+        x = np.asarray(x, dtype=float)
+        norm = np.power(np.mean(np.power(np.abs(x), p) + eps_safe), 1.0 / p)
+        return x / (norm + eps_safe)
+
+    # --- Slack: sigmoid penalty for lateness risk, zero-centered, bounded ---
+    # Sigmoid centered at 0: outputs ~0.5 at slack=0, →1 as slack→-∞, →0 as slack→+∞
+    # Then scaled to emphasize urgency: negative slack gets large positive score (bad → high priority means lower score? No — remember: smaller = better)
+    # So we invert: use -sigmoid(slack) so that negative slack → more negative → lower score → higher priority
+    slack_centered = slack
+    sigmoid_slack = 1.0 / (1.0 + np.exp(-PARAMS["slack_sigmoid_k"] * slack_centered))
+    # Map: slack << 0 → sigmoid ≈ 1 → -sigmoid ≈ -1 → strong priority boost
+    #       slack >> 0 → sigmoid ≈ 0 → -sigmoid ≈ 0 → neutral
+    slack_score = -sigmoid_slack  # smaller = better → negative values help
+    # Add sharp penalty if slack is deeply negative (exponential-like but bounded)
+    deep_lateness = np.where(slack < 0, 
+                            PARAMS["slack_penalty_scale"] * (1.0 - np.exp(slack / (np.abs(slack) + eps_safe))), 
+                            0.0)
+    slack_score = slack_score + deep_lateness  # still smaller = better
+
+    # --- Energy: robust normalized marginal energy, raised to tunable power for emphasis ---
+    energy_norm = lp_normalize(min_incremental_energy, p=PARAMS["energy_norm_power"])
+    # Prefer low energy → keep as-is (smaller energy → smaller score)
+    energy_score = energy_norm
+
+    # --- Duration: exec + comm, but modulated by uncertainty when slack is tight ---
+    duration_base = min_exec_time + min_comm_time
+    duration_norm = lp_normalize(duration_base, p=1.0)
+    # Only amplify duration impact if slack is critical AND uncertainty is high
+    slack_critical_mask = (slack <= 0).astype(float)
+    uncertainty_gate = slack_critical_mask * np.tanh(uncertainty)  # [0,1] bounded
+    duration_score = duration_norm * (1.0 + PARAMS["duration_uncertainty_interaction"] * uncertainty_gate)
+
+    # --- Upward rank & energy tradeoff: convex blend → prevents rank from overriding energy in slack-safe region
+    # When slack > 0: favor energy more; when slack ≤ 0: favor rank more
+    alpha = np.clip(0.5 + 0.5 * (1.0 - sigmoid_slack), 0.1, 0.9)  # α ∈ [0.1,0.9]
+    rank_norm = lp_normalize(upward_rank, p=1.0)
+    # Rank is *importance* → higher rank should mean higher priority → lower score ⇒ negate
+    rank_score = -alpha * rank_norm + (1.0 - alpha) * energy_score
+
+    # --- Remaining work: penalize large remaining work *only if slack is positive*
+    # Avoid delaying large subtrees unnecessarily when deadline is loose
+    work_norm = lp_normalize(remaining_work, p=1.0)
+    work_score = np.where(slack > 0, work_norm, 0.0)  # only apply when safe
+
+    # --- Ready wait time: saturating exponential bonus (anti-starvation, bounded)
+    # f(t) = 1 - exp(-λ t); ensures 0 ≤ bonus < 1, monotonic, avoids blowup
+    wait_bonus = 1.0 - np.exp(-PARAMS["wait_decay_rate"] * ready_wait_time)
+    # Bonus → improves priority → subtracts from score (since smaller = better)
+    wait_score = -wait_bonus
+
+    # --- Uncertainty-slack gate: only activates under deadline pressure
+    # Adds small penalty proportional to uncertainty *when slack ≤ 0*
+    unc_slack_penalty = np.where(slack <= 0,
+                                PARAMS["uncertainty_slack_gate"] * np.tanh(uncertainty),
+                                0.0)
+
+    # --- Assemble final score: all components contribute additively; smaller = better
+    score = (
+        slack_score
+        + energy_score
+        + duration_score
+        + rank_score
+        + work_score
+        + wait_score
+        + unc_slack_penalty
+    )
+
+    # Final safeguard: replace NaN/inf with finite values, preserve shape
+    score = np.nan_to_num(score, nan=0.0, posinf=np.finfo(float).max, neginf=-np.finfo(float).max)
+    # Ensure finite and bounded
+    score = np.clip(score, -1e6, 1e6)
+
+    return score
+```

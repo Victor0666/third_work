@@ -1,0 +1,121 @@
+{
+  "archive_hash": "3c6c4cd89e71d5610952f4e418772c9d166ed57f68497d30477b4f1400e265ba",
+  "archive_version": "critical_state_archive_v1",
+  "cross_generation_failure_patterns": [
+    {
+      "confidence": "high",
+      "coverage_sufficient_count": 1,
+      "failure_count": 1,
+      "failure_generations": [
+        12,
+        14,
+        15,
+        16
+      ],
+      "generation_count": 4,
+      "minimum_verified_coverage": 0.5,
+      "risk_category": "COUNTERFACTUAL_DOMINATED_CHOICE",
+      "scenario_count": 1,
+      "seed_count": 1,
+      "state_ids": [
+        "e1d680fed6684c34a90b0400145d3f6bdc6d6b12cf6070d423f30b5143084ed8"
+      ],
+      "structure_count": 22
+    }
+  ],
+  "failure_by_risk_category": {
+    "COUNTERFACTUAL_DOMINATED_CHOICE": 1
+  },
+  "failure_by_scenario": {
+    "SS": 1
+  },
+  "failure_by_workflow_type": {
+    "Ligo": 1
+  },
+  "frozen_rule_hash": "3b87befa3042efd6e6775a1b8acee0b6df89e6453b8150c036401cc5c68ea620",
+  "generation": 16,
+  "hard_state_failure_patterns": [
+    {
+      "confidence": "high",
+      "coverage_sufficient_count": 1,
+      "failure_count": 1,
+      "generation_count": 4,
+      "minimum_verified_coverage": 0.5,
+      "risk_category": "COUNTERFACTUAL_DOMINATED_CHOICE",
+      "scenario_count": 1,
+      "seed_count": 1,
+      "state_ids": [
+        "e1d680fed6684c34a90b0400145d3f6bdc6d6b12cf6070d423f30b5143084ed8"
+      ],
+      "structure_count": 22
+    }
+  ],
+  "high_confidence_structural_actions": [
+    {
+      "action": "add_conditional_ddl_protection_gate",
+      "evidence_state_ids": [
+        "e1d680fed6684c34a90b0400145d3f6bdc6d6b12cf6070d423f30b5143084ed8"
+      ],
+      "failure_count": 1,
+      "risk_category": "COUNTERFACTUAL_DOMINATED_CHOICE"
+    }
+  ],
+  "limitations": [
+    "feature-level replay is a deterministic stress test, not a full dynamic simulation",
+    "unverified and partial outcomes are never counted as success or failure",
+    "energy is inspected only after DDL ordering is not worse"
+  ],
+  "medium_confidence_actions": [],
+  "repeated_historical_error_count": 1,
+  "replay_config_hash": "952b98a5eec8a8cd62868c7c92c12c86eb85d2daef1bd52255f242e937a5abd3",
+  "replayed_state_count": 40,
+  "representative_failures": [
+    {
+      "coverage_sufficient": true,
+      "dominated_task_ranks": {
+        "249": 1
+      },
+      "preferred_task_ranks": {
+        "255": 3
+      },
+      "risk_category": "COUNTERFACTUAL_DOMINATED_CHOICE",
+      "scenario_id": "SS",
+      "selected_task_id": 249,
+      "state_id": "e1d680fed6684c34a90b0400145d3f6bdc6d6b12cf6070d423f30b5143084ed8",
+      "verified_coverage": 0.5,
+      "workflow_type": "Ligo"
+    }
+  ],
+  "representative_successes": [
+    {
+      "risk_category": "COUNTERFACTUAL_DOMINATED_CHOICE",
+      "scenario_id": "SS",
+      "selected_task_id": 351,
+      "state_id": "1fb9464e996f4f182b366ebeeb0f5403bc6783c7996dbeb6c2448400db2f62ba"
+    },
+    {
+      "risk_category": "COUNTERFACTUAL_DOMINATED_CHOICE",
+      "scenario_id": "SS",
+      "selected_task_id": 181,
+      "state_id": "b4a3dcfa9f37d8f8664e0fd71c97f68b67dc13ae6274d7a8dcccd62ca8d306c4"
+    },
+    {
+      "risk_category": "SUCCESSOR_RELEASE_BLOCKING",
+      "scenario_id": "SS",
+      "selected_task_id": 48,
+      "state_id": "ba118a45d7ad28140217f5fba637a83cdc8b69cefcc0a83fd203d583af3eb866"
+    }
+  ],
+  "resolved_state_regressions": [],
+  "structure_hash": "060a77324933a2279da5b5a422df62012ed196d89a19c2af9d21168206f9a14f",
+  "success_by_risk_category": {
+    "COUNTERFACTUAL_DOMINATED_CHOICE": 8,
+    "SUCCESSOR_RELEASE_BLOCKING": 1
+  },
+  "summary_hash": "ab73e3cb51f28a34ea17b5e7d1cf5a935dc9e3377d2e7c7a393fb283dde2b32d",
+  "unverified_state_count": 30,
+  "used_test_seed": false,
+  "verified_failure_count": 1,
+  "verified_state_count": 10,
+  "verified_success_count": 9
+}

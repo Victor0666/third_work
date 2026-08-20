@@ -1,0 +1,30 @@
+- Replaced fragile quantile-based normalization with robust max-abs normalization, eliminating outlier sensitivity and improving cross-scenario stability.  
+- Introduced `robust_slack_normalization` (power-law scaling) to softly compress extreme slack values while preserving sign-aware urgency—directly addressing repeated `successor_release_sharpness` fragility.  
+- Switched from sigmoid/steep-ramp DDL gates to a bounded piecewise-linear gate on robustly normalized slack, enabling smoother, more interpretable feasibility transitions near deadline boundaries.
+- Replaced fragile quantile-based normalization with robust max-abs normalization, eliminating outlier sensitivity and improving cross-scenario stability.  
+- Introduced `robust_slack_normalization` (power-law) to softly suppress extreme slack values while preserving sign-aware urgency—directly addressing repeated `successor_release_sharpness` fragility.  
+- Switched from multiplicative uncertainty gating to dual-gated energy scoring (linear DDL gate × exponential slack decay), enabling smoother energy suppression under lateness risk without destabilizing feasibility.
+- Replaced fragile quantile-based normalization with robust max-abs normalization, eliminating outlier sensitivity and improving cross-scenario stability.  
+- Introduced `robust_slack_normalization` (power-law) to softly suppress extreme slack values while preserving sign-aware urgency—directly addressing repeated counterfactual DDL-risk misprioritization.  
+- Swapped unstable multiplicative bottleneck term (`rank * work * |slack|^{-sharpness}`) with bounded, monotonic `rank * work / (|robust_slk| + eps)`, resolving fragility flagged in `successor_release_sharpness` diagnostics.
+- Replace quantile-based normalization with max-abs normalization for robustness against outliers and improved cross-scenario stability.  
+- Introduce piecewise-linear DDL gate on robustly power-normalized slack to sharpen feasibility protection near deadline boundaries without sigmoid fragility.  
+- Add multiplicative slack-aware exponential decay to energy term to smoothly suppress energy optimization under lateness risk, aligning with physics-informed priority tradeoffs.
+- Replaced fragile quantile-based normalization with robust max-abs normalization, eliminating outlier-sensitive scaling and improving cross-seed stability.  
+- Introduced exponential `slack_aware_energy_decay` to smoothly suppress energy optimization under deadline risk—stronger than linear gating and validated by repeated counterfactual failures on high-latency tasks.  
+- Used piecewise-linear DDL gate on *robustly normalized slack*, enabling sharper, more interpretable feasibility transitions without sigmoid instability or boundary fragility.
+- Replaced brittle linear-ramp DDL gate with smooth sigmoid `ddl_protection_gate`, improving robustness near slack=0 and aligning with counterfactual evidence of “higher_ddl_risk_choice” failures.  
+- Introduced `slack_urgency_gain` to mildly deprioritize non-urgent tasks (positive slack), reducing energy-blind overcommitment while preserving DDL-first safety.  
+- Simplified duration-uncertainty coupling to bounded linear blend (`dur_norm + ratio * uncert_norm`), eliminating fragile power-law exponentiation that caused fragility in `successor_release_sharpness` and `duration_uncertainty_sensitivity`.
+- Replaced fragile quantile-based normalization with robust max-abs normalization, eliminating outlier sensitivity and improving cross-scenario stability.  
+- Introduced `robust_slack_normalization` (power-law) to softly suppress extreme slack values while preserving sign-aware urgency—directly addressing repeated `successor_release_sharpness` fragility.  
+- Switched from multiplicative uncertainty gating to bounded linear blend (`duration_uncertainty_ratio`), aligning with fuzzy deadline handling and reducing parameter brittleness.
+- Replaces unstable multiplicative host-load gating (V1) with bounded additive uncertainty penalty and power-law host proxy (V2), improving robustness to outliers.  
+- Introduces soft DDL feasibility gate centered at `ddl_feasibility_margin` with tunable steepness, enabling smoother transition from deadline-critical to energy-aware mode.  
+- Uses piecewise-robust uncertainty normalization—quantile-scaled below threshold, clipped above—to prevent distortion in duration-uncertainty blending.
+- Removed fragile host-load gating (6 parameters → 5), reducing overfitting and improving robustness across seeds/scenarios.  
+- Introduced `duration_uncertainty_ratio` for stable linear blending instead of unstable multiplicative uncertainty amplification.  
+- Prioritized successor-release interaction (`upward_rank * remaining_work * |slack|^{-sharpness}`) to sharpen critical-path focus under tight deadlines.
+- Replaces fragile multiplicative host-load gating with additive, bounded duration-uncertainty blend (`duration + ratio * clipped_uncert`) to prevent outlier suppression and improve physical interpretability.  
+- Introduces risk-aware slack penalty scaling (`1 + clipped_uncert`) *only* for negative slack, tightening DDL adherence under uncertainty without distorting positive-slack de-prioritization.  
+- Removes redundant dual gating (e.g., on bottleneck term) and simplifies the ddl_gate to a single sigmoid, reducing fragility and improving cross-seed robustness per parameter diagnostics.

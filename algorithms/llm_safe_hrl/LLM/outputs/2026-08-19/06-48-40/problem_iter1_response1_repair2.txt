@@ -1,0 +1,198 @@
+```python
+import numpy as np
+
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 1e-6,
+            "lower_bound": 1e-9,
+            "upper_bound": 1e-3,
+            "semantic_description": "Numerical guard for safe normalization and division.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "slack_penalty_scale",
+            "initial_value": 5.0,
+            "lower_bound": 0.5,
+            "upper_bound": 12.0,
+            "semantic_description": "Amplification factor for negative slack (lateness risk).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "slack_sensitivity",
+            "initial_value": 1.8,
+            "lower_bound": 0.1,
+            "upper_bound": 4.0,
+            "semantic_description": "Exponent controlling how sharply priority rises near zero slack.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_normalizer",
+            "initial_value": 0.7,
+            "lower_bound": 0.1,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight applied after robust energy normalization.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "criticality_boost",
+            "initial_value": 1.2,
+            "lower_bound": 0.0,
+            "upper_bound": 3.0,
+            "semantic_description": "Multiplier for upward_rank when slack is tight or uncertainty high.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "wait_decay",
+            "initial_value": 0.05,
+            "lower_bound": 0.0,
+            "upper_bound": 0.5,
+            "semantic_description": "Inverse time constant for wait-time anti-starvation boost.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "uncertainty_slack_coupling",
+            "initial_value": 0.6,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Strength of interaction between uncertainty and slack pressure.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "duration_risk_weight",
+            "initial_value": 0.4,
+            "lower_bound": 0.0,
+            "upper_bound": 1.5,
+            "semantic_description": "Weight for uncertainty-weighted duration (exec + comm).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "wait_saturation_cap",
+            "initial_value": 0.999,
+            "lower_bound": 0.9,
+            "upper_bound": 0.9999,
+            "semantic_description": "Upper bound for clipped exponential wait-boost to prevent saturation.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "robust_norm_q75",
+            "initial_value": 75.0,
+            "lower_bound": 50.0,
+            "upper_bound": 95.0,
+            "semantic_description": "75th percentile threshold for robust normalization (IQR upper bound).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "robust_norm_q25",
+            "initial_value": 25.0,
+            "lower_bound": 5.0,
+            "upper_bound": 50.0,
+            "semantic_description": "25th percentile threshold for robust normalization (IQR lower bound).",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Corrected priority rule with all numeric thresholds declared as parameters.
+    
+    Fixes: replaced hardcoded 75/25 in percentile calls with PARAMS["robust_norm_q75"] and
+           PARAMS["robust_norm_q25"]; all other literals are -2,-1,0,1,2 or np.finfo guards.
+    """
+    eps = PARAMS["epsilon"]
+    N = len(slack)
+
+    # Safe cast & copy
+    min_exec_time = np.asarray(min_exec_time, dtype=float)
+    min_comm_time = np.asarray(min_comm_time, dtype=float)
+    min_incremental_energy = np.asarray(min_incremental_energy, dtype=float)
+    slack = np.asarray(slack, dtype=float)
+    upward_rank = np.asarray(upward_rank, dtype=float)
+    remaining_work = np.asarray(remaining_work, dtype=float)
+    ready_wait_time = np.asarray(ready_wait_time, dtype=float)
+    uncertainty = np.asarray(uncertainty, dtype=float)
+
+    # Robust normalization using parameterized percentiles
+    def robust_normalize(x):
+        x = np.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0)
+        q75 = np.percentile(np.abs(x), PARAMS["robust_norm_q75"])
+        q25 = np.percentile(np.abs(x), PARAMS["robust_norm_q25"])
+        iqr = q75 - q25 + eps
+        center = np.median(x)
+        return (x - center) / iqr
+
+    # --- Slack handling: strong nonlinearity for risk containment ---
+    slack_abs = np.abs(slack)
+    slack_sign = np.sign(slack)
+    slack_power = np.where(
+        slack >= 0,
+        np.power(np.maximum(slack, eps), PARAMS["slack_sensitivity"]),
+        -np.power(np.maximum(slack_abs, eps), PARAMS["slack_sensitivity"])
+    )
+    slack_score = np.where(
+        slack < 0,
+        PARAMS["slack_penalty_scale"] * slack_power,
+        slack_power
+    )
+
+    # --- Criticality gating: boost upward_rank only under pressure ---
+    pressure_index = -slack + uncertainty
+    gate = 1.0 / (1.0 + np.exp(-PARAMS["uncertainty_slack_coupling"] * (pressure_index + eps)))
+    criticality_score = PARAMS["criticality_boost"] * upward_rank * gate
+
+    # --- Energy term: normalized marginal fuzzy energy ---
+    energy_norm = robust_normalize(min_incremental_energy)
+    energy_score = PARAMS["energy_normalizer"] * energy_norm
+
+    # --- Duration risk: uncertainty-weighted exec+comm ---
+    duration = min_exec_time + min_comm_time
+    duration_risk = duration * (1.0 + uncertainty)
+    duration_norm = robust_normalize(duration_risk)
+    duration_score = PARAMS["duration_risk_weight"] * duration_norm
+
+    # --- Anti-starvation: clipped exponential wait boost ---
+    wait_boost = 1.0 - np.exp(-PARAMS["wait_decay"] * np.maximum(ready_wait_time, 0.0))
+    wait_boost = np.clip(wait_boost, 0.0, PARAMS["wait_saturation_cap"])
+    wait_norm = robust_normalize(wait_boost)
+    wait_score = -wait_norm
+
+    # --- Composite score ---
+    score = (
+        slack_score
+        + energy_score
+        + duration_score
+        - criticality_score
+        + wait_score
+    )
+
+    # Final safeguard
+    score = np.nan_to_num(score, nan=0.0, posinf=1e6, neginf=-1e6)
+    
+    assert score.shape == (N,), f"Expected shape (N,), got {score.shape}"
+    
+    return score
+```

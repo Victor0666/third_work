@@ -1,0 +1,194 @@
+```python
+import numpy as np
+
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 0.001,
+            "lower_bound": 1e-7,
+            "upper_bound": 0.1,
+            "semantic_description": "Numerical guard for safe normalization and division.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "slack_risk_penalty",
+            "initial_value": 5.0,
+            "lower_bound": 0.5,
+            "upper_bound": 12.0,
+            "semantic_description": "Strong penalty multiplier for negative slack (deadline violation risk).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "slack_urgency_scale",
+            "initial_value": 1.8,
+            "lower_bound": 0.3,
+            "upper_bound": 4.0,
+            "semantic_description": "Nonlinear scaling exponent for positive slack urgency (diminishing returns).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_efficiency_gain",
+            "initial_value": 0.9,
+            "lower_bound": 0.1,
+            "upper_bound": 3.0,
+            "semantic_description": "Weight for energy savings: higher value favors lower marginal energy tasks.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "critical_path_leverage",
+            "initial_value": 1.2,
+            "lower_bound": 0.0,
+            "upper_bound": 5.0,
+            "semantic_description": "Amplification factor for upward_rank when slack is tight.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "starvation_relief",
+            "initial_value": 0.35,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Anti-starvation weight applied only after waiting beyond median ready time.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "uncertainty_sensitivity",
+            "initial_value": 0.6,
+            "lower_bound": 0.0,
+            "upper_bound": 3.0,
+            "semantic_description": "Modulates how much uncertainty amplifies slack-based urgency.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "duration_balance",
+            "initial_value": 0.4,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight for normalized (exec + comm) duration, scaled by remaining work.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "sigmoid_center_offset",
+            "initial_value": 1.0,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Offset controlling center of sigmoid gate for critical-path leverage.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "uncertainty_mod_cap",
+            "initial_value": 3.0,
+            "lower_bound": 1.0,
+            "upper_bound": 5.0,
+            "semantic_description": "Upper bound on uncertainty-modulation factor to prevent explosion.",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Corrected priority rule with all numeric constants declared in PARAMETER_SCHEMA.
+    
+    Fixes: replaced hidden literal 3.0 with PARAMS["uncertainty_mod_cap"],
+           replaced literal 1.0 in sigmoid with PARAMS["sigmoid_center_offset"],
+           uses only allowed literals (-2,-1,0,1,2) elsewhere.
+    """
+    eps = PARAMS["epsilon"]
+    N = len(min_exec_time)
+    
+    # Safe cast and copy to avoid mutation
+    exec_t = np.asarray(min_exec_time, dtype=float).copy()
+    comm_t = np.asarray(min_comm_time, dtype=float).copy()
+    energy = np.asarray(min_incremental_energy, dtype=float).copy()
+    slack_arr = np.asarray(slack, dtype=float).copy()
+    rank = np.asarray(upward_rank, dtype=float).copy()
+    work = np.asarray(remaining_work, dtype=float).copy()
+    wait = np.asarray(ready_wait_time, dtype=float).copy()
+    uncert = np.asarray(uncertainty, dtype=float).copy()
+    
+    # Robust L1-normalization
+    def l1_normalize(x):
+        x_abs = np.abs(x)
+        norm_denom = np.mean(x_abs) + eps
+        return x / norm_denom
+    
+    # Normalize base features
+    norm_energy = l1_normalize(energy)
+    norm_rank = l1_normalize(rank)
+    norm_work = l1_normalize(work)
+    norm_wait = l1_normalize(wait)
+    norm_uncert = l1_normalize(uncert)
+    
+    # Duration density: (exec + comm) / (work + eps)
+    duration = exec_t + comm_t
+    duration_density = duration / (work + eps)
+    norm_duration = l1_normalize(duration_density)
+    
+    # Slack processing: piecewise
+    slack_sign = np.sign(slack_arr)
+    slack_abs = np.abs(slack_arr)
+    neg_slack_penalty = np.where(slack_arr < 0, 
+                               -PARAMS["slack_risk_penalty"] * slack_abs, 
+                               0.0)
+    pos_slack_urgency = np.where(slack_arr > 0,
+                                (slack_abs ** PARAMS["slack_urgency_scale"]) / (slack_abs + eps),
+                                0.0)
+    raw_urgency = neg_slack_penalty + pos_slack_urgency
+    norm_urgency = l1_normalize(raw_urgency)
+    
+    # Critical-path leverage gate: sigmoid based on slack gap
+    median_slack = np.median(slack_arr)
+    std_slack = np.std(slack_arr) + eps
+    slack_gap = np.clip((median_slack - slack_arr) / std_slack, 0.0, 2.0)  # bounded to [0,2]
+    gate_leverage = 1.0 / (1.0 + np.exp(-slack_gap + PARAMS["sigmoid_center_offset"]))
+    leveraged_rank = gate_leverage * norm_rank
+    
+    # Starvation relief gate
+    median_wait = np.median(wait)
+    gate_starve = np.where(wait > median_wait,
+                          (wait - median_wait) / (np.maximum(np.std(wait), eps) + eps),
+                          0.0)
+    gate_starve = np.clip(gate_starve, 0.0, 1.0)
+    starve_bonus = -PARAMS["starvation_relief"] * gate_starve * norm_wait
+    
+    # Uncertainty-scaled urgency: capped multiplicative modulator
+    uncert_mod = np.clip(1.0 + PARAMS["uncertainty_sensitivity"] * norm_uncert,
+                        1.0, PARAMS["uncertainty_mod_cap"])
+    modulated_urgency = uncert_mod * norm_urgency
+    
+    # Final score: smaller = better
+    score = (
+        modulated_urgency
+        + PARAMS["energy_efficiency_gain"] * norm_energy
+        + PARAMS["duration_balance"] * norm_duration
+        - PARAMS["critical_path_leverage"] * leveraged_rank
+        + starve_bonus
+    )
+    
+    # Ensure finite output and shape (N,)
+    finfo = np.finfo(float)
+    score = np.nan_to_num(score, nan=0.0, posinf=finfo.max, neginf=finfo.min)
+    return score
+```

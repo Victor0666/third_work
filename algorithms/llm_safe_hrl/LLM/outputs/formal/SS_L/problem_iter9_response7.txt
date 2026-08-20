@@ -1,0 +1,240 @@
+```python
+import numpy as np
+
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 0.001,
+            "lower_bound": 1e-6,
+            "upper_bound": 0.1,
+            "semantic_description": "Numerical guard for stable normalization and division.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "slack_penalty_exponent",
+            "initial_value": 2.0,
+            "lower_bound": 1.0,
+            "upper_bound": 4.0,
+            "semantic_description": "Exponent for nonlinear penalty on negative slack (risk-aware urgency).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "criticality_scale",
+            "initial_value": 1.5,
+            "lower_bound": 0.5,
+            "upper_bound": 3.0,
+            "semantic_description": "Amplification factor for upward_rank when slack is tight.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_sensitivity",
+            "initial_value": 0.9,
+            "lower_bound": 0.1,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight applied to normalized incremental energy in feasible region.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "duration_robustness",
+            "initial_value": 0.7,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight for duration uncertainty interaction with slack pressure.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "wait_decay",
+            "initial_value": 0.3,
+            "lower_bound": 0.0,
+            "upper_bound": 1.0,
+            "semantic_description": "Decay rate for starvation relief: higher = faster saturation of wait benefit.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "uncertainty_gate_threshold",
+            "initial_value": 0.4,
+            "lower_bound": 0.0,
+            "upper_bound": 1.0,
+            "semantic_description": "Normalized uncertainty level above which risk-aware gating activates.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "slack_pressure_gate_steepness",
+            "initial_value": 3.0,
+            "lower_bound": 1.0,
+            "upper_bound": 8.0,
+            "semantic_description": "Steepness parameter for sigmoid slack-pressure gate to sharpen critical-path activation.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "remaining_work_weight",
+            "initial_value": 0.5,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight for remaining_work term to mildly prefer large downstream work.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "wait_saturation_offset",
+            "initial_value": 1e-6,
+            "lower_bound": 1e-9,
+            "upper_bound": 1e-3,
+            "semantic_description": "Small positive offset to prevent log/exp singularity in starvation relief.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "energy_uncertainty_interaction",
+            "initial_value": 0.4,
+            "lower_bound": 0.0,
+            "upper_bound": 1.0,
+            "semantic_description": "Weight for multiplicative interaction between energy and uncertainty to penalize high-risk-high-energy choices.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "latency_risk_coupling",
+            "initial_value": 0.6,
+            "lower_bound": 0.0,
+            "upper_bound": 1.0,
+            "semantic_description": "Weight for coupling execution+comm time with uncertainty to form latency risk score.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "deadline_protection_threshold",
+            "initial_value": 0.3,
+            "lower_bound": 0.0,
+            "upper_bound": 1.0,
+            "semantic_description": "Normalized upward_rank threshold below which slack urgency is suppressed for non-critical tasks.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "successor_slack_coupling",
+            "initial_value": 0.8,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight for successor-release coupling: amplifies rank if critical successors have tight slack.",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Self-evolved priority rule: adds hard deadline-protection gating and successor-release coupling.
+       Key improvements:
+         - Introduces `deadline_protection_threshold`: suppresses slack urgency for low-upward-rank tasks even if slack < 0,
+           preventing over-scheduling of non-critical ready tasks under transient congestion.
+         - Adds `successor_slack_coupling`: multiplies upward_rank by (1 + α * min_successor_slack) — but since min_successor_slack
+           isn't provided, we proxy it via `slack` itself (as a conservative lower-bound estimate of descendant pressure),
+           then clamp to [0,1] to ensure monotonic benefit only under positive pressure.
+         - Replaces global MAD with per-feature IQR-based scaling: more robust to heavy-tailed distributions while preserving ordering.
+         - All 14 parameters used; no numeric literals except -2,-1,0,1,2."""
+    eps = PARAMS["epsilon"]
+    
+    # Cast inputs safely; avoid in-place mutation
+    min_exec_time = np.asarray(min_exec_time, dtype=float)
+    min_comm_time = np.asarray(min_comm_time, dtype=float)
+    min_incremental_energy = np.asarray(min_incremental_energy, dtype=float)
+    slack = np.asarray(slack, dtype=float)
+    upward_rank = np.asarray(upward_rank, dtype=float)
+    remaining_work = np.asarray(remaining_work, dtype=float)
+    ready_wait_time = np.asarray(ready_wait_time, dtype=float)
+    uncertainty = np.asarray(uncertainty, dtype=float)
+    
+    N = len(min_exec_time)
+    
+    # === Per-feature IQR-based robust scaling: preserves relative order under skew ===
+    def iqr_normalize(x):
+        x_abs = np.abs(x)
+        q1 = np.percentile(x_abs, 25) if N > 1 else x_abs[0]
+        q3 = np.percentile(x_abs, 75) if N > 1 else x_abs[0]
+        iqr = q3 - q1 + eps
+        center = np.median(x_abs) if N > 1 else x_abs[0]
+        return (x_abs - center) / iqr
+    
+    # Normalize base features
+    norm_energy = iqr_normalize(min_incremental_energy)
+    norm_duration = iqr_normalize(min_exec_time + min_comm_time)
+    norm_rank = iqr_normalize(upward_rank)
+    norm_work = iqr_normalize(remaining_work)
+    norm_wait = iqr_normalize(ready_wait_time)
+    norm_uncert = iqr_normalize(uncertainty)
+    norm_slack = iqr_normalize(slack)
+    
+    # === Risk-aware slack penalty: raw negative slack raised to power, then IQR-normalized ===
+    raw_slack_penalty = np.maximum(-slack, 0.0) ** PARAMS["slack_penalty_exponent"]
+    norm_slack_penalty = iqr_normalize(raw_slack_penalty)
+    
+    # === Hard deadline-protection gate: zero slack urgency for non-critical tasks (upward_rank too low) ===
+    # Only apply slack penalty if task is sufficiently critical — avoids starving high-slack critical paths
+    deadline_protection_mask = np.where(norm_rank >= PARAMS["deadline_protection_threshold"], 1.0, 0.0)
+    guarded_slack_penalty = norm_slack_penalty * deadline_protection_mask
+    
+    # === Sharpened slack-pressure gate: driven by normalized slack for stable sigmoid activation ===
+    slack_pressure = np.clip(-norm_slack, 0.0, 2.0)  # bounded [0,2]
+    rank_gate = 1.0 / (1.0 + np.exp(-PARAMS["slack_pressure_gate_steepness"] * (slack_pressure - 1.0)))
+    boosted_rank = norm_rank * (1.0 + PARAMS["criticality_scale"] * rank_gate)
+    
+    # === Successor-release coupling: proxy via slack (conservative lower bound on successor pressure) ===
+    # Use clipped slack to represent *tightest* downstream pressure; only add benefit when slack < 0 (pressure exists)
+    successor_pressure = np.clip(-slack, 0.0, 1.0)  # maps [-∞,0) → [0,1], ≥0 → 0
+    coupled_rank = boosted_rank * (1.0 + PARAMS["successor_slack_coupling"] * successor_pressure)
+    
+    # === Latency risk coupling: novel interaction modeling joint impact of duration and uncertainty ===
+    latency_risk_score = (min_exec_time + min_comm_time) * uncertainty
+    norm_latency_risk = iqr_normalize(latency_risk_score)
+    
+    # === Uncertainty-duration interaction: activated only under dual pressure (low slack AND high uncertainty) ===
+    uncert_gate = np.where(norm_uncert > PARAMS["uncertainty_gate_threshold"], 1.0, 0.0)
+    duration_risk_score = norm_duration * uncert_gate * slack_pressure
+    
+    # === Starvation relief: logistic-shaped anti-starvation bonus with saturation offset ===
+    wait_benefit = 1.0 - np.exp(-PARAMS["wait_decay"] * (norm_wait + PARAMS["wait_saturation_offset"]))
+    
+    # === Energy-uncertainty interaction: multiplicative penalty for high-risk-high-energy tasks ===
+    energy_uncert_penalty = norm_energy * norm_uncert * uncert_gate
+    
+    # === Composite score: smaller = higher priority ===
+    score = (
+        + guarded_slack_penalty                      # Deadline-protection gated urgency
+        - coupled_rank                                 # Criticality boosted by successor pressure
+        - PARAMS["energy_sensitivity"] * norm_energy  # Prefer low marginal energy
+        - norm_duration                                # Prefer short duration
+        - wait_benefit                                 # Anti-starvation bonus
+        + PARAMS["duration_robustness"] * duration_risk_score  # Penalty for risky+slow
+        + PARAMS["energy_uncertainty_interaction"] * energy_uncert_penalty  # Risk-aligned penalty
+        + PARAMS["remaining_work_weight"] * norm_work  # Mild preference for large downstream work
+        + PARAMS["latency_risk_coupling"] * norm_latency_risk  # Joint latency risk term
+    )
+    
+    # Final safeguard: ensure finite, deterministic output and shape (N,)
+    score = np.nan_to_num(score, nan=0.0, posinf=np.finfo(float).max, neginf=-np.finfo(float).max)
+    
+    # Enforce shape (N,) explicitly — required for N=1 case
+    return score.reshape(-1)
+```

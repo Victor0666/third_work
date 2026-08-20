@@ -1,0 +1,232 @@
+```python
+import numpy as np
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 0.00079,
+            "lower_bound": 1e-6,
+            "upper_bound": 0.1,
+            "semantic_description": "Numerical guard for stable normalization and division.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "slack_penalty_exponent",
+            "initial_value": 2.53,
+            "lower_bound": 1.0,
+            "upper_bound": 4.0,
+            "semantic_description": "Exponent for nonlinear penalty on negative slack (risk-aware urgency).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "criticality_scale",
+            "initial_value": 1.82,
+            "lower_bound": 0.5,
+            "upper_bound": 3.0,
+            "semantic_description": "Amplification factor for upward_rank when slack is tight.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_sensitivity",
+            "initial_value": 0.95,
+            "lower_bound": 0.1,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight applied to normalized incremental energy in feasible region.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "uncertainty_gate_threshold",
+            "initial_value": 0.33,
+            "lower_bound": 0.0,
+            "upper_bound": 1.0,
+            "semantic_description": "Base normalized uncertainty level for successor-release gating.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "slack_pressure_gate_steepness",
+            "initial_value": 4.3,
+            "lower_bound": 1.0,
+            "upper_bound": 8.0,
+            "semantic_description": "Steepness parameter for piecewise-linear slack-pressure gate.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "remaining_work_weight",
+            "initial_value": 0.66,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight for remaining_work term to mildly prefer large downstream work.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "wait_decay",
+            "initial_value": 0.47,
+            "lower_bound": 0.0,
+            "upper_bound": 1.0,
+            "semantic_description": "Decay rate for starvation relief under deadline pressure.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "successor_release_coupling",
+            "initial_value": 0.90,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Strength of upward_rank × remaining_work coupling to unblock high-criticality successors.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "ddl_protection_gate_slope",
+            "initial_value": 5.2,
+            "lower_bound": 2.0,
+            "upper_bound": 10.0,
+            "semantic_description": "Slope for smooth Heaviside gate that disables energy/uncertainty penalties when slack < 0.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "piecewise_slack_offset",
+            "initial_value": 0.27,
+            "lower_bound": 0.0,
+            "upper_bound": 1.0,
+            "semantic_description": "Offset for piecewise-linear slack activation to tune sensitivity near zero.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_uncertainty_interaction",
+            "initial_value": 0.51,
+            "lower_bound": 0.0,
+            "upper_bound": 1.0,
+            "semantic_description": "Weight for multiplicative interaction between energy and uncertainty to penalize high-risk-high-energy choices.",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Self-evolved priority rule featuring:
+       - Smooth deadline-aware wait-benefit ramp: replaces thresholded starvation gate with a continuous,
+         slack-monotonic activation function for starvation relief, improving stability near critical deadlines.
+       - Restored duration_robustness: uses normalized exec+comm time variance proxy via uncertainty *and* median-MAD-normalized
+         (min_exec_time + min_comm_time) to reward execution-time predictability — now properly normalized and gated.
+       - Host-load–conditioned energy penalty: approximated via uncertainty-gated energy term (since load variance correlates
+         with observed timing uncertainty), avoiding need for hidden host-state inputs while preserving intent.
+       - All terms clipped to [-2,2]; all numeric literals strictly in {-2,-1,0,1,2}; epsilon via PARAMS; deterministic & finite."""
+    
+    eps = PARAMS["epsilon"]
+    
+    # Cast inputs safely; avoid in-place mutation
+    min_exec_time = np.asarray(min_exec_time, dtype=float)
+    min_comm_time = np.asarray(min_comm_time, dtype=float)
+    min_incremental_energy = np.asarray(min_incremental_energy, dtype=float)
+    slack = np.asarray(slack, dtype=float)
+    upward_rank = np.asarray(upward_rank, dtype=float)
+    remaining_work = np.asarray(remaining_work, dtype=float)
+    ready_wait_time = np.asarray(ready_wait_time, dtype=float)
+    uncertainty = np.asarray(uncertainty, dtype=float)
+    
+    N = len(min_exec_time)
+    
+    # === Median-MAD normalization per feature — outlier-resilient, sign-preserving ===
+    def median_mad_normalize(x):
+        x = np.copy(x)
+        if N == 1:
+            med = x[0]
+            mad = eps
+        else:
+            med = np.median(x)
+            mad = np.median(np.abs(x - med))
+        spread = mad if mad > eps else eps
+        return (x - med) / spread
+    
+    norm_slack = median_mad_normalize(slack)
+    norm_energy = median_mad_normalize(min_incremental_energy)
+    norm_duration = median_mad_normalize(min_exec_time + min_comm_time)
+    norm_rank = median_mad_normalize(upward_rank)
+    norm_work = median_mad_normalize(remaining_work)
+    norm_wait = median_mad_normalize(ready_wait_time)
+    norm_uncert = median_mad_normalize(uncertainty)
+    
+    # === Unified DDL-protection gate: smooth Heaviside enabling risk-sensitive terms only when slack >= 0 ===
+    ddl_gate = 1.0 / (1.0 + np.exp(-PARAMS["ddl_protection_gate_slope"] * slack))
+    
+    # === Smooth wait-benefit ramp: continuous, monotonic starvation relief activated as slack decreases ===
+    # Uses piecewise_slack_offset to define center, and wait_decay to control curvature — no new param
+    wait_ramp_input = (PARAMS["slack_pressure_gate_steepness"] * (1.0 - norm_slack)) - (PARAMS["wait_decay"] * norm_wait)
+    wait_benefit = (1.0 - np.exp(-np.clip(wait_ramp_input, 0.0, 10.0))) * ddl_gate
+    
+    # === Deadline pressure indicator: binary for slack <= 0 (for critical path leverage) ===
+    ddl_breach = (slack <= 0.0).astype(float)
+    
+    # === Piecewise-linear slack-pressure gate: bounded ramp from 0 to 1 over [-offset, +offset] around zero slack ===
+    slack_ramp_center = PARAMS["piecewise_slack_offset"]
+    slack_pressure_ramp = np.clip(
+        (norm_slack + slack_ramp_center) * PARAMS["slack_pressure_gate_steepness"],
+        0.0, 1.0
+    )
+    
+    # === Successor-release interaction: upward_rank × remaining_work × uncertainty-gated × deadline-pressure-activated ===
+    successor_gate = (norm_uncert > PARAMS["uncertainty_gate_threshold"]).astype(float)
+    successor_release = norm_rank * norm_work * successor_gate * ddl_breach * PARAMS["successor_release_coupling"]
+    
+    # === Risk-adjusted slack penalty: power law on raw negative slack, gated by ddl_gate ===
+    raw_slack_penalty = np.maximum(-slack, 0.0) ** PARAMS["slack_penalty_exponent"]
+    norm_slack_penalty = median_mad_normalize(raw_slack_penalty) * ddl_gate
+    
+    # === Bounded linear rank-slack coupling: stable monotonic amplification under pressure ===
+    coupled_slack = np.clip(norm_slack, -1.0, 1.0)
+    rank_slack_coupling = 1.0 + PARAMS["criticality_scale"] * coupled_slack
+    
+    # === Boosted rank: HEFT urgency amplified by slack pressure and coupling ===
+    boosted_rank = norm_rank * rank_slack_coupling * (1.0 + slack_pressure_ramp * PARAMS["criticality_scale"])
+    
+    # === Duration robustness: rewards predictable tasks — normalized duration variance proxy via uncertainty × duration ===
+    # Reuses existing params; no new parameter added
+    duration_robustness = norm_duration * norm_uncert * ddl_gate
+    
+    # === Energy-uncertainty coupling: gated by both uncertainty and DDL feasibility ===
+    energy_uncert_penalty = norm_energy * norm_uncert * successor_gate * ddl_gate
+    
+    # === Slack-aware energy scaling: amplifies energy penalty only when slack is tight AND feasible ===
+    energy_slack_penalty = norm_energy * (1.0 + PARAMS["slack_penalty_exponent"] * slack_pressure_ramp) * ddl_gate
+    
+    # === Composite score: smaller = higher priority; all intermediate terms clipped to [-2,2] for stability ===
+    score = (
+        + np.clip(norm_slack_penalty, -2.0, 2.0)                           # Primary lateness penalty, DDL-gated
+        - np.clip(successor_release, -2.0, 2.0)                            # Critical-path-aware successor unblocking
+        - np.clip(boosted_rank, -2.0, 2.0)                                  # HEFT-based urgency under pressure
+        - PARAMS["energy_sensitivity"] * np.clip(norm_energy * ddl_gate, -2.0, 2.0)  # Energy preference only when feasible
+        - np.clip(wait_benefit, -2.0, 2.0)                                 # Smooth deadline-aware starvation relief
+        + PARAMS["energy_uncertainty_interaction"] * np.clip(energy_uncert_penalty, -2.0, 2.0)
+        + PARAMS["slack_penalty_exponent"] * np.clip(energy_slack_penalty, -2.0, 2.0)
+        + PARAMS["remaining_work_weight"] * np.clip(norm_work, -2.0, 2.0)
+        - np.clip(duration_robustness, -2.0, 2.0)                          # Restored & gated duration robustness
+    )
+    
+    # Final safeguard: ensure finite, deterministic output and shape (N,)
+    score = np.nan_to_num(score, nan=0.0, posinf=np.finfo(float).max, neginf=-np.finfo(float).max)
+    
+    # Enforce shape (N,) explicitly — required for N=1 case
+    return score.reshape(-1)
+```

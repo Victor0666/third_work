@@ -1,0 +1,166 @@
+```python
+import numpy as np
+
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 1e-6,
+            "lower_bound": 1e-9,
+            "upper_bound": 1e-3,
+            "semantic_description": "Numerical guard for safe normalization and division.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "slack_risk_penalty",
+            "initial_value": 5.0,
+            "lower_bound": 0.5,
+            "upper_bound": 12.0,
+            "semantic_description": "Penalty multiplier for negative slack (lateness risk).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "slack_urgency_gain",
+            "initial_value": 2.5,
+            "lower_bound": 0.1,
+            "upper_bound": 6.0,
+            "semantic_description": "Gain for positive slack near zero (soft urgency).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_scale",
+            "initial_value": 1.2,
+            "lower_bound": 0.05,
+            "upper_bound": 5.0,
+            "semantic_description": "Weight for normalized incremental energy, scaled to match urgency.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "criticality_weight",
+            "initial_value": 0.9,
+            "lower_bound": 0.0,
+            "upper_bound": 4.0,
+            "semantic_description": "Weight for upward rank, attenuated when slack is highly negative.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "wait_bias",
+            "initial_value": 0.15,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Anti-starvation linear boost per second of ready wait time.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "uncertainty_slack_coupling",
+            "initial_value": 0.7,
+            "lower_bound": 0.0,
+            "upper_bound": 3.0,
+            "semantic_description": "Strength of uncertainty modulation on slack-based urgency.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "duration_fairness",
+            "initial_value": 0.4,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight for duration-normalized fairness: avoids bias toward only short or only long tasks.",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Novel priority rule emphasizing deadline risk containment, robust criticality gating,
+    and balanced energy-duration tradeoff. Uses piecewise slack sensitivity and
+    uncertainty-coupled urgency. Smaller score = higher priority."""
+    eps = PARAMS["epsilon"]
+    
+    # Robust normalization: use median absolute deviation (MAD) + epsilon for stability
+    def robust_normalize(x):
+        x = np.asarray(x, dtype=float)
+        center = np.median(x)
+        scale = np.median(np.abs(x - center)) + eps
+        return (x - center) / scale
+    
+    # Duration: execution + communication, normalized robustly
+    duration = min_exec_time + min_comm_time
+    norm_duration = robust_normalize(duration)
+    
+    # Energy: already risk-adjusted; normalize to same scale
+    norm_energy = robust_normalize(min_incremental_energy)
+    
+    # Slack: piecewise — strong penalty for negative, soft gain near zero, flat beyond margin
+    slack = np.asarray(slack, dtype=float)
+    slack_abs = np.abs(slack)
+    # Identify critical region: |slack| < 10% of median positive slack (or fallback)
+    pos_slack = slack[slack > eps]
+    slack_margin = np.median(pos_slack) if len(pos_slack) > 0 else 1.0
+    slack_margin = max(slack_margin, eps)
+    
+    # Piecewise slack urgency: steep penalty for slack < 0, quadratic ramp from 0 to slack_margin, then flat
+    slack_urgency = np.zeros_like(slack)
+    slack_urgency[slack < 0] = PARAMS["slack_risk_penalty"] * (-slack[slack < 0])
+    in_soft_region = (slack >= 0) & (slack <= slack_margin)
+    slack_urgency[in_soft_region] = PARAMS["slack_urgency_gain"] * (slack[in_soft_region] / (slack_margin + eps)) ** 2
+    # Outside soft region: no urgency boost (flat zero)
+    
+    # Criticality gate: attenuate upward_rank importance when slack is severely negative
+    # (i.e., when deadline violation is inevitable on current path — prioritize recovery over criticality)
+    norm_upward = robust_normalize(upward_rank)
+    slack_penalty_factor = np.clip(1.0 - (np.maximum(-slack, 0) / (slack_margin + eps)), 0.0, 1.0)
+    gated_criticality = norm_upward * slack_penalty_factor
+    
+    # Uncertainty coupling: amplify urgency only where both slack pressure and uncertainty are high
+    norm_uncertainty = robust_normalize(uncertainty)
+    coupled_urgency = (
+        np.maximum(slack_urgency, 0) *
+        np.clip(norm_uncertainty, 0.0, 2.0) *
+        PARAMS["uncertainty_slack_coupling"]
+    )
+    
+    # Wait bias: linear anti-starvation term, bounded by robust scale
+    wait_bias = PARAMS["wait_bias"] * ready_wait_time
+    wait_bias_norm = robust_normalize(wait_bias)  # ensures comparable magnitude
+    
+    # Duration fairness term: encourages diversity — penalize both extremes via tanh-scaled deviation
+    # Avoids bias toward only shortest/longest tasks; promotes balanced resource load
+    fairness_term = np.tanh(norm_duration) * norm_duration  # smooth odd function, bounded [-1,1]
+    
+    # Final score: sum of all contributions
+    # Note: smaller score = higher priority → we construct urgency as positive contribution to priority *penalty*
+    # So high urgency (e.g., negative slack) should *lower* score → thus we subtract urgency terms
+    score = (
+        PARAMS["energy_scale"] * norm_energy
+        + PARAMS["duration_fairness"] * fairness_term
+        - slack_urgency
+        - coupled_urgency
+        - PARAMS["criticality_weight"] * gated_criticality
+        - wait_bias_norm
+    )
+    
+    # Final safeguard: ensure finite, replace NaN/inf with median (preserves ordering)
+    score = np.nan_to_num(score, nan=np.median(score), posinf=np.max(score), neginf=np.min(score))
+    
+    return score
+```

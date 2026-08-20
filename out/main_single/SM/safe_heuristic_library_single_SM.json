@@ -1,0 +1,587 @@
+{
+  "schema_version": 3,
+  "manifest_id": "cews_safe_manager_heuristics_resM",
+  "manifest_version": "2026-07-31.resource-domain.v1",
+  "manifest_revision": 1,
+  "trusted_source_root": "generated",
+  "trusted_report_root": "admission_reports",
+  "admission_scope": {
+    "mode": "resource_task_domain",
+    "resource_code": "M",
+    "allowed_scenarios": [
+      "SM",
+      "MM",
+      "LM"
+    ],
+    "workflow_families": [
+      "CyberShake",
+      "Epigenomics",
+      "Ligo",
+      "Montage",
+      "Sipht"
+    ]
+  },
+  "admission_policy": {
+    "policy_version": "hrl_resS_50wf_3seed_v2",
+    "required_evaluation_seeds": [
+      1,
+      2,
+      3
+    ],
+    "minimum_evaluation_seed_count": 3,
+    "deadline_violation_rate_max": 0.0,
+    "max_fuzzy_lateness_max": 0.0,
+    "feasible_seed_rate_min": 1.0,
+    "fuzzy_energy_score_max": 330000.0,
+    "objective_cv_max": 0.05
+  },
+  "llm_rules": [
+    {
+      "record_schema_version": 2,
+      "heuristic_id": "seevo_cma_d71f6517ce62_3c3d3012749f",
+      "display_name": "SeEvo CMA frozen rule seevo_cma_d71f6517ce62_3c3d3012749f",
+      "source_kind": "seevo_generated",
+      "source_file": "generated/candidate_iter9_ind7.py",
+      "source_hash": "3c3d3012749f8ec32e38cfc9b4af0a588ba640e3224d3e904efed6d65b8ddaf1",
+      "seevo_iteration": 9,
+      "seevo_individual": 7,
+      "function_name": "get_task_priority_v2",
+      "version": "seevo.iter9.ind7.src3c3d3012749f.evalb45d0bcfbf29.policy-hrl_resS_50wf_3seed_v2",
+      "evaluation_report_file": "admission_reports/candidate_iter9_ind7_admission.jsonl",
+      "evaluation_report_hash": "db06ca5bd3f6d024ff3822cacd241b39af69c8aa0f5389439e45945a7eab7395",
+      "evaluation_result_sha256": "b45d0bcfbf294ef67366edd19f77f6bb592b679f3ff7e9006a7625337940f007",
+      "evaluation_config_sha256": "652ea089dc586ce32592830827816199e77a4ee8020e3e049035ce91e2d8fb5d",
+      "structure_hash": "d71f6517ce627b3f087ecd352205fa27caacbc91366b2b31b13343d73bc46718",
+      "parameter_schema_hash": "52db11f1568990e3673e5458170f978f6785a1a1432f47b95b1c623715e4196b",
+      "best_parameter_hash": "5b31094e6dc529e77014ce716a64cc6bed1cee15486d9c2d7d148056311ebfd1",
+      "optimizer_config_hash": "99f0307f8c00d3227b19c28340c4bbb3a1af02960262750afd225cb76d5560ee",
+      "optimizer_seed": 0,
+      "frozen_rule_hash": "3c3d3012749f8ec32e38cfc9b4af0a588ba640e3224d3e904efed6d65b8ddaf1",
+      "parameter_diagnostics_hash": "412bbe207817f20ff778b806311ff1bbaeeb9c6880371b56d98862422138ae12",
+      "parameter_training_seeds": [
+        1,
+        2,
+        3
+      ],
+      "parameter_validation_seeds": [
+        4,
+        5
+      ],
+      "counterfactual_feedback_hash": "228568adbc0659c19289e32fc3368dfdbf2b2e02eb570558bf11b3ab13ea2523",
+      "counterfactual_config_hash": "7894ecb15be99436500b229437ce01a1b2dba64ba2a1cc134c7d7c3bf4ffec14",
+      "counterfactual_analyzed_seeds": [
+        1,
+        2
+      ],
+      "counterfactual_analyzed_scenarios": [
+        "SM"
+      ],
+      "counterfactual_used_test_seed": false,
+      "counterfactual_metadata_present": true,
+      "critical_state_archive_hash": "d7d9ae4ba1eadef2f813f86339a11f0ccb49238bda2cad4da266260061802de3",
+      "critical_state_replay_hash": "c1e1a094297262c3097ada9ede62a07c7c660bd8780b1b642022030dd01d39b5",
+      "critical_state_config_hash": "c3841a34f9f2373a99a06556b87563d876d4dff95ef6b9daa49a02f67c1ca7dc",
+      "critical_state_replayed_state_count": 40,
+      "critical_state_verified_failure_count": 17,
+      "critical_state_used_test_seed": false,
+      "critical_state_archive_version": "critical_state_archive_v1",
+      "critical_state_metadata_present": true,
+      "optimization_metadata_present": true,
+      "evaluation_context": {
+        "workflow_families": [
+          "CyberShake",
+          "Epigenomics",
+          "Ligo",
+          "Montage",
+          "Sipht"
+        ],
+        "workflows_per_instance": 50,
+        "arrival_lambda": 0.03,
+        "horizon": 1000000000.0,
+        "deadline_mode": "cache_fcfs",
+        "deadline_alpha_small": 2.0,
+        "deadline_alpha_large": 3.0,
+        "deadline_alpha_small_prob": 0.8,
+        "num_cloud_hosts": 3,
+        "num_edge_hosts": 3,
+        "cloud_vms_per_host": [
+          9,
+          9,
+          8
+        ],
+        "edge_vms_per_host": [
+          8,
+          8,
+          8
+        ],
+        "cloud_pc_tiers": [
+          1.0,
+          2.0,
+          4.0,
+          6.0,
+          8.0
+        ],
+        "edge_pc_tiers": [
+          1.0,
+          2.0,
+          4.0,
+          6.0,
+          8.0
+        ],
+        "cloud_bw_tiers": [
+          1000.0,
+          2000.0,
+          4000.0,
+          6000.0,
+          8000.0
+        ],
+        "edge_bw_tiers": [
+          1000.0,
+          2000.0,
+          4000.0,
+          6000.0,
+          8000.0
+        ],
+        "fuzzy_delta1": 0.75,
+        "fuzzy_delta2": 1.2,
+        "fuzzy_deadline_eta": 0.95,
+        "fuzzy_energy_lambda": 1.0,
+        "fuzzy_resource_seed_mode": "episode_seed",
+        "fuzzy_resource_seed_offset": 0
+      },
+      "admission_scope": {
+        "mode": "resource_task_domain",
+        "resource_code": "M",
+        "allowed_scenarios": [
+          "SM",
+          "MM",
+          "LM"
+        ],
+        "workflow_families": [
+          "CyberShake",
+          "Epigenomics",
+          "Ligo",
+          "Montage",
+          "Sipht"
+        ]
+      },
+      "admission_policy": {
+        "policy_version": "hrl_resS_50wf_3seed_v2",
+        "required_evaluation_seeds": [
+          1,
+          2,
+          3
+        ],
+        "minimum_evaluation_seed_count": 3,
+        "deadline_violation_rate_max": 0.0,
+        "max_fuzzy_lateness_max": 0.0,
+        "feasible_seed_rate_min": 1.0,
+        "fuzzy_energy_score_max": 330000.0,
+        "objective_cv_max": 0.05
+      },
+      "evaluation_seeds": [
+        1,
+        2,
+        3
+      ],
+      "fuzzy_energy_mean": 318703.98245546455,
+      "fuzzy_energy_std": 8290.704823316577,
+      "fuzzy_energy_score": 326994.68727878114,
+      "deadline_violation_rate": 0.0,
+      "max_fuzzy_lateness": 0.0,
+      "feasible_seed_rate": 1.0,
+      "objective_cv_across_seeds": 0.051360017900486464,
+      "all_evaluation_seeds_completed": true,
+      "evaluation": {
+        "all_evaluation_seeds_completed": true,
+        "assigned_tasks": 1380.3333333333333,
+        "average_lateness": 0.0,
+        "average_workflow_completion_time": 700.9173132955538,
+        "best_parameter_hash": "5b31094e6dc529e77014ce716a64cc6bed1cee15486d9c2d7d148056311ebfd1",
+        "best_parameters": {
+          "bottleneck_proximity_weight": 1.7252053272093026,
+          "criticality_weight": 1.8313778135609176,
+          "ddl_protection_gate": 0.2897868095167577,
+          "duration_uncertainty_ratio": 1.1616375855767784,
+          "energy_efficiency_weight": 0.5959002649494712,
+          "epsilon": 0.01702121771347029,
+          "finfo_max_scale": 24140.47447220485,
+          "robust_normalization_quantile": 0.8993144341355488,
+          "slack_risk_penalty": 5.826517135353852,
+          "slack_urgency_gain": 1.5381545753173718,
+          "successor_release_sharpness": 1.2500874404344722,
+          "wait_ramp_threshold": 24.999602603945103
+        },
+        "candidate_sha256": "3c3d3012749f8ec32e38cfc9b4af0a588ba640e3224d3e904efed6d65b8ddaf1",
+        "candidate_source_file": "candidate_iter9_ind7.py",
+        "cloud_task_ratio": 0.7064089284469146,
+        "completed_seed_count": 3,
+        "completed_workflows": 50.0,
+        "constraint_feasible": true,
+        "constraint_secondary_violation": 0.0,
+        "constraint_violation": 0.0,
+        "counterfactual_analyzed_scenarios": [
+          "SM"
+        ],
+        "counterfactual_analyzed_seeds": [
+          1,
+          2
+        ],
+        "counterfactual_config_hash": "7894ecb15be99436500b229437ce01a1b2dba64ba2a1cc134c7d7c3bf4ffec14",
+        "counterfactual_feedback_hash": "228568adbc0659c19289e32fc3368dfdbf2b2e02eb570558bf11b3ab13ea2523",
+        "counterfactual_trace_manifest": "/root/lyz/third_work/out/main_single/SM/generated/counterfactual_feedback/manifests/d71f6517ce627b3f_iter9_manifest.json",
+        "counterfactual_used_test_seed": false,
+        "critical_state_archive_hash": "d7d9ae4ba1eadef2f813f86339a11f0ccb49238bda2cad4da266260061802de3",
+        "critical_state_archive_version": "critical_state_archive_v1",
+        "critical_state_config_hash": "c3841a34f9f2373a99a06556b87563d876d4dff95ef6b9daa49a02f67c1ca7dc",
+        "critical_state_replay_hash": "c1e1a094297262c3097ada9ede62a07c7c660bd8780b1b642022030dd01d39b5",
+        "critical_state_replayed_state_count": 40,
+        "critical_state_used_test_seed": false,
+        "critical_state_verified_failure_count": 17,
+        "deadline_violation_rate": 0.0,
+        "edge_task_ratio": 0.29359107155308545,
+        "energy": 326994.68727878114,
+        "energy_modal": 311821.34984189016,
+        "energy_optimistic": 301243.6547378428,
+        "energy_pessimistic": 349929.5754002351,
+        "evaluation_config_sha256": "652ea089dc586ce32592830827816199e77a4ee8020e3e049035ce91e2d8fb5d",
+        "evaluation_context_count": 3,
+        "evaluation_seed_count": 3,
+        "evaluator_protocol_version": 2,
+        "experiment_protocol": {
+          "final_test_seeds": [
+            201,
+            202,
+            203,
+            204,
+            205,
+            206,
+            207,
+            208,
+            209,
+            210,
+            211,
+            212,
+            213,
+            214,
+            215,
+            216,
+            217,
+            218,
+            219,
+            220,
+            221,
+            222,
+            223,
+            224,
+            225,
+            226,
+            227,
+            228,
+            229,
+            230
+          ],
+          "llm_train_seeds": [
+            1,
+            2,
+            3
+          ],
+          "llm_validation_seeds": [
+            4,
+            5
+          ],
+          "protocol": "single",
+          "safe_hrl_train_seeds": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "safe_hrl_validation_seeds": [
+            101,
+            102,
+            103
+          ],
+          "source_scenario": "SM",
+          "test_scenarios": [
+            "SM",
+            "MM",
+            "LM"
+          ],
+          "training_scenarios": [
+            "SM"
+          ]
+        },
+        "feasible_seed_rate": 1.0,
+        "frozen_rule_hash": "3c3d3012749f8ec32e38cfc9b4af0a588ba640e3224d3e904efed6d65b8ddaf1",
+        "function_name": "get_task_priority_v2",
+        "fuzzy_energy_std_mean_across_seeds": 8290.704823316577,
+        "fuzzy_total_energy_lower": 301243.6547378428,
+        "fuzzy_total_energy_mean": 318703.98245546455,
+        "fuzzy_total_energy_modal": 311821.34984189016,
+        "fuzzy_total_energy_score": 326994.68727878114,
+        "fuzzy_total_energy_std": 8290.704823316577,
+        "fuzzy_total_energy_upper": 349929.5754002351,
+        "interface_valid": true,
+        "makespan": 2379.5957497925665,
+        "max_deadline_violation_rate_across_seeds": 0.0,
+        "max_fuzzy_lateness": 0.0,
+        "max_lateness": 0.0,
+        "max_modal_lateness": 0.0,
+        "modal_average_lateness": 0.0,
+        "modal_deadline_violation_rate": 0.0,
+        "modal_energy": 311821.34984189016,
+        "modal_total_lateness": 0.0,
+        "objective": 326994.68727878114,
+        "objective_cv_across_seeds": 0.051360017900486464,
+        "objective_max_across_seeds": 350745.49163797894,
+        "objective_std_across_seeds": 16794.452992002174,
+        "optimizer_config_hash": "99f0307f8c00d3227b19c28340c4bbb3a1af02960262750afd225cb76d5560ee",
+        "optimizer_seed": 0,
+        "parameter_diagnostics_hash": "412bbe207817f20ff778b806311ff1bbaeeb9c6880371b56d98862422138ae12",
+        "parameter_schema_hash": "52db11f1568990e3673e5458170f978f6785a1a1432f47b95b1c623715e4196b",
+        "per_seed_metrics": [
+          {
+            "completed_workflows": 50,
+            "constraint_feasible": true,
+            "deadline_violation_rate": 0.0,
+            "fuzzy_total_energy_score": 350745.49163797894,
+            "max_fuzzy_lateness": 0.0,
+            "objective": 350745.49163797894,
+            "scenario_id": "multi:SM",
+            "scenario_metrics": [
+              {
+                "completed_workflows": 50,
+                "constraint_feasible": true,
+                "deadline_violation_rate": 0.0,
+                "fuzzy_total_energy_mean": 341446.96465532825,
+                "fuzzy_total_energy_score": 350745.49163797894,
+                "fuzzy_total_energy_std": 9298.526982650674,
+                "max_fuzzy_lateness": 0.0,
+                "objective": 350745.49163797894,
+                "scenario_id": "SM",
+                "seed": 1,
+                "total_lateness": 0.0
+              }
+            ],
+            "seed": 1,
+            "total_lateness": 0.0
+          },
+          {
+            "completed_workflows": 50,
+            "constraint_feasible": true,
+            "deadline_violation_rate": 0.0,
+            "fuzzy_total_energy_score": 315048.95609243773,
+            "max_fuzzy_lateness": 0.0,
+            "objective": 315048.95609243773,
+            "scenario_id": "multi:SM",
+            "scenario_metrics": [
+              {
+                "completed_workflows": 50,
+                "constraint_feasible": true,
+                "deadline_violation_rate": 0.0,
+                "fuzzy_total_energy_mean": 307296.4121485587,
+                "fuzzy_total_energy_score": 315048.95609243773,
+                "fuzzy_total_energy_std": 7752.543943879,
+                "max_fuzzy_lateness": 0.0,
+                "objective": 315048.95609243773,
+                "scenario_id": "SM",
+                "seed": 2,
+                "total_lateness": 0.0
+              }
+            ],
+            "seed": 2,
+            "total_lateness": 0.0
+          },
+          {
+            "completed_workflows": 50,
+            "constraint_feasible": true,
+            "deadline_violation_rate": 0.0,
+            "fuzzy_total_energy_score": 315189.61410592677,
+            "max_fuzzy_lateness": 0.0,
+            "objective": 315189.61410592677,
+            "scenario_id": "multi:SM",
+            "scenario_metrics": [
+              {
+                "completed_workflows": 50,
+                "constraint_feasible": true,
+                "deadline_violation_rate": 0.0,
+                "fuzzy_total_energy_mean": 307368.57056250673,
+                "fuzzy_total_energy_score": 315189.61410592677,
+                "fuzzy_total_energy_std": 7821.043543420056,
+                "max_fuzzy_lateness": 0.0,
+                "objective": 315189.61410592677,
+                "scenario_id": "SM",
+                "seed": 3,
+                "total_lateness": 0.0
+              }
+            ],
+            "seed": 3,
+            "total_lateness": 0.0
+          }
+        ],
+        "scenario_id": "SM",
+        "scenario_ids": [
+          "SM"
+        ],
+        "seeds": [
+          1,
+          2,
+          3
+        ],
+        "structure_hash": "d71f6517ce627b3f087ecd352205fa27caacbc91366b2b31b13343d73bc46718",
+        "total_energy": 311821.34984189016,
+        "total_lateness": 0.0,
+        "training_seeds": [
+          1,
+          2,
+          3
+        ],
+        "validation_seeds": [
+          4,
+          5
+        ],
+        "violation_rate": 0.0
+      },
+      "admitted": false,
+      "admission_status": "rejected",
+      "passed_final_admission": false,
+      "rejection_reasons": [
+        "objective_stability_below_requirement"
+      ],
+      "rejection_reason": "objective_stability_below_requirement",
+      "experiment_protocol": {
+        "protocol": "single",
+        "source_scenario": "SM",
+        "training_scenarios": [
+          "SM"
+        ],
+        "test_scenarios": [
+          "SM",
+          "MM",
+          "LM"
+        ],
+        "llm_train_seeds": [
+          1,
+          2,
+          3
+        ],
+        "llm_validation_seeds": [
+          4,
+          5
+        ],
+        "safe_hrl_train_seeds": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "safe_hrl_validation_seeds": [
+          101,
+          102,
+          103
+        ],
+        "final_test_seeds": [
+          201,
+          202,
+          203,
+          204,
+          205,
+          206,
+          207,
+          208,
+          209,
+          210,
+          211,
+          212,
+          213,
+          214,
+          215,
+          216,
+          217,
+          218,
+          219,
+          220,
+          221,
+          222,
+          223,
+          224,
+          225,
+          226,
+          227,
+          228,
+          229,
+          230
+        ]
+      },
+      "record_sha256": "464a73c4b5dca2cb702e7e6617b3e5f66cdb7acdeef9a30d9cebf688cfe21f73"
+    }
+  ],
+  "experiment_protocol": {
+    "protocol": "single",
+    "source_scenario": "SM",
+    "training_scenarios": [
+      "SM"
+    ],
+    "test_scenarios": [
+      "SM",
+      "MM",
+      "LM"
+    ],
+    "llm_train_seeds": [
+      1,
+      2,
+      3
+    ],
+    "llm_validation_seeds": [
+      4,
+      5
+    ],
+    "safe_hrl_train_seeds": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "safe_hrl_validation_seeds": [
+      101,
+      102,
+      103
+    ],
+    "final_test_seeds": [
+      201,
+      202,
+      203,
+      204,
+      205,
+      206,
+      207,
+      208,
+      209,
+      210,
+      211,
+      212,
+      213,
+      214,
+      215,
+      216,
+      217,
+      218,
+      219,
+      220,
+      221,
+      222,
+      223,
+      224,
+      225,
+      226,
+      227,
+      228,
+      229,
+      230
+    ]
+  }
+}

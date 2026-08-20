@@ -1,0 +1,5 @@
+- Prioritize hard deadline feasibility via binary `slack <= 0` gating, validated across ≥18 decisions, 2 seeds, and 1 scenario.  
+- Enforce critical-path awareness through conditional DDL protection (`slack <= 0 OR slack_margin_ratio < threshold`) and normalized successor-release interaction (`norm_work * norm_rank`), supported by ≥4 high-confidence DDL-diagnostic cases and replay-confirmed failures.  
+- Gate energy/uncertainty penalties strictly by deadline pressure (e.g., `ddl_urgent == 1`), eliminating avoidable marginal cost—evidenced by ≥12 counterfactuals of “avoidable_marginal_energy”.  
+- Use median-MAD normalization with N-aware fallback for outlier resilience and sign-preserving scaling across sparse ready sets.  
+- Replace unstable tanh couplings with bounded linear interpolation (`clip(norm_slack, -1, 1)`) for monotonic, numerically stable criticality boosting under tight slack.

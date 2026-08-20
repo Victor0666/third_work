@@ -1,0 +1,185 @@
+```python
+import numpy as np
+
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 1e-6,
+            "lower_bound": 1e-9,
+            "upper_bound": 1e-3,
+            "semantic_description": "Numerical guard for safe normalization and division.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "slack_penalty_scale",
+            "initial_value": 5.0,
+            "lower_bound": 0.5,
+            "upper_bound": 12.0,
+            "semantic_description": "Amplifies priority penalty when slack < 0; steep but bounded.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "slack_sensitivity",
+            "initial_value": 1.8,
+            "lower_bound": 0.1,
+            "upper_bound": 4.0,
+            "semantic_description": "Exponent for soft thresholding of slack near zero; controls transition sharpness.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_norm_scale",
+            "initial_value": 1.2,
+            "lower_bound": 0.1,
+            "upper_bound": 3.0,
+            "semantic_description": "Relative scaling factor for energy term after robust normalization.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "criticality_weight",
+            "initial_value": 0.7,
+            "lower_bound": 0.0,
+            "upper_bound": 2.5,
+            "semantic_description": "Weight for upward_rank, modulated by slack pressure.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "wait_urgency",
+            "initial_value": 0.15,
+            "lower_bound": 0.0,
+            "upper_bound": 1.0,
+            "semantic_description": "Anti-starvation boost per second waited, capped and normalized.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "uncertainty_slack_coupling",
+            "initial_value": 0.6,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Strength of uncertainty-driven slack tightening (e.g., tighter margin under high risk).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "duration_balance",
+            "initial_value": 0.4,
+            "lower_bound": 0.0,
+            "upper_bound": 1.5,
+            "semantic_description": "Balances exec vs comm time via ratio-aware penalty to avoid bias toward either extreme.",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Novel priority rule: deadline-risk gating + criticality modulation + anti-starvation + robust normalization.
+    
+    Key innovations:
+    - Uses smooth, bounded slack penalty: sign(slack) * |slack|^sl_sens with explicit negative dominance
+    - Upward rank is gated by slack pressure: higher weight when slack is tight or negative
+    - Energy term uses IQR-based normalization (more robust than mean-abs)
+    - Duration balance penalizes *imbalance* between exec and comm time (not sum), preventing bias
+    - Wait urgency is capped and scaled per-task via relative waiting percentile (not raw seconds)
+    - Uncertainty tightens effective slack via multiplicative coupling, not additive penalty
+    - All divisions guarded; no inf/nan; deterministic; shape (N,) guaranteed.
+    """
+    eps = PARAMS["epsilon"]
+    
+    # Cast to float64 and ensure no in-place mutation
+    N = len(min_exec_time)
+    exec_t = np.asarray(min_exec_time, dtype=np.float64)
+    comm_t = np.asarray(min_comm_time, dtype=np.float64)
+    energy = np.asarray(min_incremental_energy, dtype=np.float64)
+    slack_t = np.asarray(slack, dtype=np.float64)
+    rank = np.asarray(upward_rank, dtype=np.float64)
+    work = np.asarray(remaining_work, dtype=np.float64)
+    wait = np.asarray(ready_wait_time, dtype=np.float64)
+    u = np.asarray(uncertainty, dtype=np.float64)
+    
+    # === Robust normalization: use IQR-based scale to resist outliers ===
+    def robust_normalize(x):
+        x = np.copy(x)
+        q75 = np.percentile(np.abs(x), 75)
+        q25 = np.percentile(np.abs(x), 25)
+        iqr = q75 - q25 + eps
+        center = np.median(x)
+        return (x - center) / iqr
+    
+    # === Slack: dominant risk signal — use signed power with bounded sensitivity ===
+    # Negative slack gets strong penalty; near-zero slack gets amplified transition
+    abs_slack = np.abs(slack_t)
+    # Avoid 0^0 and domain issues: clamp exponent and base
+    sens = np.clip(PARAMS["slack_sensitivity"], 0.1, 4.0)
+    slack_norm = np.sign(slack_t) * np.power(np.maximum(abs_slack, eps), sens)
+    # Apply penalty scale only to negative/low-slack region via smooth gate
+    slack_gate = np.tanh(-slack_t / (np.maximum(np.abs(slack_t).mean(), eps) + eps))
+    slack_score = PARAMS["slack_penalty_scale"] * slack_gate * np.abs(slack_norm)
+    
+    # === Criticality modulation: upward rank matters more when slack is tight ===
+    # Use sigmoid of (-slack) to upweight rank under pressure
+    pressure_sig = 1.0 / (1.0 + np.exp(slack_t / (np.maximum(np.abs(slack_t).mean(), eps) + eps)))
+    rank_score = -PARAMS["criticality_weight"] * pressure_sig * robust_normalize(rank)
+    
+    # === Energy: risk-adjusted marginal cost — already fuzzy-mean+std, now robust-scaled ===
+    energy_score = PARAMS["energy_norm_scale"] * robust_normalize(energy)
+    
+    # === Duration balance: penalize imbalance between exec and comm, not total duration ===
+    # Ratio-based penalty: |exec/(exec+comm) - 0.5| → high when one dominates
+    total_dur = exec_t + comm_t + eps
+    imbalance = np.abs(exec_t / total_dur - 0.5)
+    duration_score = PARAMS["duration_balance"] * robust_normalize(imbalance)
+    
+    # === Anti-starvation: capped, percentile-normalized wait boost ===
+    if N > 1:
+        wait_pct = (wait - np.min(wait)) / (np.max(wait) - np.min(wait) + eps)
+    else:
+        wait_pct = np.zeros_like(wait)
+    # Cap at 0.95 to prevent dominance; scale linearly
+    capped_wait = np.minimum(wait_pct, 0.95)
+    wait_score = -PARAMS["wait_urgency"] * capped_wait
+    
+    # === Uncertainty-slack coupling: tighten effective slack margin under high uncertainty ===
+    # Effective slack shrinks multiplicatively: slack_eff = slack * (1 - u_coupling * u)
+    u_coupling = np.clip(PARAMS["uncertainty_slack_coupling"], 0.0, 1.99)
+    effective_slack = slack_t * (1.0 - u_coupling * np.clip(u, 0.0, 0.99))
+    # Re-compute pressure sig on tightened slack for rank and slack_score consistency
+    eff_pressure_sig = 1.0 / (1.0 + np.exp(effective_slack / (np.maximum(np.abs(effective_slack).mean(), eps) + eps)))
+    # Recompute slack_score using effective_slack for coherence
+    eff_abs_slack = np.abs(effective_slack)
+    eff_slack_norm = np.sign(effective_slack) * np.power(np.maximum(eff_abs_slack, eps), sens)
+    eff_slack_gate = np.tanh(-effective_slack / (np.maximum(np.abs(effective_slack).mean(), eps) + eps))
+    slack_score = PARAMS["slack_penalty_scale"] * eff_slack_gate * np.abs(eff_slack_norm)
+    
+    # === Assemble final score: smaller = higher priority ===
+    score = (
+        slack_score
+        + energy_score
+        + duration_score
+        + rank_score
+        + wait_score
+    )
+    
+    # Final safeguard: replace NaN/inf with finite values, preserve shape
+    score = np.nan_to_num(score, nan=0.0, posinf=np.finfo(float).max, neginf=-np.finfo(float).max)
+    
+    return score
+```

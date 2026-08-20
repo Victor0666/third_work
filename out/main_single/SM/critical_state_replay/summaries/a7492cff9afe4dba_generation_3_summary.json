@@ -1,0 +1,125 @@
+{
+  "archive_hash": "5eb956c671fe2285a4306cd08ee987b06a780c29397d44052e0f94f00b3af19c",
+  "archive_version": "critical_state_archive_v1",
+  "cross_generation_failure_patterns": [],
+  "failure_by_risk_category": {
+    "COUNTERFACTUAL_DOMINATED_CHOICE": 2,
+    "CRITICAL_PATH_STARVATION": 2
+  },
+  "failure_by_scenario": {
+    "SM": 4
+  },
+  "failure_by_workflow_type": {
+    "Montage": 1,
+    "Sipht": 3
+  },
+  "frozen_rule_hash": "7019a3583c8562666d583cf372f7fed99a9f7bf66268355a178ff48b396bb566",
+  "generation": 3,
+  "hard_state_failure_patterns": [],
+  "high_confidence_structural_actions": [],
+  "limitations": [
+    "feature-level replay is a deterministic stress test, not a full dynamic simulation",
+    "unverified and partial outcomes are never counted as success or failure",
+    "energy is inspected only after DDL ordering is not worse",
+    "4 verified failures were excluded from structural-action confidence because candidate coverage was below 0.500"
+  ],
+  "medium_confidence_actions": [],
+  "repeated_historical_error_count": 4,
+  "replay_config_hash": "c3841a34f9f2373a99a06556b87563d876d4dff95ef6b9daa49a02f67c1ca7dc",
+  "replayed_state_count": 32,
+  "representative_failures": [
+    {
+      "coverage_sufficient": false,
+      "dominated_task_ranks": {
+        "224": 1
+      },
+      "preferred_task_ranks": {
+        "219": 2,
+        "228": 9
+      },
+      "risk_category": "COUNTERFACTUAL_DOMINATED_CHOICE",
+      "scenario_id": "SM",
+      "selected_task_id": 224,
+      "state_id": "f865cac58ec5c3780e7e19f1920d2b8ceebfac8cd5ff6dde93d5879944c07d43",
+      "verified_coverage": 0.3333333333333333,
+      "workflow_type": "Sipht"
+    },
+    {
+      "coverage_sufficient": false,
+      "dominated_task_ranks": {
+        "119": 1
+      },
+      "preferred_task_ranks": {
+        "117": 5
+      },
+      "risk_category": "CRITICAL_PATH_STARVATION",
+      "scenario_id": "SM",
+      "selected_task_id": 119,
+      "state_id": "aeb666836845e9d398d2c42bb66a103247d3b227a10ef706b06c50c91289991a",
+      "verified_coverage": 0.4,
+      "workflow_type": "Montage"
+    },
+    {
+      "coverage_sufficient": false,
+      "dominated_task_ranks": {
+        "444": 1
+      },
+      "preferred_task_ranks": {
+        "443": 3
+      },
+      "risk_category": "COUNTERFACTUAL_DOMINATED_CHOICE",
+      "scenario_id": "SM",
+      "selected_task_id": 444,
+      "state_id": "cac1b81f657b6a9e0ecc785046c707729e776eadee828db937b3f113f46b5c2e",
+      "verified_coverage": 0.2857142857142857,
+      "workflow_type": "Sipht"
+    },
+    {
+      "coverage_sufficient": false,
+      "dominated_task_ranks": {
+        "285": 1
+      },
+      "preferred_task_ranks": {
+        "297": 2
+      },
+      "risk_category": "CRITICAL_PATH_STARVATION",
+      "scenario_id": "SM",
+      "selected_task_id": 285,
+      "state_id": "57640e1f79c973d378aac8d2735c8b0f1e426b9a2fb3645c81ccb65f616a9e22",
+      "verified_coverage": 0.14285714285714285,
+      "workflow_type": "Sipht"
+    }
+  ],
+  "representative_successes": [
+    {
+      "risk_category": "COUNTERFACTUAL_DOMINATED_CHOICE",
+      "scenario_id": "SM",
+      "selected_task_id": 340,
+      "state_id": "6116d0fbd9fe6561432a55b83bcfa55f82821d67fb2271d85aaa48716b14f963"
+    },
+    {
+      "risk_category": "COUNTERFACTUAL_DOMINATED_CHOICE",
+      "scenario_id": "SM",
+      "selected_task_id": 228,
+      "state_id": "e1c293deb3a0b3aa3a8205c2c04954222586dfafa5debc43360dfd66072b764e"
+    },
+    {
+      "risk_category": "CRITICAL_PATH_STARVATION",
+      "scenario_id": "SM",
+      "selected_task_id": 154,
+      "state_id": "60bd3405f168b9237d54cb89ca7fc3e1318fe991e039c1028528dae02c3ff3b3"
+    }
+  ],
+  "resolved_state_regressions": [],
+  "structure_hash": "a7492cff9afe4dbae2bc0e95c9f5b598c5211e8af3890864cd8c08bf8e1e9f22",
+  "success_by_risk_category": {
+    "COUNTERFACTUAL_DOMINATED_CHOICE": 12,
+    "CRITICAL_PATH_STARVATION": 13
+  },
+  "summary_hash": "f704c6d0bca8ea56c5faa9428265a51848dde83424b7dd9729bbbca96979c7c6",
+  "unverified_state_count": 3,
+  "used_test_seed": false,
+  "verified_failure_count": 4,
+  "verified_state_count": 29,
+  "verified_success_count": 25
+}

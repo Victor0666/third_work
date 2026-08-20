@@ -1,0 +1,208 @@
+```python
+import numpy as np
+
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 0.001,
+            "lower_bound": 1e-6,
+            "upper_bound": 0.1,
+            "semantic_description": "Numerical guard for safe normalization and division.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "slack_penalty_scale",
+            "initial_value": 5.0,
+            "lower_bound": 1.0,
+            "upper_bound": 12.0,
+            "semantic_description": "Amplifies priority penalty when slack < 0; steepens deadline risk response.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "slack_sigmoid_k",
+            "initial_value": 1.5,
+            "lower_bound": 0.3,
+            "upper_bound": 5.0,
+            "semantic_description": "Steepness of sigmoid transition around zero slack to smoothly penalize lateness risk.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_norm_power",
+            "initial_value": 0.7,
+            "lower_bound": 0.3,
+            "upper_bound": 1.2,
+            "semantic_description": "Exponent for robust energy normalization: median-based root scaling avoids outlier sensitivity.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "duration_coupling",
+            "initial_value": 0.6,
+            "lower_bound": 0.0,
+            "upper_bound": 1.0,
+            "semantic_description": "Weight for joint (exec + comm) duration in energy-aware criticality adjustment.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "rank_boost_threshold",
+            "initial_value": 0.4,
+            "lower_bound": 0.05,
+            "upper_bound": 0.8,
+            "semantic_description": "Normalized upward_rank threshold above which critical-path boost activates.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "wait_saturation",
+            "initial_value": 12.0,
+            "lower_bound": 2.0,
+            "upper_bound": 60.0,
+            "semantic_description": "Time constant for soft saturation of ready_wait_time priority gain.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "uncertainty_slack_gate",
+            "initial_value": 0.9,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Strength of uncertainty-modulated slack pressure: higher = more aggressive preemption under risk.",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Novel priority rule: deadline-risk-gated, energy-aware, critical-path-boosted, starvation-softened.
+    
+    Key innovations:
+    - Uses *signed sigmoid* on slack (not linear or clipped) to smoothly penalize negative slack
+      while preserving gradient near zero — avoids discontinuous jumps that break CMA-ES gradients.
+    - Replaces mean-based normalization with *median-powered root scaling* for energy/duration
+      to suppress outlier distortion from noisy fuzzy estimates.
+    - Introduces *critical-path gating*: only tasks above upward_rank threshold receive rank boost,
+      preventing over-prioritization of shallow nodes.
+    - Models wait-time priority via *soft logarithmic saturation*, avoiding unbounded growth.
+    - Couples uncertainty and slack multiplicatively *before* nonlinearity to amplify risk-aware urgency.
+    - All features are rescaled to [0,1] range via robust quantile anchors before combination.
+    """
+    eps = PARAMS["epsilon"]
+    N = len(min_exec_time)
+    
+    # Safely cast inputs; avoid in-place mutation
+    exec_t = np.asarray(min_exec_time, dtype=float)
+    comm_t = np.asarray(min_comm_time, dtype=float)
+    energy = np.asarray(min_incremental_energy, dtype=float)
+    slack_arr = np.asarray(slack, dtype=float)
+    rank = np.asarray(upward_rank, dtype=float)
+    work = np.asarray(remaining_work, dtype=float)
+    wait = np.asarray(ready_wait_time, dtype=float)
+    uncert = np.asarray(uncertainty, dtype=float)
+    
+    # --- Robust normalization: map each feature to [0,1] using IQR + epsilon anchoring ---
+    def robust_01_normalize(x):
+        x = np.clip(x, -1e12, 1e12)  # prevent inf/nan propagation
+        q25, q50, q75 = np.quantile(x, [0.25, 0.5, 0.75], method='midpoint')
+        iqr = q75 - q25 + eps
+        # Clamp to avoid degenerate cases; use symmetric expansion around median
+        lo = np.maximum(q25 - 1.5 * iqr, np.min(x) - eps)
+        hi = np.minimum(q75 + 1.5 * iqr, np.max(x) + eps)
+        normed = (x - lo) / (hi - lo + eps)
+        return np.clip(normed, 0.0, 1.0)
+    
+    # Normalize all base features to [0,1]
+    norm_slack = robust_01_normalize(slack_arr)
+    norm_energy = robust_01_normalize(energy)
+    norm_duration = robust_01_normalize(exec_t + comm_t)
+    norm_rank = robust_01_normalize(rank)
+    norm_work = robust_01_normalize(work)
+    norm_wait = robust_01_normalize(wait)
+    norm_uncert = robust_01_normalize(uncert)
+    
+    # --- Slack risk modeling: signed sigmoid centered at 0, scaled for strong negative penalty ---
+    # Sigmoid: s(x) = 1 / (1 + exp(-k*x)) → maps R → (0,1); but we want *penalty* for negative slack
+    # So define risk_score = 1 - s(slack) for urgency, then scale it heavily when slack < 0
+    k = PARAMS["slack_sigmoid_k"]
+    slack_sigmoid = 1.0 / (1.0 + np.exp(-k * slack_arr))
+    # Risk urgency: high when slack is negative, decays smoothly toward zero as slack increases
+    slack_risk = 1.0 - slack_sigmoid  # ∈ (0,1), peaks near -∞, approaches 0 for large +slack
+    
+    # Amplify penalty for negative slack using smooth piecewise: linear ramp below zero, capped
+    slack_penalty = np.where(
+        slack_arr < 0,
+        PARAMS["slack_penalty_scale"] * (-slack_arr) / (np.abs(np.median(slack_arr)) + eps),
+        np.zeros(N)
+    )
+    # Clip extreme penalties to avoid dominating other terms
+    slack_penalty = np.clip(slack_penalty, 0.0, 8.0)
+    
+    # --- Critical-path gating: only boost rank if above threshold (avoids shallow-node inflation) ---
+    rank_boost = np.where(
+        norm_rank >= PARAMS["rank_boost_threshold"],
+        norm_rank ** 1.2,  # mild superlinear boost for truly critical nodes
+        np.zeros(N)
+    )
+    
+    # --- Wait-time saturation: soft log-scale anti-starvation term ---
+    # Use ln(1 + x / tau) to saturate smoothly; tau = wait_saturation
+    tau = PARAMS["wait_saturation"]
+    wait_urgency = np.log1p(norm_wait * 10.0 / (tau + eps))  # scaled to meaningful dynamic range
+    
+    # --- Uncertainty-modulated slack pressure: multiplicative gate before nonlinearity ---
+    # Higher uncertainty amplifies the urgency from slack_risk, especially when slack is tight
+    gated_slack_risk = slack_risk * (1.0 + PARAMS["uncertainty_slack_gate"] * norm_uncert)
+    
+    # --- Energy-aware duration coupling: combine exec+comm duration with energy via power norm ---
+    # Instead of normalizing energy separately, embed it in a coupled term: (duration)^α × (energy)^β
+    # But keep linear additive structure for CMA-ES stability → use *coupled normalization anchor*
+    dur_energy_anchor = (np.abs(exec_t + comm_t) ** PARAMS["energy_norm_power"] + 
+                         np.abs(energy) ** PARAMS["energy_norm_power"] + eps) ** (1.0 / PARAMS["energy_norm_power"])
+    # Then normalize duration *relative to this anchor* → yields dimensionless proxy for “energy-costly duration”
+    coupled_duration = (exec_t + comm_t) / (dur_energy_anchor + eps)
+    norm_coupled_duration = robust_01_normalize(coupled_duration)
+    
+    # --- Final score: smaller = better (priority). All terms are positive contributions to score. ---
+    # Components:
+    #   1. Slack risk penalty (strongest driver under DDL pressure)
+    #   2. Coupled duration-energy cost (efficiency signal)
+    #   3. Rank boost (only for critical paths)
+    #   4. Wait urgency (anti-starvation, bounded)
+    #   5. Work load (smaller work → prefer for quick progress; inverted)
+    #   6. Base energy cost (normalized)
+    score = (
+        slack_penalty                                  # [0,8] — hard DDL violation prevention
+        + PARAMS["duration_coupling"] * norm_coupled_duration   # efficiency-aware latency
+        + 2.0 * (1.0 - rank_boost)                   # inverse boost: less critical → higher score
+        + 0.5 * (1.0 - wait_urgency)                 # anti-starvation: longer wait → lower score → subtracted
+        + 1.5 * (1.0 - norm_work)                    # prefer smaller remaining work (faster progress)
+        + 1.2 * norm_energy                          # marginal energy cost
+        + 0.8 * gated_slack_risk                     # uncertainty-amplified deadline risk
+    )
+    
+    # Ensure finite output & shape compliance
+    score = np.nan_to_num(score, nan=1e6, posinf=1e6, neginf=-1e6)
+    score = np.clip(score, -1e5, 1e5)
+    
+    # Guarantee shape (N,) even for N=1
+    assert score.shape == (N,), f"Expected shape (N,), got {score.shape}"
+    
+    return score
+```

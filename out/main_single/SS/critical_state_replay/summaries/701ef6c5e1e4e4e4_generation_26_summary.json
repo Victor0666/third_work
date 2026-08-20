@@ -1,0 +1,207 @@
+{
+  "archive_hash": "d3ddc22e60a25ff7eebf1f8ff54a40e25093a54d0744e736c7db8abd3a61b8b5",
+  "archive_version": "critical_state_archive_v1",
+  "cross_generation_failure_patterns": [
+    {
+      "confidence": "high",
+      "coverage_sufficient_count": 2,
+      "failure_count": 9,
+      "failure_generations": [
+        12,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        24,
+        25,
+        26
+      ],
+      "generation_count": 10,
+      "minimum_verified_coverage": 0.13333333333333333,
+      "risk_category": "COUNTERFACTUAL_DOMINATED_CHOICE",
+      "scenario_count": 1,
+      "seed_count": 1,
+      "state_ids": [
+        "d1cb976d5c44b2dce2b25335b7a4103b7f477a03b49f7a84590fd6c5b21d1839",
+        "d206826c0a4e9d6a51c77cec838d377feb0fbcec17d3596d1472f24967609c80",
+        "8139b86acf5113e90d484c8fe07f2c410b54dbe83f1499c82dc1e89981261ce2",
+        "e1d680fed6684c34a90b0400145d3f6bdc6d6b12cf6070d423f30b5143084ed8",
+        "1ebdc420c3d088935c6b1923a24cbed38bcd046170aa06fdd6cbf81527b7d35c",
+        "ac2392cf8a5cf36f14a22ffb089f98477371149757867c657c4e6bf6c54832e0",
+        "329b9a7df75ddca3861dc6a7ea43650ef5e7085a9f170aa9267d9ba4d92c5875",
+        "9cc6fbc4ea266fbdf58b478d18585930d42f482df4112dc0699099145355347c"
+      ],
+      "structure_count": 41
+    }
+  ],
+  "failure_by_risk_category": {
+    "COUNTERFACTUAL_DOMINATED_CHOICE": 9
+  },
+  "failure_by_scenario": {
+    "SS": 9
+  },
+  "failure_by_workflow_type": {
+    "Ligo": 1,
+    "Montage": 2,
+    "Sipht": 6
+  },
+  "frozen_rule_hash": "1a2536f4f559a6d0f322661b9f674176839eeb8ba2c99e48092932cb6fe3067d",
+  "generation": 26,
+  "hard_state_failure_patterns": [
+    {
+      "confidence": "high",
+      "coverage_sufficient_count": 2,
+      "failure_count": 9,
+      "generation_count": 10,
+      "minimum_verified_coverage": 0.13333333333333333,
+      "risk_category": "COUNTERFACTUAL_DOMINATED_CHOICE",
+      "scenario_count": 1,
+      "seed_count": 1,
+      "state_ids": [
+        "d1cb976d5c44b2dce2b25335b7a4103b7f477a03b49f7a84590fd6c5b21d1839",
+        "d206826c0a4e9d6a51c77cec838d377feb0fbcec17d3596d1472f24967609c80",
+        "8139b86acf5113e90d484c8fe07f2c410b54dbe83f1499c82dc1e89981261ce2",
+        "e1d680fed6684c34a90b0400145d3f6bdc6d6b12cf6070d423f30b5143084ed8",
+        "1ebdc420c3d088935c6b1923a24cbed38bcd046170aa06fdd6cbf81527b7d35c",
+        "ac2392cf8a5cf36f14a22ffb089f98477371149757867c657c4e6bf6c54832e0",
+        "329b9a7df75ddca3861dc6a7ea43650ef5e7085a9f170aa9267d9ba4d92c5875",
+        "9cc6fbc4ea266fbdf58b478d18585930d42f482df4112dc0699099145355347c"
+      ],
+      "structure_count": 41
+    }
+  ],
+  "high_confidence_structural_actions": [
+    {
+      "action": "add_conditional_ddl_protection_gate",
+      "evidence_state_ids": [
+        "d206826c0a4e9d6a51c77cec838d377feb0fbcec17d3596d1472f24967609c80",
+        "e1d680fed6684c34a90b0400145d3f6bdc6d6b12cf6070d423f30b5143084ed8"
+      ],
+      "failure_count": 2,
+      "risk_category": "COUNTERFACTUAL_DOMINATED_CHOICE"
+    }
+  ],
+  "limitations": [
+    "feature-level replay is a deterministic stress test, not a full dynamic simulation",
+    "unverified and partial outcomes are never counted as success or failure",
+    "energy is inspected only after DDL ordering is not worse",
+    "7 verified failures were excluded from structural-action confidence because candidate coverage was below 0.500"
+  ],
+  "medium_confidence_actions": [],
+  "repeated_historical_error_count": 9,
+  "replay_config_hash": "952b98a5eec8a8cd62868c7c92c12c86eb85d2daef1bd52255f242e937a5abd3",
+  "replayed_state_count": 40,
+  "representative_failures": [
+    {
+      "coverage_sufficient": false,
+      "dominated_task_ranks": {
+        "247": 1
+      },
+      "preferred_task_ranks": {
+        "257": 10,
+        "261": 2
+      },
+      "risk_category": "COUNTERFACTUAL_DOMINATED_CHOICE",
+      "scenario_id": "SS",
+      "selected_task_id": 247,
+      "state_id": "d1cb976d5c44b2dce2b25335b7a4103b7f477a03b49f7a84590fd6c5b21d1839",
+      "verified_coverage": 0.21428571428571427,
+      "workflow_type": "Sipht"
+    },
+    {
+      "coverage_sufficient": true,
+      "dominated_task_ranks": {
+        "61": 1
+      },
+      "preferred_task_ranks": {
+        "60": 3
+      },
+      "risk_category": "COUNTERFACTUAL_DOMINATED_CHOICE",
+      "scenario_id": "SS",
+      "selected_task_id": 61,
+      "state_id": "d206826c0a4e9d6a51c77cec838d377feb0fbcec17d3596d1472f24967609c80",
+      "verified_coverage": 0.5,
+      "workflow_type": "Montage"
+    },
+    {
+      "coverage_sufficient": false,
+      "dominated_task_ranks": {
+        "112": 1
+      },
+      "preferred_task_ranks": {
+        "110": 2
+      },
+      "risk_category": "COUNTERFACTUAL_DOMINATED_CHOICE",
+      "scenario_id": "SS",
+      "selected_task_id": 112,
+      "state_id": "8139b86acf5113e90d484c8fe07f2c410b54dbe83f1499c82dc1e89981261ce2",
+      "verified_coverage": 0.4,
+      "workflow_type": "Montage"
+    },
+    {
+      "coverage_sufficient": true,
+      "dominated_task_ranks": {
+        "249": 1
+      },
+      "preferred_task_ranks": {
+        "255": 3
+      },
+      "risk_category": "COUNTERFACTUAL_DOMINATED_CHOICE",
+      "scenario_id": "SS",
+      "selected_task_id": 249,
+      "state_id": "e1d680fed6684c34a90b0400145d3f6bdc6d6b12cf6070d423f30b5143084ed8",
+      "verified_coverage": 0.5,
+      "workflow_type": "Ligo"
+    },
+    {
+      "coverage_sufficient": false,
+      "dominated_task_ranks": {
+        "226": 1
+      },
+      "preferred_task_ranks": {
+        "223": 8
+      },
+      "risk_category": "COUNTERFACTUAL_DOMINATED_CHOICE",
+      "scenario_id": "SS",
+      "selected_task_id": 226,
+      "state_id": "1ebdc420c3d088935c6b1923a24cbed38bcd046170aa06fdd6cbf81527b7d35c",
+      "verified_coverage": 0.25,
+      "workflow_type": "Sipht"
+    }
+  ],
+  "representative_successes": [
+    {
+      "risk_category": "COUNTERFACTUAL_DOMINATED_CHOICE",
+      "scenario_id": "SS",
+      "selected_task_id": 409,
+      "state_id": "906cf4c44c10a94f7412aaa5f0871c87ab63afdf559712f30bb009e84c502e60"
+    },
+    {
+      "risk_category": "COUNTERFACTUAL_DOMINATED_CHOICE",
+      "scenario_id": "SS",
+      "selected_task_id": 135,
+      "state_id": "6bf1979a0cb63e41c1dbdf987887558bd1bafe58f6451e2bde13408cc1224b4b"
+    },
+    {
+      "risk_category": "SUCCESSOR_RELEASE_BLOCKING",
+      "scenario_id": "SS",
+      "selected_task_id": 48,
+      "state_id": "59dcf7fc4f3f34aa96a5b8a4607a62ac26b8300cf785247107f94228a6679971"
+    }
+  ],
+  "resolved_state_regressions": [],
+  "structure_hash": "701ef6c5e1e4e4e4401d62653f7d5ea7c5ec589205b8e05304365d80b1c458e3",
+  "success_by_risk_category": {
+    "COUNTERFACTUAL_DOMINATED_CHOICE": 10,
+    "CRITICAL_PATH_STARVATION": 2,
+    "SUCCESSOR_RELEASE_BLOCKING": 1
+  },
+  "summary_hash": "38bbf9e79b8c88cd107dc02f8907ba184d6792985b555c1ce8b8b1ad0123dc24",
+  "unverified_state_count": 18,
+  "used_test_seed": false,
+  "verified_failure_count": 9,
+  "verified_state_count": 22,
+  "verified_success_count": 13
+}

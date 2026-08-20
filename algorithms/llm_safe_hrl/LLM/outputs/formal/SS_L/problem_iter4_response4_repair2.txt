@@ -1,0 +1,178 @@
+```python
+import numpy as np
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 0.028120940384698232,
+            "lower_bound": 1e-6,
+            "upper_bound": 0.1,
+            "semantic_description": "Numerical guard for stable normalization and division.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "criticality_scale",
+            "initial_value": 1.2678893064812344,
+            "lower_bound": 0.5,
+            "upper_bound": 3.0,
+            "semantic_description": "Amplification factor for upward_rank when slack is tight.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_sensitivity",
+            "initial_value": 1.2777166887435327,
+            "lower_bound": 0.1,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight applied to normalized incremental energy in feasible region.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "wait_decay",
+            "initial_value": 0.017295236242829068,
+            "lower_bound": 0.0,
+            "upper_bound": 1.0,
+            "semantic_description": "Decay rate for starvation relief: higher = faster saturation of wait benefit.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "uncertainty_gate_threshold",
+            "initial_value": 0.5456396809702606,
+            "lower_bound": 0.0,
+            "upper_bound": 1.0,
+            "semantic_description": "Normalized uncertainty level above which risk-aware gating activates.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "slack_pressure_gate_steepness",
+            "initial_value": 3.827711036827819,
+            "lower_bound": 1.0,
+            "upper_bound": 8.0,
+            "semantic_description": "Steepness parameter for tanh-based urgency gate.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "remaining_work_weight",
+            "initial_value": 0.8668804611038748,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight for remaining_work term to mildly prefer large downstream work.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_uncertainty_interaction",
+            "initial_value": 0.5806548650345438,
+            "lower_bound": 0.0,
+            "upper_bound": 1.0,
+            "semantic_description": "Weight for multiplicative interaction between energy and uncertainty to penalize high-risk-high-energy choices.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_relaxation_under_ddl_stress",
+            "initial_value": 0.5,
+            "lower_bound": 0.0,
+            "upper_bound": 1.0,
+            "semantic_description": "Multiplier for energy_sensitivity when slack <= 0, to relax energy preference under hard deadline pressure.",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Corrected priority rule: all declared parameters used; no hidden numeric constants.
+       Uses tanh-based urgency, critical-path coupling via slack & work, conditional energy-risk penalty,
+       and bounded anti-starvation tanh. All numeric literals are -2,-1,0,1,2."""
+    eps = PARAMS["epsilon"]
+    
+    # Cast inputs safely; avoid in-place mutation
+    min_exec_time = np.asarray(min_exec_time, dtype=float)
+    min_comm_time = np.asarray(min_comm_time, dtype=float)
+    min_incremental_energy = np.asarray(min_incremental_energy, dtype=float)
+    slack = np.asarray(slack, dtype=float)
+    upward_rank = np.asarray(upward_rank, dtype=float)
+    remaining_work = np.asarray(remaining_work, dtype=float)
+    ready_wait_time = np.asarray(ready_wait_time, dtype=float)
+    uncertainty = np.asarray(uncertainty, dtype=float)
+    
+    N = len(min_exec_time)
+    
+    # === Stable normalization: mean(abs(x)) + eps scaling — avoids median outliers, preserves shape ===
+    def stable_normalize(x):
+        x_abs = np.abs(x)
+        center = np.mean(x_abs) if N > 1 else x_abs[0]
+        spread = np.mean(x_abs) + eps  # robust against zeros & small N
+        return (x - center) / (spread + eps)
+    
+    # Normalize base features
+    norm_slack = stable_normalize(slack)
+    norm_energy = stable_normalize(min_incremental_energy)
+    norm_duration = stable_normalize(min_exec_time + min_comm_time)
+    norm_rank = stable_normalize(upward_rank)
+    norm_work = stable_normalize(remaining_work)
+    norm_wait = stable_normalize(ready_wait_time)
+    norm_uncert = stable_normalize(uncertainty)
+    
+    # === Tanh-based urgency: smooth, bounded (-1,1), stronger signal for negative slack ===
+    # Uses raw slack (not normalized) to preserve physical scale for urgency thresholding
+    slack_urgency = np.tanh(-slack * PARAMS["slack_pressure_gate_steepness"])
+    
+    # === Critical-path coupling: activate upward_rank boost only when slack is tight AND work is large ===
+    # Prevents over-prioritizing low-work critical nodes; aligns with 'successor_release_interaction' evidence
+    slack_pressure_mask = (slack <= 0.0).astype(float)  # binary: overdue or at deadline
+    work_pressure_mask = (norm_work > 0.0).astype(float)  # binary: above-mean remaining work
+    coupling_gate = slack_pressure_mask * work_pressure_mask
+    boosted_rank = norm_rank * (1.0 + PARAMS["criticality_scale"] * coupling_gate)
+    
+    # === Conditional energy-risk coupling: only active when both slack < 0 and uncertainty > threshold ===
+    # Matches 'add_host_load_conditional_gate' and 'add_energy_uncertainty_interaction' evidence
+    risk_active = (slack < 0.0) & (norm_uncert > PARAMS["uncertainty_gate_threshold"])
+    energy_uncert_penalty = np.where(risk_active, 
+                                     norm_energy * norm_uncert, 
+                                     np.zeros_like(norm_energy))
+    
+    # === Anti-starvation: bounded tanh instead of exponential — more discriminative at long waits ===
+    # Uses normalized wait but applies tanh to avoid saturation issues
+    wait_benefit = np.tanh(PARAMS["wait_decay"] * norm_wait)
+    
+    # === Feasibility-aware energy balancing: only apply energy sensitivity when DDL risk is manageable ===
+    # i.e., when slack > 0 (no immediate violation risk), to avoid sacrificing energy unnecessarily
+    energy_weight = np.where(slack > 0.0, 
+                             PARAMS["energy_sensitivity"], 
+                             PARAMS["energy_sensitivity"] * PARAMS["energy_relaxation_under_ddl_stress"])
+    
+    # === Composite score: smaller = higher priority ===
+    score = (
+        + (1.0 - slack_urgency)                           # Urgency: lower slack → lower score (higher priority)
+        - boosted_rank                                    # Critical-path boost only under dual pressure
+        - energy_weight * norm_energy                    # Energy preference, relaxed under DDL stress
+        - norm_duration                                   # Prefer short duration
+        - wait_benefit                                    # Anti-starvation (tanh avoids saturation)
+        + PARAMS["energy_uncertainty_interaction"] * energy_uncert_penalty  # Risk-aligned penalty
+        + PARAMS["remaining_work_weight"] * norm_work    # Preference for unblocking large work
+    )
+    
+    # Final safeguard: ensure finite, deterministic output and shape (N,)
+    score = np.nan_to_num(score, nan=0.0, posinf=np.finfo(float).max, neginf=-np.finfo(float).max)
+    
+    # Enforce shape (N,) explicitly — required for N=1 case
+    return score.reshape(-1)
+```

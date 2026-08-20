@@ -1,0 +1,30 @@
+- Binary DDL gate (`slk_robust <= 0`) eliminates ambiguity and parameter bloat from piecewise width, improving feasibility consistency.  
+- Tunable `bottleneck_offset` replaces fragile denominator zero-handling with stable, learnable slack regularization.  
+- Exponential starvation saturation (`1 - exp(-wait/θ)`) better captures urgency dynamics than linear clipping, aligning with deadline-sensitive scheduling.
+- Replaced fragile `bottleneck_offset`-based denominator with robust power-law `(rank × work)^p`, eliminating an inactive, boundary-prone parameter and strengthening bottleneck severity modeling.  
+- Introduced soft slack feasibility gating (`sigmoid(slack)`) for criticality modulation, improving DDL-aware prioritization where tight deadlines demand conservative ranking.  
+- Removed redundant `starvation_gain`—its effect was subsumed by unified exponential saturation—reducing fragility and aligning with cross-generation evidence of parameter inactivity.
+- Replaced quantile-based normalization with robust min-max scaling using high quantile range estimation, improving outlier resilience and feature comparability.  
+- Introduced critical-path starvation guard: when slack < `starvation_slack_threshold`, bypass energy/uncertainty terms and prioritize bottleneck proximity unconditionally.  
+- Swapped piecewise-linear DDL urgency gate for smooth sigmoid `ddl_protection_gate`, enabling graded feasibility-aware weighting instead of hard binary activation.
+- Replaced brittle exponentiation (`upward_rank^exponent`) with linear criticality weighting gated by piecewise-linear DDL urgency—reducing instability near slack=0 and improving cross-scenario robustness.  
+- Swapped max-abs normalization for quantile-based scaling (0.94 quantile), enhancing outlier resistance in skewed ready-task distributions without parameter fragility.  
+- Introduced bounded exponential starvation ramp (`1−exp(−wait/θ)`) instead of linear saturation, enabling smooth, monotonic priority boost without clipping artifacts or seed-sensitive thresholds.
+- Replaces brittle max-abs normalization with winsorized quantile-based scaling to suppress outlier-driven bottleneck over-prioritization.  
+- Uses soft sigmoid DDL feasibility gate (not piecewise linear) that activates *only* inside safe slack margin, eliminating urgency modulation outside feasibility.  
+- Removes redundant asymmetric slack gain and host-load sensitivity—parameter diagnostics show inactivity and fragility, confirming structural simplification improves robustness.
+- Replaced brittle piecewise-linear DDL gating with smooth sigmoid `ddl_protection_gate`, improving robustness near slack=0 and reducing fragile parameter sensitivity.  
+- Introduced `successor_release_sharpness` to sharpen bottleneck prioritization via `(rank × work) / |slack|ᵝ`, directly addressing critical-path blocking patterns observed in counterfactual and replay diagnostics.  
+- Swapped max-abs normalization for adaptive quantile-based normalization (`robust_normalization_quantile`), enhancing outlier resistance and cross-scenario stability per fragility and scenario-sensitivity evidence.
+- Replace piecewise-linear DDL gate with sigmoid for smoother, differentiable feasibility-aware weighting near slack=0.  
+- Introduce bounded linear wait ramp (instead of power-law saturation) to ensure monotonic starvation mitigation without outlier sensitivity.  
+- Add successor-release interaction (`upward_rank * remaining_work / (|slack| + ε)^sharpness`) to sharpen critical-path prioritization under tight deadlines.
+- Replace piecewise-linear DDL gate with hard binary protection (`slk_robust >= 0`) to enforce strict feasibility-first prioritization — evidenced by repeated counterfactuals where energy-aware selections violated deadlines.  
+- Simplify bottleneck term to `(rank × work)^p` (no denominator) — removes fragile `|slack|+ε` division and aligns with replay evidence showing robustness gain in critical-path congestion scenarios.  
+- Remove redundant `slack_urgency_gain`: parameter diagnostics show near-zero activity and inactivity analysis confirms it’s unused under DDL pressure — eliminates noise without sacrificing urgency modulation.
+- Replaced brittle exponentiation (`upward_rank^exponent`) with linear criticality weighting gated by piecewise-linear DDL urgency—reducing instability near slack=0 and improving cross-scenario robustness.  
+- Swapped max-abs normalization for quantile-based scaling (0.94 quantile), enhancing outlier resistance in skewed ready-task distributions without parameter fragility.  
+- Introduced bounded exponential starvation ramp (`1−exp(−wait/θ)`) instead of linear saturation, enabling smooth, monotonic priority escalation without clipping artifacts or seed-sensitive thresholds.
+- Binary DDL gate (`slk_robust <= 0`) eliminates ambiguity in deadline-critical decisions, improving feasibility robustness vs. piecewise-linear smoothing.  
+- Tunable `bottleneck_offset` replaces fragile denominator zero-risk with stable, learnable slack sensitivity — directly addressing fragility in `criticality_exponent` and `energy_efficiency_weight`.  
+- Exponential starvation saturation (`1 - exp(-wait/θ)`) better captures urgency decay than linear clipping, aligning with observed seed-sensitive latency mitigation needs.

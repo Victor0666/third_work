@@ -1,0 +1,30 @@
+- Replace piecewise-linear DDL gate with smooth sigmoid feasibility gate to enable graceful energy optimization near deadline margins.  
+- Remove redundant `slack_urgency_gain` and use neutral baseline for positive slack, simplifying structure and eliminating harmful coupling.  
+- Introduce robust quantile-based normalization (0.75 quantile) instead of max-abs to preserve ordinal fidelity under outliers and improve cross-scenario stability.
+- Replaced hard wait clipping with smooth bounded linear ramp, eliminating discontinuities and improving starvation mitigation monotonicity.  
+- Introduced successor-release interaction (`upward_rank * remaining_work / |slack|^sharpness`), sharpening critical-path prioritization under tight deadlines.  
+- Swapped MAD-based normalization for adaptive quantile scaling (0.75–0.95), enhancing robustness to skewed outliers in dynamic workloads.
+- Replaced fragile quantile-based normalization with robust MAD scaling and [-2,2] clipping, eliminating sensitivity to outlier-driven quantile shifts.  
+- Switched from hard binary DDL gating to smooth sigmoid gate (`1/(1+exp(-slack/width))`), improving gradient flow and reducing brittle feasibility cliffs.  
+- Simplified bottleneck interaction from `upward_rank * min(exec,comm)` to `upward_rank * remaining_work`, aligning with critical-path work accumulation and avoiding duration singularity.
+- Replaced fragile MAD-based normalization with robust max-abs normalization, eliminating quantile sensitivity and improving cross-scenario stability.  
+- Introduced piecewise-linear DDL gate (vs sigmoid) for crisp, bounded slack-aware criticality gating—reducing over-smoothing near deadline boundaries.  
+- Swapped additive energy correction for multiplicative exponential decay (`exp(-|slack| * decay)`), enabling physics-aligned suppression of energy optimization under lateness risk.
+- Replaces hard [-2,2] clipping with quantile-based normalization to preserve ordinal fidelity and reduce distortion of critical-path signals.  
+- Introduces smooth sigmoid DDL feasibility gate (centered at `ddl_feasibility_margin`) instead of crisp slack sign check, enabling graceful energy-aware scheduling in marginally feasible regions.  
+- Removes redundant `slack_urgency_gain`, simplifying the decision boundary and eliminating harmful coupling between positive slack and energy de-prioritization.
+- Replaces hard clipping `[-2,2]` with quantile-based normalization to preserve ordinal fidelity under outliers.  
+- Uses smooth sigmoid DDL feasibility gate (centered at margin) instead of crisp slack sign check, enabling graceful energy optimization near deadlines.  
+- Removes redundant `slack_urgency_gain`, simplifying structure and eliminating harmful de-prioritization of non-urgent but feasible tasks.
+- Replaced fragile quantile normalization with robust max-abs scaling, eliminating sensitivity to outlier-driven scale shifts across seeds.  
+- Introduced piecewise-linear DDL gate + exponential slack decay for energy term, enabling smoother, physics-aligned suppression under deadline risk.  
+- Switched bottleneck term from min(exec,comm) to rank×work/(|slack|+ε), strengthening critical-path focus while avoiding division singularities.
+- Replaced hard wait clipping with smooth bounded linear ramp → eliminates discontinuities and improves starvation mitigation monotonicity.  
+- Introduced successor-release interaction (`upward_rank * remaining_work / |slack|^sharpness`) → sharpens critical-path prioritization under tight deadlines, directly addressing DDL-diagnosed “critical_path_or_successor_blocked” failures.  
+- Swapped MAD-based normalization for adaptive quantile scaling → enhances robustness to skewed outliers in heterogeneous workflow states, supported by cross-seed fragility analysis of `criticality_weight`.
+- Replaces soft sigmoid DDL gating with **hard binary feasibility mask**, enforcing strict deadline-first ordering and eliminating fragile parameter-dependent smooth transitions.  
+- Introduces **host-load proxy** (`(wait + uncertainty)^exponent`) for energy scoring, decoupling congestion awareness from VM state while avoiding over-penalization.  
+- Simplifies bottleneck term to `upward_rank * min(exec_time, comm_time)`, removing slack-induced singularity and focusing on dominant cost bound robustly.
+- Replaced fragile quantile-based normalization with robust MAD-based normalization (±2 clipping), improving stability under distribution shifts.  
+- Switched hard binary DDL gating to smooth sigmoid gate, enabling gradient-aware feasibility transitions during optimization.  
+- Simplified bottleneck interaction from `upward_rank * min(exec, comm)` to `upward_rank * remaining_work`, aligning with critical-path work accumulation semantics.

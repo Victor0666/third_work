@@ -1,0 +1,54 @@
+import numpy as np
+RULE_METADATA = {'structure_hash': '70726afd3ddb9d949c29cbb4e390041d7efb83de14d0746faa2e1f21baf052a2', 'parameter_schema_hash': '5fefb459e26bef806861cda68deabdfa3a07ae258b0096d712ea90bb2c35ffeb', 'best_parameter_hash': 'bf0005ddaa87c388e0f7016f67955fff36dceb6d96224b0f9b871a4b3110d233', 'best_parameters': {'epsilon': 1.1537590944317926e-05, 'criticality_scale': 1.436624976284533, 'energy_sensitivity': 0.27025688067124676, 'energy_uncertainty_interaction': 0.8155712925408048, 'remaining_work_weight': 1.5399470906130204, 'uncertainty_gate_threshold': 0.0019945228681025186, 'wait_decay': 0.015111284540749718, 'slack_urgency_cap': 0.8589959232676299}, 'optimizer_config_hash': '1cfc9f820b0b566bee6fb6848a1b119e34ccc0ca2c8f658523722e566690e169', 'parameter_diagnostics_hash': '6729b8baa8149e609be2d1b07004084fc767f11c0388520673ff43b6bf55150b', 'optimizer_seed': 0, 'training_seeds': [1, 2, 3], 'validation_seeds': [4, 5]}
+
+def get_task_priority_v2(min_exec_time, min_comm_time, min_incremental_energy, slack, upward_rank, remaining_work, ready_wait_time, uncertainty):
+    """Self-evolved priority rule:
+       - Replaces unstable median-MAD with robust min-max normalization using explicit zero-slack guard.
+       - Replaces power-law successor-release with bounded linear interaction: min_exec_time * norm_rank * min(slack_urgency_cap, max(0, -slack + eps)).
+       - Removes inactive ddl_pressure_gate_threshold and redundant epsilon-guarded divisions.
+       - Introduces slack_urgency_cap to prevent urgency overamplification near deadline breach.
+       - All features normalized via [x - min(x)] / (max(x) - min(x) + eps) with clipping to [-2,2] for stability.
+       - Preserves starvation relief, host-load surrogate, and energy-uncertainty coupling under unified feasibility gating.
+    """
+    eps = 1.1537590944317926e-05
+    min_exec_time = np.asarray(min_exec_time, dtype=float)
+    min_comm_time = np.asarray(min_comm_time, dtype=float)
+    min_incremental_energy = np.asarray(min_incremental_energy, dtype=float)
+    slack = np.asarray(slack, dtype=float)
+    upward_rank = np.asarray(upward_rank, dtype=float)
+    remaining_work = np.asarray(remaining_work, dtype=float)
+    ready_wait_time = np.asarray(ready_wait_time, dtype=float)
+    uncertainty = np.asarray(uncertainty, dtype=float)
+    N = len(min_exec_time)
+
+    def robust_minmax_normalize(x):
+        x = np.copy(x)
+        if N == 1:
+            return np.zeros_like(x)
+        x_min = np.min(x)
+        x_max = np.max(x)
+        spread = x_max - x_min
+        denom = spread if spread > eps else eps
+        return (x - x_min) / denom
+    norm_slack = robust_minmax_normalize(slack)
+    norm_energy = robust_minmax_normalize(min_incremental_energy)
+    norm_duration = robust_minmax_normalize(min_exec_time + min_comm_time)
+    norm_rank = robust_minmax_normalize(upward_rank)
+    norm_work = robust_minmax_normalize(remaining_work)
+    norm_wait = robust_minmax_normalize(ready_wait_time)
+    norm_uncert = robust_minmax_normalize(uncertainty)
+    slack_urgency_magnitude = np.maximum(0.0, -slack + eps)
+    bounded_slack_urgency = np.clip(slack_urgency_magnitude, 0.0, 0.8589959232676299)
+    norm_slack_urgency = robust_minmax_normalize(bounded_slack_urgency)
+    ddl_breach = (slack <= 0.0).astype(float)
+    critical_path_urgency = norm_rank * norm_work * ddl_breach
+    successor_release = min_exec_time * norm_rank * ddl_breach * norm_slack_urgency
+    ddl_pressure = norm_slack_urgency
+    load_gate = (norm_uncert >= 0.0019945228681025186).astype(float) * ddl_pressure
+    host_load_surrogate = norm_duration * norm_uncert * load_gate
+    energy_uncert_gate = (norm_uncert >= 0.0019945228681025186).astype(float) * ddl_pressure
+    energy_uncert_penalty = norm_energy * norm_uncert * energy_uncert_gate
+    wait_benefit = np.exp(-0.015111284540749718 * ready_wait_time) * (1.0 - ddl_pressure)
+    score = +np.clip(norm_slack_urgency, -2.0, 2.0) - np.clip(critical_path_urgency, -2.0, 2.0) - np.clip(successor_release, -2.0, 2.0) - 0.27025688067124676 * np.clip(norm_energy * ddl_pressure, -2.0, 2.0) - np.clip(wait_benefit, -2.0, 2.0) + np.clip(host_load_surrogate, -2.0, 2.0) + 0.8155712925408048 * np.clip(energy_uncert_penalty, -2.0, 2.0) + 1.5399470906130204 * np.clip(norm_work, -2.0, 2.0) + 1.436624976284533 * np.clip(norm_rank * ddl_pressure, -2.0, 2.0)
+    score = np.nan_to_num(score, nan=0.0, posinf=np.finfo(float).max, neginf=-np.finfo(float).max)
+    return score.reshape(-1)

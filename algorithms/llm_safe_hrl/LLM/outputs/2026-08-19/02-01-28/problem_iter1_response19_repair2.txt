@@ -1,0 +1,207 @@
+```python
+import numpy as np
+
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 1e-4,
+            "lower_bound": 1e-8,
+            "upper_bound": 1e-2,
+            "semantic_description": "Numerical guard for stable normalization and division.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "slack_risk_penalty",
+            "initial_value": 5.0,
+            "lower_bound": 0.5,
+            "upper_bound": 12.0,
+            "semantic_description": "Amplification factor for negative slack (lateness risk).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "critical_slack_gate",
+            "initial_value": -0.1,
+            "lower_bound": -2.0,
+            "upper_bound": 0.0,
+            "semantic_description": "Threshold where slack transitions from soft to hard risk regime.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_efficiency_weight",
+            "initial_value": 0.9,
+            "lower_bound": 0.1,
+            "upper_bound": 3.0,
+            "semantic_description": "Weight on inverse energy efficiency: lower energy → higher priority.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "duration_sensitivity",
+            "initial_value": 0.7,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Exponent controlling nonlinear penalty for long durations.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "rank_coupling",
+            "initial_value": 0.6,
+            "lower_bound": 0.0,
+            "upper_bound": 1.0,
+            "semantic_description": "Strength of coupling between upward rank and slack pressure.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "wait_fairness_power",
+            "initial_value": 0.4,
+            "lower_bound": 0.0,
+            "upper_bound": 1.0,
+            "semantic_description": "Sublinear exponent for ready_wait_time to prevent over-prioritization.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "uncertainty_slack_interaction",
+            "initial_value": 1.2,
+            "lower_bound": 0.0,
+            "upper_bound": 3.0,
+            "semantic_description": "Weighted product term for uncertainty × max(0, -slack) to amplify risk-aware urgency.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "robust_duration_norm",
+            "initial_value": 0.3,
+            "lower_bound": 0.0,
+            "upper_bound": 1.0,
+            "semantic_description": "Weight balancing IQR-based vs mean-based duration normalization.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "nan_replacement",
+            "initial_value": 0.0,
+            "lower_bound": -1e6,
+            "upper_bound": 1e6,
+            "semantic_description": "Finite value to replace NaN in final score.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "posinf_replacement",
+            "initial_value": 1e6,
+            "lower_bound": 1e3,
+            "upper_bound": 1e7,
+            "semantic_description": "Finite upper bound for positive infinity in final score.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "neginf_replacement",
+            "initial_value": -1e6,
+            "lower_bound": -1e7,
+            "upper_bound": -1e3,
+            "semantic_description": "Finite lower bound for negative infinity in final score.",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Novel priority rule: deadline-risk-gated critical-path energy scheduling.
+    
+    Key innovations:
+    - Piecewise slack gating: strong penalty below critical_slack_gate, smooth ramp above
+    - Robust duration normalization using convex blend of mean-absolute and IQR scaling
+    - Inverse energy efficiency: prioritize low incremental energy *relative to duration*
+    - Nonlinear wait fairness: sublinear power prevents starvation without overwhelming DDL urgency
+    - Critical coupling: upward_rank only boosts priority when slack is tight (prevents idle critical tasks)
+    - Uncertainty-slack interaction: only activates under lateness risk, amplifying urgency proportionally
+    """
+    epsilon = PARAMS["epsilon"]
+    N = len(min_exec_time)
+    
+    # Defensive copy & cast
+    exec_t = np.asarray(min_exec_time, dtype=float)
+    comm_t = np.asarray(min_comm_time, dtype=float)
+    energy = np.asarray(min_incremental_energy, dtype=float)
+    slk = np.asarray(slack, dtype=float)
+    rank = np.asarray(upward_rank, dtype=float)
+    work = np.asarray(remaining_work, dtype=float)
+    wait = np.asarray(ready_wait_time, dtype=float)
+    unc = np.asarray(uncertainty, dtype=float)
+    
+    # Robust duration: exec + comm, normalized via blended robust scale
+    duration = exec_t + comm_t
+    mean_abs_dur = np.mean(np.abs(duration)) + epsilon
+    iqr_dur = np.percentile(duration, 75) - np.percentile(duration, 25) + epsilon
+    robust_scale = PARAMS["robust_duration_norm"] * iqr_dur + (1 - PARAMS["robust_duration_norm"]) * mean_abs_dur
+    norm_duration = duration / robust_scale
+    
+    # Slack normalization with piecewise risk gating
+    # Use signed ramp: flat near zero, sharp penalty for negative slack
+    slack_centered = slk / (np.mean(np.abs(slk)) + epsilon)
+    slack_gate = np.where(
+        slack_centered < PARAMS["critical_slack_gate"],
+        PARAMS["slack_risk_penalty"] * (slack_centered - PARAMS["critical_slack_gate"]),
+        np.clip(slack_centered, -1.0, 1.0)
+    )
+    
+    # Inverse energy efficiency: energy per unit duration (lower → better)
+    # Avoid division by zero: use max(duration, epsilon)
+    eff_score = energy / np.maximum(duration, epsilon)
+    norm_eff = eff_score / (np.mean(np.abs(eff_score)) + epsilon)
+    
+    # Upward rank only matters under deadline pressure → coupled gate
+    # When slack is positive, suppress rank influence; when negative, amplify it
+    rank_coupled = rank * np.maximum(0.0, -slack_centered) ** PARAMS["rank_coupling"]
+    norm_rank = rank_coupled / (np.mean(np.abs(rank_coupled)) + epsilon)
+    
+    # Sublinear wait fairness (anti-starvation)
+    norm_wait = (wait ** PARAMS["wait_fairness_power"]) / (np.mean(np.abs(wait) ** PARAMS["wait_fairness_power"]) + epsilon)
+    
+    # Uncertainty-slack interaction: only active under risk
+    unc_slack_interaction = unc * np.maximum(0.0, -slack_centered) * PARAMS["uncertainty_slack_interaction"]
+    norm_unc_slack = unc_slack_interaction / (np.mean(np.abs(unc_slack_interaction)) + epsilon)
+    
+    # Assemble score: smaller = better
+    # Dominant terms: slack risk (negative), energy efficiency (negative), coupled rank (negative)
+    # Supporting: wait fairness (negative), uncertainty interaction (negative), duration (positive)
+    score = (
+        slack_gate  # negative slack → large negative → high priority
+        - PARAMS["energy_efficiency_weight"] * norm_eff  # low energy/duration → high priority
+        - norm_rank  # critical path + urgency → high priority
+        - norm_wait  # long wait → high priority
+        - norm_unc_slack  # risk + uncertainty → high priority
+        + PARAMS["duration_sensitivity"] * (norm_duration ** 1.5)  # longer duration → slight penalty
+    )
+    
+    # Final safeguard: ensure finite, bounded output using declared parameters
+    score = np.nan_to_num(
+        score,
+        nan=PARAMS["nan_replacement"],
+        posinf=PARAMS["posinf_replacement"],
+        neginf=PARAMS["neginf_replacement"]
+    )
+    
+    return score
+```

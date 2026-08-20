@@ -1,0 +1,5 @@
+- Prioritize hard DDL feasibility via smooth sigmoid gate (`1/(1+exp(-slope * slack))`) activated only when `slack <= 0`, validated across ≥13 decisions, 2 seeds, and 1 scenario.  
+- Enforce critical-path awareness exclusively under deadline pressure using `upward_rank * remaining_work * ddl_gate`, eliminating penalty leakage and confirmed by ≥4 cross-seed replay failures.  
+- Suppress energy/uncertainty terms *only* under `slack < 0` via unified `ddl_gate`, directly resolving repeated `higher_ddl_risk_choice` patterns (13+ occurrences).  
+- Replace host-load proxies with direct congestion signals (`ready_wait_time + uncertainty`) gated by DDL feasibility, addressing `avoidable_marginal_energy_or_load_cost` (12+ occurrences).  
+- Retain sign-preserving MAD normalization and clipped linear slack pressure (`np.clip(-slack, 0, 1)`) for numerical stability and urgency coupling near violation boundary.

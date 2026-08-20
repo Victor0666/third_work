@@ -1,0 +1,208 @@
+```python
+import numpy as np
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 0.0002,
+            "lower_bound": 1e-6,
+            "upper_bound": 0.1,
+            "semantic_description": "Numerical guard for stable normalization and division.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "slack_penalty_exponent",
+            "initial_value": 2.8,
+            "lower_bound": 1.0,
+            "upper_bound": 4.0,
+            "semantic_description": "Exponent for nonlinear penalty on negative slack (risk-aware urgency).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "criticality_scale",
+            "initial_value": 0.97,
+            "lower_bound": 0.5,
+            "upper_bound": 3.0,
+            "semantic_description": "Amplification factor for upward_rank × remaining_work interaction under tight slack.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_sensitivity",
+            "initial_value": 0.74,
+            "lower_bound": 0.1,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight applied to normalized incremental energy in feasible region.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "duration_robustness",
+            "initial_value": 0.54,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight for duration uncertainty interaction with slack pressure.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "wait_saturation_time",
+            "initial_value": 43.45,
+            "lower_bound": 0.1,
+            "upper_bound": 100.0,
+            "semantic_description": "Time scale for bounded starvation relief: longer wait → diminishing return.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "work_leverage_threshold",
+            "initial_value": 1367361.19,
+            "lower_bound": 100.0,
+            "upper_bound": 1e8,
+            "semantic_description": "Remaining work magnitude above which task is deprioritized unless urgent.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "slack_negative_threshold",
+            "initial_value": -0.027,
+            "lower_bound": -2.0,
+            "upper_bound": 0.0,
+            "semantic_description": "Normalized slack threshold to activate critical rank × work amplification.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "slack_positive_gate",
+            "initial_value": -0.11,
+            "lower_bound": -1.0,
+            "upper_bound": 0.0,
+            "semantic_description": "Normalized slack threshold below which duration-uncertainty coupling activates.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "uncertainty_activation_threshold",
+            "initial_value": 0.86,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Normalized uncertainty threshold to activate duration-uncertainty coupling.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "sigmoid_wait_shift",
+            "initial_value": 2.0,
+            "lower_bound": 0.0,
+            "upper_bound": 10.0,
+            "semantic_description": "Shift parameter for sigmoid starvation relief: controls onset of saturation.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "ddl_protection_weight",
+            "initial_value": 5.0,
+            "lower_bound": 1.0,
+            "upper_bound": 10.0,
+            "semantic_description": "Base weight for DDL-protection gate output.",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Mutated priority rule: replaces additive feasibility guard with conditional DDL-protection gate;
+    replaces arctan starvation relief with bounded sigmoid; replaces isolated rank with upward_rank × remaining_work interaction;
+    uses per-feature mean-abs scaling instead of median/MAD for stability under small N;
+    introduces host-load–conditional energy suppression using ready_wait_time as proxy;
+    removes redundant parameters (feasibility_guard_weight) per evidence showing inactivity.
+    
+    Key structural changes:
+      - Replaces hard binary guard with smooth sigmoid DDL-protection gate activated by joint slack & uncertainty risk.
+      - Replaces isolated upward_rank with critical path leverage term: upward_rank × remaining_work, gated by slack.
+      - Replaces arctan wait benefit with saturating sigmoid: avoids over-prioritization of very long waits.
+      - Introduces load-aware energy suppression: energy penalty reduced when ready_wait_time is high (load congestion signal).
+      - Uses mean-abs normalization for robustness on small ready sets and faster convergence.
+    """
+    eps = PARAMS["epsilon"]
+    N = len(slack)
+    
+    # Mean-abs normalization: more stable than median/MAD for small N and deterministic
+    def mean_abs_normalize(x):
+        x = np.asarray(x, dtype=float)
+        center = np.mean(x)
+        spread = np.mean(np.abs(x - center)) + eps
+        return (x - center) / (spread + eps)
+
+    norm_slack = mean_abs_normalize(slack)
+    norm_energy = mean_abs_normalize(min_incremental_energy)
+    norm_duration = mean_abs_normalize(min_exec_time + min_comm_time)
+    norm_rank = mean_abs_normalize(upward_rank)
+    norm_work = mean_abs_normalize(remaining_work)
+    norm_wait = mean_abs_normalize(ready_wait_time)
+    norm_uncert = mean_abs_normalize(uncertainty)
+
+    # --- Smooth DDL-protection gate: sigmoid activation on joint slack & uncertainty risk
+    # Activates strongly when slack is negative AND uncertainty is high — no binary thresholds
+    joint_risk = np.clip(-norm_slack * norm_uncert, 0.0, np.inf)  # only penalize when both harmful
+    ddl_protection_gate = 1.0 / (1.0 + np.exp(-joint_risk * PARAMS["duration_robustness"]))
+
+    # --- Critical path leverage: upward_rank × remaining_work interaction, gated by slack pressure
+    # Amplifies tasks that block large amounts of work *and* are on critical path, only when slack is tight
+    critical_leverage = norm_rank * norm_work
+    slack_gate = np.where(norm_slack < PARAMS["slack_negative_threshold"], 1.0, 0.0)
+    amplified_leverage = critical_leverage * (1.0 + PARAMS["criticality_scale"] * slack_gate)
+
+    # --- Duration-uncertainty coupling: active only under tight slack AND high uncertainty
+    dur_uncert_gate = np.where(
+        (norm_slack < PARAMS["slack_positive_gate"]) & 
+        (norm_uncert > PARAMS["uncertainty_activation_threshold"]), 
+        1.0, 0.0
+    )
+    dur_uncert_interaction = norm_duration * norm_uncert * dur_uncert_gate * PARAMS["duration_robustness"]
+
+    # --- Bounded starvation relief: sigmoid instead of arctan — smoother saturation, avoids overshoot
+    wait_scaled = np.clip(ready_wait_time / (PARAMS["wait_saturation_time"] + eps), 0.0, 10.0)
+    wait_benefit = 1.0 - 1.0 / (1.0 + np.exp(wait_scaled - PARAMS["sigmoid_wait_shift"]))  # saturates near 1.0
+
+    # --- Host-load–conditional energy suppression: reduce marginal energy penalty under congestion
+    # Use ready_wait_time as proxy for VM queue/load pressure — longer wait ⇒ relax energy penalty
+    load_suppression = 1.0 / (1.0 + np.exp(-(norm_wait - 0.5)))  # >0.5 wait ⇒ suppress energy cost
+    energy_term = PARAMS["energy_sensitivity"] * norm_energy * load_suppression
+
+    # --- Work-based suppression remains soft, but now uses raw remaining_work for interpretability
+    work_ratio = np.clip(remaining_work / (PARAMS["work_leverage_threshold"] + eps), 
+                         np.finfo(float).tiny, 
+                         np.finfo(float).max)
+    work_suppression = 1.0 / (1.0 + work_ratio)
+
+    # --- Final score: smaller = higher priority
+    # DDL protection dominates (via gate and leverage); energy is secondary and load-conditioned
+    score = (
+        ddl_protection_gate * PARAMS["ddl_protection_weight"]  # Strong base penalty for joint risk
+        + np.power(np.abs(slack) + eps, PARAMS["slack_penalty_exponent"]) * (slack < 0)  # direct negative slack penalty
+        + energy_term                                      # Load-suppressed energy term
+        + dur_uncert_interaction                           # Uncertainty-coupled duration
+        - amplified_leverage                               # Critical path leverage (boosts priority)
+        - wait_benefit                                     # Anti-starvation
+        + work_suppression                                 # Large work → lower priority
+    )
+
+    # Ensure finite output, shape (N,), no NaN/inf
+    score = np.nan_to_num(score, nan=0.0, posinf=np.finfo(float).max, neginf=-np.finfo(float).max)
+    return score
+```

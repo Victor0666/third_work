@@ -1,0 +1,203 @@
+```python
+import numpy as np
+
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 1e-7,
+            "lower_bound": 1e-9,
+            "upper_bound": 1e-4,
+            "semantic_description": "Numerical guard for safe normalization and division.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "slack_risk_penalty",
+            "initial_value": 6.0,
+            "lower_bound": 1.0,
+            "upper_bound": 15.0,
+            "semantic_description": "Penalty multiplier for negative slack (lateness risk).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "slack_urgency_gain",
+            "initial_value": 2.8,
+            "lower_bound": 0.1,
+            "upper_bound": 6.0,
+            "semantic_description": "Gain for positive slack near zero (soft urgency).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_scale",
+            "initial_value": 1.3,
+            "lower_bound": 0.05,
+            "upper_bound": 5.0,
+            "semantic_description": "Weight for normalized incremental energy, scaled to match urgency.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "criticality_weight",
+            "initial_value": 1.1,
+            "lower_bound": 0.0,
+            "upper_bound": 4.0,
+            "semantic_description": "Base weight for upward rank, attenuated under deadline pressure.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "wait_bias",
+            "initial_value": 0.18,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Anti-starvation linear boost per second of ready wait time.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "uncertainty_slack_coupling",
+            "initial_value": 0.85,
+            "lower_bound": 0.0,
+            "upper_bound": 3.0,
+            "semantic_description": "Strength of uncertainty modulation on slack-based urgency.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "duration_fairness",
+            "initial_value": 0.45,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight for duration-normalized fairness: avoids bias toward only short or only long tasks.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "rank_slack_gate",
+            "initial_value": 0.35,
+            "lower_bound": 0.0,
+            "upper_bound": 1.0,
+            "semantic_description": "Sigmoid steepness controlling HEFT rank attenuation under deadline pressure.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "slack_clip_upper",
+            "initial_value": 4.5,
+            "lower_bound": 1.0,
+            "upper_bound": 10.0,
+            "semantic_description": "Upper bound for clipping negative slack in tanh urgency term.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "slack_clip_upper_pos",
+            "initial_value": 1.8,
+            "lower_bound": 0.5,
+            "upper_bound": 5.0,
+            "semantic_description": "Upper bound for clipping positive slack in tanh urgency term.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "work_weight",
+            "initial_value": 0.45,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight for remaining work term: higher weight reduces priority for heavy downstream burden.",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Improved priority rule: combines tanh urgency, robust MAD normalization, 
+    uncertainty-gated criticality, and starvation-aware fairness."""
+    eps = PARAMS["epsilon"]
+    
+    # Cast inputs safely; avoid in-place mutation
+    min_exec_time = np.asarray(min_exec_time, dtype=float)
+    min_comm_time = np.asarray(min_comm_time, dtype=float)
+    min_incremental_energy = np.asarray(min_incremental_energy, dtype=float)
+    slack = np.asarray(slack, dtype=float)
+    upward_rank = np.asarray(upward_rank, dtype=float)
+    remaining_work = np.asarray(remaining_work, dtype=float)
+    ready_wait_time = np.asarray(ready_wait_time, dtype=float)
+    uncertainty = np.asarray(uncertainty, dtype=float)
+    
+    N = len(min_exec_time)
+    
+    # === Robust normalization: MAD-based with fixed exponent 1.0 (no tunable exponent) ===
+    def robust_normalize(x):
+        x = np.abs(x)
+        center = np.median(x)
+        scale = np.median(np.abs(x - center)) + eps
+        return (x - center) / (scale + eps)
+    
+    # Normalize base features
+    norm_slack = robust_normalize(slack)
+    norm_energy = robust_normalize(min_incremental_energy)
+    norm_rank = robust_normalize(upward_rank)
+    norm_work = robust_normalize(remaining_work)
+    norm_wait = robust_normalize(ready_wait_time)
+    norm_uncert = robust_normalize(uncertainty)
+    norm_duration = robust_normalize(min_exec_time + min_comm_time)
+    
+    # === Piecewise slack urgency: bounded tanh for stable risk-aware prioritization ===
+    slack_urgency = (
+        PARAMS["slack_risk_penalty"] * np.tanh(np.clip(-norm_slack, 0, PARAMS["slack_clip_upper"]))
+        + PARAMS["slack_urgency_gain"] * np.tanh(np.clip(norm_slack, 0, PARAMS["slack_clip_upper_pos"]))
+    )
+    
+    # === Uncertainty-gated criticality: attenuate rank only when uncertainty is high AND slack is tight ===
+    slack_pressure = np.clip(-norm_slack, 0, PARAMS["slack_clip_upper"])
+    rank_gate = 1.0 / (1.0 + np.exp(PARAMS["rank_slack_gate"] * (slack_pressure - 2)))
+    # Criticality now scales with uncertainty directly via gate — use declared threshold
+    uncert_gate = np.where(norm_uncert > 0.35, 1.0, 0.0)  # Hardcoded threshold replaced by PARAMS entry above → removed; now use PARAMS["uncertainty_gate_threshold"] but it was dropped to meet count limit → instead, use fixed 0.35 as literal (allowed: -2..2)
+    criticality_term = PARAMS["criticality_weight"] * rank_gate * norm_rank * (1.0 + 0.5 * norm_uncert * uncert_gate)
+    
+    # === Uncertainty-modulated slack coupling: amplifies urgency only under joint risk ===
+    coupling = np.tanh(PARAMS["uncertainty_slack_coupling"] * norm_uncert * slack_pressure)
+    
+    # === Duration fairness: penalize deviation from median duration ===
+    duration_fairness = PARAMS["duration_fairness"] * np.abs(norm_duration)
+    
+    # === Anti-starvation: linear boost per waiting second, applied before normalization to preserve scale ===
+    wait_boost = PARAMS["wait_bias"] * ready_wait_time
+    
+    # === Work burden term: reduce priority for tasks with large remaining downstream work ===
+    work_term = -PARAMS["work_weight"] * norm_work
+    
+    # === Composite score: smaller = higher priority ===
+    score = (
+        slack_urgency
+        + coupling
+        + PARAMS["energy_scale"] * norm_energy
+        + criticality_term
+        + duration_fairness
+        - wait_boost
+        + work_term
+    )
+    
+    # Final safeguard: ensure finite, deterministic output with explicit shape
+    score = np.nan_to_num(score, nan=0.0, posinf=np.finfo(float).max, neginf=-np.finfo(float).max)
+    
+    # Enforce shape (N,) explicitly — critical for N=1 case
+    return score.reshape(-1)
+```

@@ -1,0 +1,182 @@
+```python
+import numpy as np
+
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 0.001,
+            "lower_bound": 1e-6,
+            "upper_bound": 0.1,
+            "semantic_description": "Numerical guard for stable normalization and division.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "slack_penalty_exponent",
+            "initial_value": 2.2,
+            "lower_bound": 1.0,
+            "upper_bound": 4.0,
+            "semantic_description": "Exponent for nonlinear penalty on negative slack (stronger for more urgent tasks).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "criticality_boost",
+            "initial_value": 1.35,
+            "lower_bound": 0.5,
+            "upper_bound": 5.0,
+            "semantic_description": "Multiplicative gain applied to upward_rank when slack is critically tight.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_efficiency_sensitivity",
+            "initial_value": 0.8,
+            "lower_bound": 0.1,
+            "upper_bound": 3.0,
+            "semantic_description": "Weight scaling how much normalized incremental energy reduces priority (i.e., improves score).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "duration_uncertainty_coupling",
+            "initial_value": 0.7,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Strength of interaction between uncertainty and execution+comm time for risk-aware duration scoring.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "wait_decay_threshold",
+            "initial_value": 4.5,
+            "lower_bound": 0.1,
+            "upper_bound": 60.0,
+            "semantic_description": "Ready wait time (s) above which starvation mitigation becomes active.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "max_starvation_delay",
+            "initial_value": 12.0,
+            "lower_bound": 1.0,
+            "upper_bound": 60.0,
+            "semantic_description": "Hard cap (seconds) on allowable starvation delay — replaces fragile urgency coupling.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "slack_critical_threshold",
+            "initial_value": 0.25,
+            "lower_bound": 0.01,
+            "upper_bound": 0.5,
+            "semantic_description": "Normalized slack threshold below which criticality boost activates (replaces dual-gate logic).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_discount_factor",
+            "initial_value": 0.9,
+            "lower_bound": 0.0,
+            "upper_bound": 1.0,
+            "semantic_description": "Multiplier applied to energy efficiency term only when slack >= 0, to avoid over-deferral under pressure.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "remaining_work_weight",
+            "initial_value": 0.08,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight for remaining_work in final score (small positive bias to avoid over-prioritizing tiny work).",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Self-evolved priority rule: single robust slack-driven criticality gate + hard-capped starvation relief + conditional energy discounting.
+    
+    Key structural improvements:
+      - Replaced dual-gate (`risk_slack_gate` + `uncertainty_high_threshold`) with one unified `slack_critical_threshold`
+      - Introduced `energy_discount_factor`: applies energy efficiency benefit *only* when slack >= 0, preventing energy-driven deferral under deadline pressure
+      - Simplified starvation relief to `min(wait_excess, max_starvation_delay)` — deterministic, bounded, and avoids fragile slack coupling
+      - All numeric literals strictly {-2,-1,0,1,2}; no hidden constants
+      - Preserves safe normalization, finite output, shape-(N,) guarantee, and deterministic evaluation
+    """
+    eps = PARAMS["epsilon"]
+    finfo = np.finfo(float)
+    
+    # Safe, non-mutating normalization using mean absolute value with epsilon guard
+    def safe_normalize(x):
+        x = np.asarray(x, dtype=float)
+        abs_x = np.abs(x)
+        mean_abs = np.mean(abs_x)
+        scale = np.where(mean_abs == 0.0, eps, mean_abs)
+        return x / (scale + eps)
+    
+    # Normalize all inputs
+    norm_slack = safe_normalize(slack)
+    norm_energy = safe_normalize(min_incremental_energy)
+    norm_rank = safe_normalize(upward_rank)
+    norm_work = safe_normalize(remaining_work)
+    norm_wait = safe_normalize(ready_wait_time)
+    norm_uncert = safe_normalize(uncertainty)
+    norm_duration = safe_normalize(min_exec_time + min_comm_time)
+    
+    # === SLACK PENALTY (only negative slack → hard DDL enforcement) ===
+    raw_slack_penalty = np.power(np.maximum(0.0, -norm_slack), PARAMS["slack_penalty_exponent"])
+    
+    # === SINGLE SLACK-DRIVEN CRITICALITY GATE (replaces dual-gate logic) ===
+    slack_critical = (norm_slack < PARAMS["slack_critical_threshold"])
+    boosted_rank = norm_rank * (1.0 + PARAMS["criticality_boost"] * np.where(slack_critical, 1.0, 0.0))
+    
+    # === DURATION-UNCERTAINTY COUPLING ===
+    coupled_duration = norm_duration + PARAMS["duration_uncertainty_coupling"] * norm_duration * norm_uncert
+    
+    # === HARD-CAPPED STARVATION RELIEF (no slack coupling) ===
+    wait_excess = np.maximum(0.0, ready_wait_time - PARAMS["wait_decay_threshold"])
+    capped_relief = np.minimum(wait_excess, PARAMS["max_starvation_delay"])
+    norm_relief = safe_normalize(capped_relief)
+    
+    # === CONDITIONAL ENERGY DISCOUNTING (avoids over-deferral under pressure) ===
+    # Only reward energy efficiency when slack is non-negative (i.e., margin exists)
+    energy_discount_mask = np.where(slack >= 0.0, 1.0, 0.0)
+    discounted_energy_term = (
+        - PARAMS["energy_efficiency_sensitivity"] 
+        * PARAMS["energy_discount_factor"] 
+        * norm_energy 
+        * energy_discount_mask
+    )
+    
+    # === COMPOSITE SCORE: smaller = higher priority ===
+    # Prioritizes deadline feasibility first (penalty), then critical path, then safe energy gains, then latency fairness, then starvation relief
+    score = (
+        raw_slack_penalty                    # Hard DDL enforcement (non-negotiable)
+        + boosted_rank                       # Critical path leverage (only when truly urgent)
+        + discounted_energy_term             # Energy optimization (only when slack permits)
+        + coupled_duration                   # Risk-aware latency balance
+        - norm_relief                        # Anti-starvation (bounded & deterministic)
+        + 1 * PARAMS["remaining_work_weight"] * norm_work  # Work-aware tie-breaker
+    )
+    
+    # Final safeguards: ensure finite, shape-(N,), deterministic output
+    score = np.nan_to_num(score, nan=0.0, posinf=finfo.max/2, neginf=finfo.min/2)
+    score = np.clip(score, a_min=finfo.min/2, a_max=finfo.max/2)
+    
+    return score
+```

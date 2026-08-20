@@ -1,0 +1,255 @@
+```python
+import numpy as np
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 0.001,
+            "lower_bound": 1e-6,
+            "upper_bound": 0.1,
+            "semantic_description": "Numerical guard for stable normalization and division.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "slack_penalty_exponent",
+            "initial_value": 2.35,
+            "lower_bound": 1.0,
+            "upper_bound": 4.0,
+            "semantic_description": "Exponent for nonlinear penalty on negative slack (risk-aware urgency).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "criticality_scale",
+            "initial_value": 1.82,
+            "lower_bound": 0.5,
+            "upper_bound": 3.0,
+            "semantic_description": "Amplification factor for upward_rank when slack is tight.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_sensitivity",
+            "initial_value": 0.975,
+            "lower_bound": 0.1,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight applied to normalized incremental energy in feasible region.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "duration_robustness",
+            "initial_value": 0.81,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight for duration uncertainty interaction with slack pressure.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "wait_decay",
+            "initial_value": 0.41,
+            "lower_bound": 0.0,
+            "upper_bound": 1.0,
+            "semantic_description": "Decay rate for starvation relief: higher = faster saturation of wait benefit.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "uncertainty_smoothness",
+            "initial_value": 1.66,
+            "lower_bound": 0.5,
+            "upper_bound": 3.0,
+            "semantic_description": "Exponent for graded uncertainty activation — replaces binary gate with soft sigmoidal response.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "slack_gate_width",
+            "initial_value": 0.56,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Width parameter for smooth slack-based gating of criticality boost.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_slack_interaction",
+            "initial_value": 0.885,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Coupling strength between marginal energy and slack pressure for deadline-driven energy tradeoff.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "rank_slack_coupling",
+            "initial_value": 0.685,
+            "lower_bound": 0.0,
+            "upper_bound": 1.0,
+            "semantic_description": "Strength of coupling between upward_rank and slack pressure for critical path acceleration.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "lateness_penalty_strength",
+            "initial_value": 1.86,
+            "lower_bound": 0.5,
+            "upper_bound": 3.0,
+            "semantic_description": "Multiplicative boost to all penalties when slack < -eps, enforcing hard deadline feasibility.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "work_slack_coupling",
+            "initial_value": 0.51,
+            "lower_bound": 0.0,
+            "upper_bound": 1.0,
+            "semantic_description": "Strength of coupling between remaining_work and slack pressure for large-workload prioritization under urgency.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "dynamic_slack_margin_factor",
+            "initial_value": 0.52,
+            "lower_bound": 0.1,
+            "upper_bound": 1.0,
+            "semantic_description": "Factor scaling median slack to define dynamic safety margin for DDL-protection gating.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "quantile_alpha",
+            "initial_value": 0.25,
+            "lower_bound": 0.05,
+            "upper_bound": 0.5,
+            "semantic_description": "Lower quantile for IQR-based normalization of slack and remaining_work.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "quantile_beta",
+            "initial_value": 0.75,
+            "lower_bound": 0.5,
+            "upper_bound": 0.95,
+            "semantic_description": "Upper quantile for IQR-based normalization of slack and remaining_work.",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Self-evolved priority rule: adopts quantile-based (IQR) normalization for slack and remaining_work
+       to preserve ordinal relationships under skew; introduces dynamic DDL-protection gate that activates
+       critical-path boosting only when slack falls below adaptive safety margin (median_slack * factor);
+       retains all prior robust interactions (lateness multiplier, work-slack coupling, soft uncertainty);
+       removes fragile absolute lateness thresholding in favor of relative, distribution-aware gating;
+       ensures monotonic priority ordering under deadline stress while maintaining deterministic structure."""
+    eps = PARAMS["epsilon"]
+    
+    # Cast inputs safely; avoid in-place mutation
+    min_exec_time = np.asarray(min_exec_time, dtype=float)
+    min_comm_time = np.asarray(min_comm_time, dtype=float)
+    min_incremental_energy = np.asarray(min_incremental_energy, dtype=float)
+    slack = np.asarray(slack, dtype=float)
+    upward_rank = np.asarray(upward_rank, dtype=float)
+    remaining_work = np.asarray(remaining_work, dtype=float)
+    ready_wait_time = np.asarray(ready_wait_time, dtype=float)
+    uncertainty = np.asarray(uncertainty, dtype=float)
+    
+    N = len(min_exec_time)
+    
+    # === Quantile-based normalization for slack and remaining_work (IQR + median) ===
+    # Preserves ordinality and tail behavior better than MAD under skewed deadline distributions
+    def quantile_normalize(x, alpha=PARAMS["quantile_alpha"], beta=PARAMS["quantile_beta"]):
+        if N == 0:
+            return np.zeros(0, dtype=float)
+        q_low = np.quantile(x, alpha)
+        q_high = np.quantile(x, beta)
+        iqr = q_high - q_low + eps
+        center = np.median(x)
+        return (x - center) / iqr
+    
+    # Normalize base features (scale-invariant, finite, deterministic)
+    # Use quantile norm only for slack and remaining_work per reflection; others retain MAD for stability
+    def robust_normalize_mad(x):
+        if N == 0:
+            return np.zeros(0, dtype=float)
+        center = np.median(x)
+        scale = np.median(np.abs(x - center)) + eps
+        return (x - center) / (scale + eps)
+    
+    norm_slack = quantile_normalize(slack)
+    norm_energy = robust_normalize_mad(min_incremental_energy)
+    norm_duration = robust_normalize_mad(min_exec_time + min_comm_time)
+    norm_rank = robust_normalize_mad(upward_rank)
+    norm_work = quantile_normalize(remaining_work)
+    norm_wait = robust_normalize_mad(ready_wait_time)
+    norm_uncert = robust_normalize_mad(uncertainty)
+    
+    # === Dynamic DDL-protection gate: activates criticality boost only when slack < median_slack * factor ===
+    # Decouples urgency from absolute lateness, improving feasibility robustness across workflow scales
+    median_slack = np.median(slack)
+    dynamic_margin = median_slack * PARAMS["dynamic_slack_margin_factor"]
+    ddl_protection_gate = (slack < dynamic_margin).astype(float)
+    
+    # === Risk-aware slack pressure: monotonic clipped power (avoids zero-division & preserves order) ===
+    slack_pressure_raw = np.clip(-norm_slack, 0.0, None)
+    slack_pressure = np.power(slack_pressure_raw + eps, PARAMS["slack_penalty_exponent"])
+    
+    # === Lateness penalty gate: multiplicative enforcement only on penalties when critically overdue ===
+    is_late = (slack < -eps).astype(float)
+    lateness_multiplier = 1.0 + PARAMS["lateness_penalty_strength"] * is_late
+    
+    # === Critical-path acceleration gate: now driven by dynamic DDL-protection, not raw norm_slack ===
+    # Boosts rank only when slack breaches adaptive safety margin — more robust to workflow scale changes
+    boosted_rank = norm_rank * (1.0 + PARAMS["criticality_scale"] * ddl_protection_gate)
+    
+    # === Soft uncertainty activation: graded sigmoidal response ===
+    uncertainty_activation = 1.0 / (1.0 + np.exp(-PARAMS["uncertainty_smoothness"] * (norm_uncert - 0.0)))
+    duration_risk_interaction = norm_duration * uncertainty_activation * PARAMS["duration_robustness"]
+    
+    # === Starvation relief: saturating exponential form ===
+    wait_benefit = 1.0 - np.exp(-PARAMS["wait_decay"] * (norm_wait + eps))
+    
+    # === Energy-slack interaction: penalizes high marginal energy more under tight slack ===
+    energy_slack_penalty = norm_energy * (1.0 + PARAMS["energy_slack_interaction"] * slack_pressure)
+    
+    # === Rank-slack coupling: strengthens critical path reward exactly when slack is constrained ===
+    coupled_rank_reward = norm_rank * (1.0 + PARAMS["rank_slack_coupling"] * slack_pressure)
+    
+    # === Novel work-slack coupling: prioritizes high remaining_work tasks when slack is negative ===
+    work_slack_penalty = norm_work * (1.0 + PARAMS["work_slack_coupling"] * slack_pressure)
+    
+    # === Final score: smaller = higher priority ===
+    # Dynamic DDL-protection replaces brittle fixed thresholds; quantile norm improves rank fidelity on skewed data
+    score = (
+        + lateness_multiplier * slack_pressure                # Primary urgency driver
+        + lateness_multiplier * energy_slack_penalty          # Deadline-amplified energy cost
+        + lateness_multiplier * PARAMS["energy_sensitivity"] * norm_energy  # Base energy penalty
+        + lateness_multiplier * work_slack_penalty             # Compute-load acceleration under urgency
+        - coupled_rank_reward                                # Critical path reward (untouched by lateness)
+        - wait_benefit                                       # Anti-starvation relief (untouched)
+        + lateness_multiplier * duration_risk_interaction    # Graded risk-duration penalty
+        - boosted_rank * ddl_protection_gate                 # Dynamic DDL-protection: critical-path acceleration only when needed
+    )
+    
+    # Final safeguard: ensure finite, deterministic output with strict shape (N,)
+    finfo = np.finfo(float)
+    score = np.nan_to_num(score, nan=finfo.max, posinf=finfo.max, neginf=finfo.min)
+    assert score.shape == (N,), f"Expected shape {(N,)}, got {score.shape}"
+    return score
+```

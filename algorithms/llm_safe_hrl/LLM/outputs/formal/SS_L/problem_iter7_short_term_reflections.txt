@@ -1,0 +1,30 @@
+- Replaces unstable MAD-based normalization with bounded min-max scaling to preserve raw slack signal fidelity for deadline-critical decisions.  
+- Introduces `slack_penalty_exponent` (nonlinear lateness penalty) instead of tanh-based urgency, improving sensitivity to violation magnitude.  
+- Adds `duration_robustness`—a joint risk gate coupling duration, uncertainty, and slack pressure—to penalize high-risk execution paths only when DDL stress exists.
+- Replaced binary uncertainty gating with smooth sigmoidal activation (`uncertainty_smoothness` + `uncertainty_gate_threshold`), improving gradient continuity and partial-risk responsiveness.  
+- Restored `rank_slack_coupling` to explicitly reinforce critical-path prioritization under deadline pressure—directly addressing hard-DDL feasibility.  
+- Switched to median/MAD normalization for outlier resilience, avoiding mean-abs bias that distorts urgency signals in skewed slack/energy distributions.
+- Replaced fragile min-max normalization with robust MAD-based normalization to preserve outlier-resistant signal fidelity for deadline-critical features like `slack`.  
+- Introduced sigmoid-based `slack_pressure_gate_steepness` (replacing linear gate) for sharper critical-path activation under tight deadlines, directly addressing repeated `higher_ddl_risk_choice` failures.  
+- Added multiplicative `energy_uncertainty_interaction` term to penalize high-risk-high-energy tasks—aligned with high-confidence `avoidable_marginal_energy_or_load_cost` patterns across seeds and decisions.
+- Replace piecewise `np.where(slack < 0, ..., 0)` with bounded `tanh`-based urgency to preserve gradient flow and avoid sharp discontinuities in priority gradients.  
+- Introduce joint risk-energy gating (`energy_uncertainty_interaction`) instead of additive uncertainty penalties — improves feasibility by penalizing high-energy choices only under high uncertainty *and* tight slack.  
+- Use mean-abs scaling (not median-based) for robust, low-cost normalization — avoids outlier sensitivity and reduces computational overhead in dynamic scheduling loops.
+- Replaced brittle `slack_tightness_threshold`-based gating with robust `slack <= 0.0` binary urgency trigger, directly aligning with DDL violation semantics and eliminating unstable normalization dependency.  
+- Introduced `energy_relaxation_under_ddl_stress` to dynamically reduce energy sensitivity when slack ≤ 0, prioritizing deadline feasibility over energy — strongly supported by counterfactual and replay evidence of DDL-dominated failures.  
+- Swapped `slack_penalty_exponent` + `tanh(raw_urgency)` for `slack_pressure_gate_steepness` + direct `tanh(-slack * steepness)`, preserving physical slack scale and improving gradient signal near deadlines.
+- Replaced brittle binary uncertainty gating with smooth sigmoidal activation, improving gradient continuity and robustness under moderate risk.  
+- Restored `rank_slack_coupling` to explicitly reinforce critical-path prioritization under deadline pressure—directly aiding feasibility.  
+- Simplified normalization to median-centered MAD (no clipping), reducing outlier distortion while preserving scale invariance and determinism.
+- **Sign-preserving robust normalization** (median + MAD) fixes distortion in slack/wait signals that harmed urgency/starvation balance in Version 1’s mean-based normalization.  
+- **Unified slack pressure** (power-law penalty only for negative slack) avoids over-penalizing safe tasks, reducing deadline violations versus Version 1’s tanh-based urgency + dual-gated coupling.  
+- **Linear slack reward** explicitly promotes early scheduling of high-slack tasks—counteracting aggressive late-task bias and improving feasibility-first ranking.
+- Replaced brittle `rank_slack_coupling` + hard `slack_gate_width` with sharper, tunable sigmoid `slack_pressure_gate_steepness`, improving critical-path activation under deadline pressure.  
+- Introduced multiplicative `energy_uncertainty_interaction`, directly penalizing high-energy choices under uncertainty—aligning risk-aware energy tradeoffs with DDL constraints.  
+- Added `remaining_work_weight` to mildly bias toward tasks with large downstream computation, improving DAG-level throughput without violating feasibility-first ranking.
+- Replaced fragile min-max normalization with robust MAD-based normalization to preserve outlier-resistant signal fidelity for deadline-critical features like `slack`.  
+- Introduced sigmoid-based `slack_pressure_gate_steepness` (replacing linear gate) for sharper critical-path activation under tight deadlines, directly addressing repeated `higher_ddl_risk_choice` failures.  
+- Added multiplicative `energy_uncertainty_interaction` term to penalize high-risk-high-energy tasks—strongly supported by repeated `avoidable_marginal_energy_or_load_cost` patterns across seeds and decisions.
+- Replaced brittle sigmoid-based `ddl_protection_gate` with a simpler, more stable boolean gate (`slack_tight & uncert_low`) — reducing overfitting and numerical instability in critical-path activation.  
+- Removed redundant `duration_robustness` and `slack_pressure_gate_steepness` parameters, eliminating inactive/fragile interactions that harmed generalization.  
+- Switched from mean-centered `scale_feature` to robust `mean(abs(x)) + eps` scaling — improving stability under skewed or sparse feature distributions.

@@ -1,0 +1,165 @@
+```python
+import numpy as np
+
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 1e-6,
+            "lower_bound": 1e-9,
+            "upper_bound": 1e-3,
+            "semantic_description": "Numerical guard for safe division and normalization.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "slack_penalty_factor",
+            "initial_value": 5.0,
+            "lower_bound": 1.0,
+            "upper_bound": 12.0,
+            "semantic_description": "Amplifies priority boost for tasks with negative or near-zero slack.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "criticality_boost",
+            "initial_value": 1.2,
+            "lower_bound": 0.5,
+            "upper_bound": 3.0,
+            "semantic_description": "Nonlinear gain applied to upward_rank when slack is tight.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_efficiency_gain",
+            "initial_value": 0.7,
+            "lower_bound": 0.1,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight for energy efficiency only when slack is non-negative.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "wait_decay",
+            "initial_value": 0.05,
+            "lower_bound": 0.0,
+            "upper_bound": 0.3,
+            "semantic_description": "Exponential decay rate for anti-starvation benefit over time.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "uncertainty_slack_coupling",
+            "initial_value": 0.8,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Strength of interaction between uncertainty and slack pressure.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "duration_sensitivity",
+            "initial_value": 0.4,
+            "lower_bound": 0.0,
+            "upper_bound": 1.5,
+            "semantic_description": "Weight for normalized duration only when slack > 0.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "work_balance_factor",
+            "initial_value": 0.6,
+            "lower_bound": 0.0,
+            "upper_bound": 1.8,
+            "semantic_description": "Balances remaining_work importance against urgency and energy.",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Novel priority rule: Slack-driven criticality gating + uncertainty-coupled energy efficiency.
+    
+    Key innovations:
+    - Uses piecewise slack gating: negative slack triggers strong penalty + criticality boost;
+      non-negative slack enables energy/duration optimization.
+    - Introduces exponential wait credit (not linear) to avoid starvation while bounding growth.
+    - Combines uncertainty and slack via bounded product, not max/min, for smooth risk coupling.
+    - Normalizes each feature robustly using IQR-based scaling + epsilon guard.
+    - Avoids sign flips on upward_rank/work: higher values always indicate higher structural importance.
+    """
+    epsilon = PARAMS["epsilon"]
+    N = len(slack)
+    
+    # Robust normalization: use interquartile range + mean absolute deviation for stability
+    def robust_normalize(x):
+        x = np.asarray(x, dtype=float)
+        q75, q25 = np.percentile(x, [75, 25], method='midpoint')
+        iqr = q75 - q25
+        mad = np.median(np.abs(x - np.median(x)))
+        scale = np.maximum(iqr, mad) + epsilon
+        return (x - np.median(x)) / scale
+    
+    # Normalize base features
+    norm_slack = robust_normalize(slack)
+    norm_energy = robust_normalize(min_incremental_energy)
+    norm_duration = robust_normalize(min_exec_time + min_comm_time)
+    norm_rank = robust_normalize(upward_rank)
+    norm_work = robust_normalize(remaining_work)
+    norm_wait = robust_normalize(ready_wait_time)
+    norm_uncert = robust_normalize(uncertainty)
+    
+    # Slack-based gating: critical regime (slack <= 0) vs. efficiency regime (slack > 0)
+    is_critical = (slack <= 0).astype(float)
+    is_efficient = 1.0 - is_critical
+    
+    # Critical regime: prioritize by slack penalty + upward_rank amplification
+    # Penalty grows quadratically for more negative slack, bounded by epsilon
+    slack_penalty = PARAMS["slack_penalty_factor"] * np.square(np.minimum(norm_slack, 0.0))
+    
+    # Amplify upward_rank only in critical regime, using soft-gated sigmoid-like boost
+    rank_boost = PARAMS["criticality_boost"] * norm_rank * is_critical
+    
+    # Efficiency regime: favor low-energy, short-duration, high-work-balance tasks
+    energy_efficiency = -PARAMS["energy_efficiency_gain"] * norm_energy * is_efficient
+    duration_favor = -PARAMS["duration_sensitivity"] * norm_duration * is_efficient
+    work_balance = -PARAMS["work_balance_factor"] * norm_work * is_efficient
+    
+    # Anti-starvation: exponential wait credit (bounded, monotonic, no overflow)
+    # Clip ready_wait_time to avoid exp overflow; use scaled log for numerical safety
+    wait_clip = np.clip(ready_wait_time, 0.0, 1e3)
+    wait_credit = np.exp(-PARAMS["wait_decay"] * wait_clip) - 1.0  # negative → higher priority
+    wait_credit = np.clip(wait_credit, -0.999, 0.0)  # ensure finite, negative-only credit
+    
+    # Uncertainty-slack coupling: stronger interaction when both are high-risk
+    # Bounded product avoids explosion; uses normalized versions for consistent scale
+    unc_slack_coupling = -PARAMS["uncertainty_slack_coupling"] * norm_uncert * np.abs(norm_slack)
+    
+    # Assemble score: smaller = better
+    score = (
+        slack_penalty
+        + rank_boost
+        + energy_efficiency
+        + duration_favor
+        + work_balance
+        + wait_credit
+        + unc_slack_coupling
+    )
+    
+    # Final safeguard: ensure finite outputs, preserve shape (N,)
+    score = np.nan_to_num(score, nan=0.0, posinf=np.finfo(float).max, neginf=-np.finfo(float).max)
+    return score
+```

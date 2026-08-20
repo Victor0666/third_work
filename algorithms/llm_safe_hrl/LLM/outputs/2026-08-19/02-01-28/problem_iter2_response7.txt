@@ -1,0 +1,194 @@
+```python
+import numpy as np
+
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 0.001,
+            "lower_bound": 1e-9,
+            "upper_bound": 0.1,
+            "semantic_description": "Numerical safeguard for division and normalization.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "slack_risk_penalty",
+            "initial_value": 6.0,
+            "lower_bound": 0.5,
+            "upper_bound": 15.0,
+            "semantic_description": "Penalty multiplier for negative slack (deadline pressure).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "slack_benefit_gain",
+            "initial_value": 1.4,
+            "lower_bound": 0.1,
+            "upper_bound": 4.0,
+            "semantic_description": "Gain multiplier for positive slack (flexibility reward).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_scale",
+            "initial_value": 0.75,
+            "lower_bound": 0.01,
+            "upper_bound": 3.0,
+            "semantic_description": "Weight for normalized risk-adjusted incremental energy.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "critical_path_weight",
+            "initial_value": 1.8,
+            "lower_bound": 0.0,
+            "upper_bound": 5.0,
+            "semantic_description": "Weight for upward_rank to prioritize critical-path tasks.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "work_density_weight",
+            "initial_value": 0.7,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight for remaining_work per unit duration (work density).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "wait_starvation_relief",
+            "initial_value": 0.35,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Anti-starvation boost per second of ready_wait_time.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "uncertainty_slack_coupling",
+            "initial_value": 0.85,
+            "lower_bound": 0.0,
+            "upper_bound": 3.0,
+            "semantic_description": "Strength of uncertainty-modulated slack penalty/gain.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "duration_flexibility_bias",
+            "initial_value": -0.45,
+            "lower_bound": -2.0,
+            "upper_bound": 0.5,
+            "semantic_description": "Bias term for duration-based flexibility: favors moderate durations.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "robustness_adaptation_rate",
+            "initial_value": 0.6,
+            "lower_bound": 0.0,
+            "upper_bound": 1.0,
+            "semantic_description": "Blending factor between median-based and mean-abs-based normalization robustness.",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Hybrid priority rule: combines Parent 2's smooth slack gating and work density
+    with Parent 1's starvation saturation and uncertainty-aware coupling, plus novel
+    adaptive normalization and bounded latency-energy tradeoff."""
+    eps = PARAMS["epsilon"]
+    finfo = np.finfo(float)
+    eps_safe = max(eps, finfo.tiny)
+
+    # Adaptive robust normalization: blends median-MAD and mean-abs using tunable rate
+    def adaptive_normalize(x):
+        x = np.asarray(x, dtype=float)
+        # Median-based center & spread
+        med = np.median(x)
+        mad = np.median(np.abs(x - med)) + eps_safe
+        norm_med = (x - med) / mad
+        # Mean-abs-based normalization
+        mean_abs = np.mean(np.abs(x)) + eps_safe
+        norm_meanabs = x / mean_abs
+        # Blend using robustness_adaptation_rate
+        return PARAMS["robustness_adaptation_rate"] * norm_med + \
+               (1.0 - PARAMS["robustness_adaptation_rate"]) * norm_meanabs
+
+    # Core duration and derived features
+    duration = min_exec_time + min_comm_time
+    norm_duration = adaptive_normalize(duration)
+    norm_slack = adaptive_normalize(slack)
+    norm_energy = adaptive_normalize(min_incremental_energy)
+    norm_rank = adaptive_normalize(upward_rank)
+    norm_work = adaptive_normalize(remaining_work)
+    norm_wait = adaptive_normalize(ready_wait_time)
+    norm_uncert = adaptive_normalize(uncertainty)
+
+    # Work density: compute efficiency — remaining_work per time unit, robustly normalized
+    work_density = remaining_work / (duration + eps_safe)
+    norm_work_density = adaptive_normalize(work_density)
+
+    # Smooth sigmoid slack gating (centered at zero, slope controlled by fixed 2.0)
+    slack_gate = 1.0 / (1.0 + np.exp(-2.0 * norm_slack))  # Sigmoid: 0→1 transition at slack=0
+    slack_penalty_term = PARAMS["slack_risk_penalty"] * (1.0 - slack_gate) * norm_slack
+    slack_gain_term = PARAMS["slack_benefit_gain"] * slack_gate * norm_slack
+
+    # Uncertainty-coupled slack modulation: amplifies both penalty and gain where uncertainty is high
+    coupled_slack = (slack_penalty_term + slack_gain_term) * (
+        1.0 + PARAMS["uncertainty_slack_coupling"] * np.clip(norm_uncert, 0.0, 2.0)
+    )
+
+    # Critical path term: higher upward_rank → higher priority → subtract (since smaller score wins)
+    critical_term = -PARAMS["critical_path_weight"] * norm_rank
+
+    # Work density efficiency term: prefer high-compute-per-time tasks
+    work_density_term = -PARAMS["work_density_weight"] * norm_work_density
+
+    # Energy minimization: lower incremental energy → higher priority (add scaled norm_energy)
+    energy_term = PARAMS["energy_scale"] * norm_energy
+
+    # Starvation relief via saturating log1p (from Parent 1), prevents unbounded wait benefit
+    starvation_term = -PARAMS["wait_starvation_relief"] * np.log1p(norm_wait * 0.5) / (0.5 + eps_safe)
+
+    # Duration flexibility bias: quadratic penalty around |norm_duration| = 1.0 (balanced duration)
+    flex_penalty = PARAMS["duration_flexibility_bias"] * ((np.abs(norm_duration) - 1.0) ** 2)
+
+    # Bounded latency-energy tradeoff: penalize high duration * high energy coupling
+    # Only active when both are above median-normalized threshold → avoids over-penalizing small tasks
+    dur_energy_coupling = np.where(
+        (norm_duration > 0.0) & (norm_energy > 0.0),
+        norm_duration * norm_energy * 0.5,
+        0.0
+    )
+
+    # Assemble final priority score: smaller = higher priority
+    score = (
+        coupled_slack
+        + critical_term
+        + work_density_term
+        + energy_term
+        + starvation_term
+        + flex_penalty
+        + dur_energy_coupling
+    )
+
+    # Final numerical safeguard: ensure finite, replace NaN/inf with safe bounds
+    score = np.nan_to_num(score, nan=0.0, posinf=finfo.max, neginf=finfo.min)
+    return score
+```

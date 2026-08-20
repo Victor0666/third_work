@@ -1,0 +1,30 @@
+- Unified smooth DDL protection gate (`ddl_protection_gate_width`) enables consistent, differentiable modulation of *all* deadline-sensitive terms—criticality, energy, release pressure, and load—improving feasibility robustness under fuzzy slack uncertainty.  
+- Restored median/MAD normalization (vs. median-only) enhances outlier resilience for skewed `ready_wait_time` and `uncertainty`, reducing starvation/over-prioritization artifacts in long-tail workloads.  
+- Added gated successor-release pressure (`release_pressure_weight`) and nonlinear host-load interaction (`load_uncertainty_exponent`) jointly improve critical-path progression and risk-concentrated work handling under deadline stress.
+- Replace hard `slk >= 0` gating with smooth sigmoid feasibility blending to enable gradient-aware optimization while preserving deadline-critical behavior at extremes.  
+- Introduce joint percentile normalization over `[slack, upward_rank, remaining_work]` to eliminate scale misalignment in successor-release interactions.  
+- Replace `finfo_max_scale`-based NaN/inf clipping with symmetric `np.clip(score, -bound, bound)` using tunable `score_clip_bound` for deterministic finite output.
+- Replaced fragile exponential starvation mitigation with bounded linear clipping (`wait_clip_threshold`), improving robustness and interpretability.  
+- Introduced bottleneck-proximal term (`upward_rank * remaining_work`) to prioritize critical-path tasks blocking large descendant workloads.  
+- Switched to sigmoid DDL gate (`ddl_protection_gate`) for smooth, feasibility-aware suppression of non-urgent tasks—replacing hard thresholds and inconsistent gating.
+- Replaced brittle linear clipping of `ready_wait_time` with exponential saturation (`1 - exp(-rate * wait)`), improving starvation mitigation stability and reducing sensitivity to parameter boundary contact.  
+- Introduced `uncertainty_slack_interaction`: amplifies uncertainty impact only under deadline stress (negative normalized slack), directly addressing DDL-risk–energy tradeoff per counterfactual evidence.  
+- Simplified criticality gating from tight `ddl_protection_gate` (Version 1) to robust `slack_norm >= 0` activation, aligning with cross-seed replay evidence showing over-constrained gating caused critical-path starvation.
+- Replace hard `ddl_protection_gate` threshold (Version 1) with smooth sigmoid gating (Version 2) to softly prioritize DDL-critical tasks without brittle boundary effects.  
+- Introduce `bottleneck_proximity_weight` (not just `load_successor_release_weight`) to explicitly scale `upward_rank * remaining_work`—better capturing bottleneck impact under deadline stress.  
+- Use median-based normalization universally (both versions), but Version 2’s consistent application and removal of redundant conditional logic reduce fragility and improve cross-seed robustness.
+- Replaced unstable exponential wait decay with bounded linear clipping, improving starvation mitigation robustness and reducing seed sensitivity.  
+- Introduced conditional DDL protection gate that dynamically amplifies energy/criticality and suppresses duration under tight slack, enforcing deadline-first priority.  
+- Removed inactive features (e.g., `uncertainty_slack_interaction`, `wait_decay_rate`) and simplified normalization to median-based—reducing fragility and cross-scenario variance.
+- Replaced fragile exponential starvation mitigation with bounded linear clipping (`wait_clip_threshold`), improving robustness and interpretability.  
+- Introduced bottleneck-proximal term (`upward_rank * remaining_work`) to prioritize critical-path tasks blocking large descendant workloads.  
+- Switched to smooth sigmoid DDL gate (`ddl_protection_gate`) instead of hard or width-tuned gating, enabling consistent feasibility-first prioritization near slack=0.
+- Replaced hard slack gating with smooth sigmoid `ddl_protection_gate`, enabling graded feasibility enforcement near deadline boundaries instead of brittle on/off behavior.  
+- Introduced explicit `criticality_weight` *and* `bottleneck_proximity_weight` as separate, jointly optimized terms—decoupling upward-rank importance from descendant-work impact for finer control over critical-path bottlenecks.  
+- Upgraded `wait_clip_threshold` to a larger, more robust bound (10→14.8), preventing starvation under variable queue dynamics while preserving bounded linearity per design constraints.
+- Replaced hard thresholding (`ddl_protection_gate` + boolean masking) with smooth sigmoid gating → improves robustness to slack estimation noise and avoids brittle priority inversions near deadline boundaries.  
+- Introduced bottleneck-proximal term (`upward_rank * remaining_work`) → directly targets critical-path bottlenecks, resolving repeated `COUNTERFACTUAL_DOMINATED_CHOICE` and `CRITICAL_PATH_STARVATION` failures seen in replay.  
+- Removed redundant amplification factors (`energy_amplification_factor`, `criticality_amplification_factor`) → eliminates fragile parameter coupling and aligns with `inactive_parameter` evidence; their effect is now absorbed into smoother, more interpretable bottleneck and sigmoid-gated terms.
+- Replaces brittle `ddl_protection_gate` (Version 1) with robust *normalized slack sign gating* — eliminates fragile thresholding and improves deadline sensitivity under uncertainty.  
+- Introduces `uncertainty_slack_interaction`, activating only when normalized slack is negative — captures risk amplification under deadline stress without destabilizing feasible regions.  
+- Switches from bounded linear wait clipping to exponential saturation (`1 - exp(-wait_decay_rate * wait)`), better balancing starvation mitigation and numerical stability across seeds.

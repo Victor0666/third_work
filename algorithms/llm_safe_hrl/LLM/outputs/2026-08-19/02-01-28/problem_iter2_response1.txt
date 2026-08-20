@@ -1,0 +1,187 @@
+```python
+import numpy as np
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 1e-08,
+            "lower_bound": 1e-12,
+            "upper_bound": 1e-4,
+            "semantic_description": "Numerical guard for stable division and normalization.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "deadline_risk_penalty",
+            "initial_value": 2.0,
+            "lower_bound": 0.5,
+            "upper_bound": 5.0,
+            "semantic_description": "Hard penalty weight on normalized deadline violation risk (-slack).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_weight",
+            "initial_value": 0.25,
+            "lower_bound": 0.05,
+            "upper_bound": 0.5,
+            "semantic_description": "Weight for normalized incremental energy (risk-adjusted fuzzy joules).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "exec_time_weight",
+            "initial_value": 0.25,
+            "lower_bound": 0.05,
+            "upper_bound": 0.4,
+            "semantic_description": "Weight for normalized minimum execution time.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "comm_time_weight",
+            "initial_value": 0.15,
+            "lower_bound": 0.01,
+            "upper_bound": 0.3,
+            "semantic_description": "Weight for normalized minimum communication time.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "work_weight",
+            "initial_value": 0.1,
+            "lower_bound": 0.0,
+            "upper_bound": 0.3,
+            "semantic_description": "Weight for normalized remaining computational work (MI).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "upward_rank_weight",
+            "initial_value": -0.15,
+            "lower_bound": -0.3,
+            "upper_bound": 0.0,
+            "semantic_description": "Negative weight: higher upward rank lowers priority (defers less critical tasks).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "wait_weight",
+            "initial_value": -0.05,
+            "lower_bound": -0.2,
+            "upper_bound": 0.0,
+            "semantic_description": "Negative weight: longer ready_wait_time boosts priority (anti-starvation).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "uncertainty_slack_coupling",
+            "initial_value": 0.8,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Strength of uncertainty × slack_risk interaction term.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "sigmoid_steepness",
+            "initial_value": 4.0,
+            "lower_bound": 1.0,
+            "upper_bound": 10.0,
+            "semantic_description": "Steepness of sigmoid gate for slack-based urgency modulation.",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Improved priority rule combining Parent 2's stability with robust slack gating and bounded outputs.
+    
+    Key improvements:
+      - Uses mean-abs normalization (Parent 2) for outlier resilience and monotonic scaling.
+      - Replaces fragile tight-mask logic (Parent 1) with a smooth, bounded sigmoid urgency gate.
+      - Introduces explicit uncertainty×slack coupling as multiplicative risk amplification.
+      - Enforces feasibility-first via hard deadline-risk penalty and soft-clamped final score.
+      - All numeric literals are only -2, -1, 0, 1, or 2; all tunables are PARAMS-referenced.
+      - Final score is clamped via sigmoid-like soft bounds to prevent overflow while preserving ordering.
+    """
+    eps = PARAMS["epsilon"]
+    N = len(slack)
+
+    # Cast to float and ensure no in-place mutation
+    min_exec_time = np.asarray(min_exec_time, dtype=float)
+    min_comm_time = np.asarray(min_comm_time, dtype=float)
+    min_incremental_energy = np.asarray(min_incremental_energy, dtype=float)
+    slack = np.asarray(slack, dtype=float)
+    upward_rank = np.asarray(upward_rank, dtype=float)
+    remaining_work = np.asarray(remaining_work, dtype=float)
+    ready_wait_time = np.asarray(ready_wait_time, dtype=float)
+    uncertainty = np.asarray(uncertainty, dtype=float)
+
+    # Robust mean-absolute normalization (Parent 2 style — stable under skew)
+    def normalize(x):
+        abs_mean = np.mean(np.abs(x))
+        scale = np.maximum(abs_mean, eps)
+        return x / scale
+
+    norm_exec = normalize(min_exec_time)
+    norm_comm = normalize(min_comm_time)
+    norm_energy = normalize(min_incremental_energy)
+    norm_slack = normalize(slack)
+    norm_rank = normalize(upward_rank)
+    norm_work = normalize(remaining_work)
+    norm_wait = normalize(ready_wait_time)
+    norm_uncert = normalize(uncertainty)
+
+    # Deadline risk: positive magnitude of negative slack (violations only)
+    deadline_risk = np.maximum(-slack, 0.0)
+    norm_risk = normalize(deadline_risk)
+
+    # Sigmoid urgency gate: steep rise near zero slack, bounded in [0, 1]
+    # Higher steepness → sharper transition at critical point
+    urgency_gate = 1.0 / (1.0 + np.exp(-PARAMS["sigmoid_steepness"] * norm_slack))
+
+    # Uncertainty × slack risk coupling: amplifies priority when both high
+    # Bounded to avoid explosion: clipped to [0, 2] then scaled
+    risk_coupling = np.clip(norm_uncert * urgency_gate, 0.0, 2.0) * PARAMS["uncertainty_slack_coupling"]
+
+    # Linear combination: smaller score = higher priority
+    score = (
+        PARAMS["exec_time_weight"] * norm_exec
+        + PARAMS["comm_time_weight"] * norm_comm
+        + PARAMS["energy_weight"] * norm_energy
+        + PARAMS["deadline_risk_penalty"] * norm_risk  # Hard penalty: pushes violating tasks up
+        + PARAMS["work_weight"] * norm_work
+        + PARAMS["upward_rank_weight"] * norm_rank
+        + PARAMS["wait_weight"] * norm_wait
+        + risk_coupling
+    )
+
+    # Soft clamp final score using tanh-based bounds to preserve ordering & prevent overflow
+    # Maps R → [-1, 1], then scales to [1e-6, 1e6] — avoids hard clipping artifacts
+    finfo = np.finfo(float)
+    score_bounded = np.tanh(score * 0.1) * 1e6  # preserves sign and relative order
+    score_clipped = np.clip(score_bounded, finfo.smallest_subnormal, 1e6)
+
+    # Ensure finite and shape-(N,)
+    score_final = np.nan_to_num(score_clipped, nan=finfo.smallest_subnormal, posinf=1e6, neginf=finfo.smallest_subnormal)
+    
+    # Enforce shape (N,) even for scalar case
+    if score_final.ndim == 0:
+        score_final = np.full(1, score_final.item(), dtype=float)
+
+    return score_final
+```

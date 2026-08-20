@@ -1,0 +1,219 @@
+algorithm: seevo
+mode: train
+data_dir: data
+protocol: single
+source_scenario: SM
+resource_scale: null
+model: qwen-plus
+temperature: 1
+case_num: []
+max_fe: 10
+pop_size: 10
+init_pop_size: 10
+mutation_rate: 0.5
+timeout: 300
+diversify_init_pop: true
+candidate_generation:
+  validation_retries: 3
+  repair_temperature: 0.0
+  use_validated_reference_fallback: true
+parameter_optimization:
+  enabled: true
+  optimizer_seed: 0
+  max_parameters: 12
+  population_size: 6
+  max_generations: 4
+  initial_sigma: 0.25
+  stage_seed_counts:
+    quick: 1
+    refine: 3
+    confirm: 0
+  scenario_ids: []
+  elite_fraction: 0.25
+  boundary_epsilon: 1.0e-06
+  sensitivity_epsilon: 0.02
+  correlation_threshold: 0.85
+  early_stop_patience: 3
+  cache_enabled: true
+  cache_path: parameter_evaluation_cache.json
+  cache_precision: 12
+  max_parallel_evaluations: 18
+  max_branches: 6
+  max_ast_depth: 18
+  max_interactions: 8
+  performance_tolerance: 0.01
+  diagnostic_perturbations: true
+  auto_admission_enabled: true
+  admission_required: true
+  admission_config_path: cfg/problem/cews_task_constructive_hrl_ss_admission.yaml
+  admission_manifest_path: null
+counterfactual_feedback:
+  enabled: true
+  run_after_parameter_optimization: true
+  max_structures_per_generation: 2
+  include_top_feasible: 1
+  include_infeasible_low_energy: 1
+  scenario_ids: []
+  train_seed_count: 2
+  validation_seed_count: 0
+  trace:
+    max_traced_decisions_per_run: 200
+    max_critical_decisions_per_run: 12
+    store_full_ready_ids: true
+    store_full_ready_features: false
+  alternatives:
+    max_per_decision: 3
+    include_rule_runner_up: true
+    include_min_slack: true
+    include_max_upward_rank: true
+    include_min_energy: true
+    include_max_uncertainty: true
+  criticality:
+    slack_threshold: 0.0
+    uncertainty_threshold: 1.0
+    score_margin_threshold: 0.05
+    queue_congestion_threshold: 4
+  estimator:
+    mode: local_one_step
+    bounded_replay_enabled: false
+    bounded_replay_steps: 0
+    assert_state_immutability: true
+  aggregation:
+    min_repeated_evidence: 2
+    high_confidence_seed_count: 2
+    high_confidence_scenario_count: 2
+    max_representative_cases: 4
+    max_feedback_chars: 12000
+  cache:
+    enabled: true
+    path: counterfactual_feedback/cache.json
+critical_state_replay:
+  enabled: true
+  run_after_counterfactual_feedback: true
+  strict_replay_gate: false
+  archive:
+    global_capacity: 300
+    per_category_capacity: 50
+    max_states_per_scenario: 120
+    max_states_per_workflow_type: 120
+    exact_duplicate_merge: true
+    semantic_similarity_enabled: true
+    semantic_signature_precision: 4
+    min_admission_confidence: medium
+    min_counterfactual_evidence_quality: medium
+    resolved_success_threshold: 3
+    hard_failure_threshold: 2
+    dormant_generation_threshold: 8
+    allow_validation_archive: false
+    near_zero_slack_threshold: 1.0
+    resource_bottleneck_threshold: 0.85
+    archive_path: critical_state_replay/archive/critical_state_archive.json
+  replay:
+    max_states_per_generation: 40
+    max_hard_states_per_generation: 20
+    max_new_states_per_generation: 10
+    resolved_replay_fraction: 0.1
+    max_states_per_semantic_cluster: 3
+    candidate_outcome_expansion_cap: 6
+    min_verified_candidate_coverage: 0.5
+    deterministic_sampling_seed: 0
+  feedback:
+    min_repeated_failure_count: 2
+    high_confidence_seed_count: 2
+    high_confidence_scenario_count: 2
+    max_failure_examples: 5
+    max_success_examples: 3
+    max_feedback_chars: 10000
+  cache:
+    enabled: true
+    path: critical_state_replay/replay_cache.json
+problem:
+  problem_name: cews_task_constructive
+  problem_type: constructive
+  obj_type: min
+  problem_size: 50
+  func_name: get_task_priority
+  description: 'Dynamic deadline-aware cloud-edge workflow scheduling. Workflows are
+    represented as DAGs. At each decision point, the heuristic ranks all currently
+    ready tasks. After one task is selected, a deterministic resource-selection policy
+    assigns it to a feasible cloud or edge VM. The objective is to minimize risk-adjusted
+    fuzzy total energy subject to hard workflow deadline constraints.
+
+    '
+  objective:
+    metric: total_energy
+  constraints:
+    deadline_violation_rate_max: 0.0
+    comparison: feasibility_first
+  fuzzy:
+    enabled: true
+    delta1: 0.75
+    delta2: 1.2
+    energy_uncertainty_weight: 1.0
+    deadline_eta: 0.95
+    use_fuzzy_deadline_constraint: true
+    resource_seed_mode: episode_seed
+    resource_seed_offset: 0
+  normalization:
+    energy_scale: 0.001
+    lateness_scale: 300.0
+  dataset:
+    scenario: SS
+    train_seeds:
+    - 1
+    - 2
+    - 3
+    validation_seeds:
+    - 4
+    - 5
+    test_seeds:
+    - 201
+    - 202
+    - 203
+    - 204
+    - 205
+    - 206
+    - 207
+    - 208
+    - 209
+    - 210
+    - 211
+    - 212
+    - 213
+    - 214
+    - 215
+    - 216
+    - 217
+    - 218
+    - 219
+    - 220
+    - 221
+    - 222
+    - 223
+    - 224
+    - 225
+    - 226
+    - 227
+    - 228
+    - 229
+    - 230
+    dax_files:
+    - CyberShake_30.xml
+    - Epigenomics_24.xml
+    - Ligo_30.xml
+    - Montage_25.xml
+    - Sipht_29.xml
+    workflows_per_instance: 50
+    arrival_lambda: 0.03
+    horizon: 1000000000.0
+    deadline_mode: cache_fcfs
+    deadline_alpha_small: 2.0
+    deadline_alpha_large: 3.0
+    deadline_alpha_small_prob: 0.8
+  safety:
+    max_decisions: 1000000
+    max_stalled_steps: 10
+deadline_cache_paths:
+  SM: data/deadlines/fcfs/diagnostic/fcfs_fixed_SM_exactmix_formal38.json
+  MM: data/deadlines/fcfs/diagnostic/fcfs_fixed_MM_exactmix_formal38.json
+  LM: data/deadlines/fcfs/diagnostic/fcfs_fixed_LM_exactmix_formal38.json

@@ -1,0 +1,30 @@
+- Replaced brittle piecewise DDL gate with smooth sigmoid gating, improving robustness near slack=0 and reducing seed-sensitive flip behavior.  
+- Introduced bottleneck-proximity term (`upward_rank * remaining_work / |slack|`) with softplus sharpening, directly addressing critical-path starvation observed in replay failures.  
+- Added host-load sensitivity (`energy_per_duration`) gated by DDL protection, resolving avoidable marginal energy costs identified in 21 counterfactual decision failures.
+- Replaced fragile `finfo_max_scale` + `nan_to_num` with finite masking — eliminates parameter redundancy and avoids outlier-driven score distortion.  
+- Introduced bounded `load_pressure_saturated` via adaptive median-threshold clipping — stabilizes rank ordering under workload uncertainty.  
+- Switched from piecewise DDL *width* gate to normalized threshold gating (`ddl_protection_gate`) with conditional amplification — improves feasibility-aware energy/criticality tradeoff robustness.
+- Replaces fragile hard gating (`np.where`) with smooth sigmoid-based DDL protection, improving gradient stability and graceful degradation under deadline stress.  
+- Introduces robust z-score normalization with ±σ clipping, enhancing discriminability across heterogeneous workloads vs. median-only normalization.  
+- Gates bottleneck boost by *both* negative slack *and* non-zero remaining work, avoiding false bottlenecks from rank-only spikes in low-work leaves.
+- Replaced brittle exponential starvation mitigation with monotonic bounded linear ramp, improving ordering stability under varying wait times.  
+- Introduced sharpened successor-release interaction (`upward_rank × remaining_work × |slack|⁻ˢʰᵃʳᵖⁿᵉˢˢ`), strengthening critical-path focus near tight deadlines.  
+- Swapped median/MAD normalization for adaptive quantile-based scaling, enhancing robustness to skewed outlier distributions in dynamic workflows.
+- Replaced fragile MAD-based normalization with adaptive quantile-based scaling, improving outlier robustness and cross-scenario consistency.  
+- Introduced host-load-aware energy modulation via uncertainty-slack coupling, preventing risky low-energy selections under deadline pressure.  
+- Substituted exponential starvation mitigation with bounded linear wait ramping, ensuring monotonic priority growth and smoother DDL adaptation.
+- Replaced brittle MAD-based normalization with adaptive quantile-based scaling, improving outlier resilience and cross-scenario robustness.  
+- Introduced host-load-aware energy modulation via uncertainty-slack coupling, preventing risky low-energy selections under deadline pressure.  
+- Substituted exponential starvation mitigation with bounded linear wait-ramp, ensuring monotonic priority growth and smoother feasibility convergence.
+- Replaced fragile sigmoid DDL gate with monotonic piecewise-linear gating, eliminating numerical instability and strengthening feasibility enforcement.  
+- Switched quantile-based normalization to robust median scaling with explicit floor, preventing degeneracy when `upward_rank ≈ 0`.  
+- Removed unstable uncertainty–slack coupling and host-load interaction terms, reducing overfitting and improving cross-seed robustness.
+- Replaced fragile exponential wait-saturation with bounded linear clipping, reducing outlier sensitivity and rank instability across seeds.  
+- Introduced adaptive median-based load-pressure saturation (`work * uncertainty`), preventing dominance by extreme values while preserving ordinal structure.  
+- Simplified DDL protection into a clean piecewise gate (suppress duration, amplify energy/criticality) instead of sigmoid blending—improving interpretability and feasibility-aware prioritization.
+- Replace sigmoid DDL gate with piecewise linear gate for monotonic, interpretable feasibility control and numerical robustness.  
+- Stabilize upward-rank normalization using explicit floor to prevent degeneracy when criticality is near-zero.  
+- Replace exponential wait-saturation with clipped linear wait scoring to bound starvation correction and reduce fragility.
+- Replaced brittle hard gating (`np.where`) with smooth sigmoid-based DDL protection, enabling graceful priority attenuation under deadline stress instead of abrupt on/off switching.  
+- Introduced robust z-score normalization with ±σ clipping, improving discriminability and stability over quantile-based scaling on heterogeneous workloads.  
+- Refactored bottleneck activation to require *both* negative slack *and* non-negligible `remaining_work`, eliminating false bottlenecks from leaf-node rank spikes.

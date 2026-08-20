@@ -1,0 +1,190 @@
+```python
+import numpy as np
+
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 1e-7,
+            "lower_bound": 1e-9,
+            "upper_bound": 1e-4,
+            "semantic_description": "Numerical guard for safe normalization and division.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "slack_sensitivity",
+            "initial_value": 2.3,
+            "lower_bound": 0.5,
+            "upper_bound": 5.0,
+            "semantic_description": "Exponent for signed slack power law: sharper penalty near zero slack.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "slack_penalty_scale",
+            "initial_value": 6.8,
+            "lower_bound": 1.0,
+            "upper_bound": 15.0,
+            "semantic_description": "Global amplification of slack pressure term.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "criticality_boost",
+            "initial_value": 1.6,
+            "lower_bound": 0.0,
+            "upper_bound": 3.0,
+            "semantic_description": "Additive boost to upward_rank when slack < 0 (not joint-gated).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "wait_linear_coeff",
+            "initial_value": 0.02,
+            "lower_bound": 0.0,
+            "upper_bound": 0.1,
+            "semantic_description": "Linear coefficient for ready_wait_time fairness boost.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "uncertainty_slack_coupling",
+            "initial_value": 1.1,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Multiplicative coupling strength between uncertainty and absolute slack under deadline pressure.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_weight",
+            "initial_value": 0.65,
+            "lower_bound": 0.0,
+            "upper_bound": 1.0,
+            "semantic_description": "Weight for robust-normalized min_incremental_energy term.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "q1_quantile",
+            "initial_value": 0.15,
+            "lower_bound": 0.05,
+            "upper_bound": 0.35,
+            "semantic_description": "Lower quantile for IQR-based robust normalization.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "q3_quantile",
+            "initial_value": 0.85,
+            "lower_bound": 0.65,
+            "upper_bound": 0.95,
+            "semantic_description": "Upper quantile for IQR-based robust normalization.",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Self-evolved priority rule: restores slack-only criticality gating, removes energy-density distortion,
+       replaces saturating wait-gain with linear fairness boost, and refines robust normalization bounds.
+    
+    Key structural improvements:
+      - Criticality boost now activates *unconditionally* on slack < 0 (per reflection), not joint condition.
+      - Direct robust normalization of min_incremental_energy (not energy/time) avoids uncertainty-induced bias.
+      - Linear wait boost (not exponential/saturating) ensures monotonic fairness without diluting DDL pressure.
+      - Tighter IQR quantiles (0.15/0.85) increase normalization robustness against outliers.
+      - All numeric literals are -2,-1,0,1,2; epsilon from PARAMS; no hidden constants.
+    """
+    eps = PARAMS["epsilon"]
+    finfo = np.finfo(float)
+    
+    # Defensive casting and safe NaN/inf handling
+    min_exec_time = np.nan_to_num(np.asarray(min_exec_time, dtype=float), nan=eps, posinf=finfo.max, neginf=-finfo.max)
+    min_comm_time = np.nan_to_num(np.asarray(min_comm_time, dtype=float), nan=eps, posinf=finfo.max, neginf=-finfo.max)
+    min_incremental_energy = np.nan_to_num(np.asarray(min_incremental_energy, dtype=float), nan=eps, posinf=finfo.max, neginf=-finfo.max)
+    slack = np.nan_to_num(np.asarray(slack, dtype=float), nan=0.0, posinf=finfo.max, neginf=-finfo.max)
+    upward_rank = np.nan_to_num(np.asarray(upward_rank, dtype=float), nan=eps, posinf=finfo.max, neginf=-finfo.max)
+    remaining_work = np.nan_to_num(np.asarray(remaining_work, dtype=float), nan=eps, posinf=finfo.max, neginf=-finfo.max)
+    ready_wait_time = np.nan_to_num(np.asarray(ready_wait_time, dtype=float), nan=0.0, posinf=finfo.max, neginf=-finfo.max)
+    uncertainty = np.nan_to_num(np.asarray(uncertainty, dtype=float), nan=eps, posinf=finfo.max, neginf=-finfo.max)
+
+    # Robust IQR-based normalization — tighter quantiles for outlier resilience
+    def robust_normalize(x):
+        x = np.asarray(x, dtype=float)
+        q1_val = PARAMS["q1_quantile"]
+        q3_val = PARAMS["q3_quantile"]
+        q1, q3 = np.quantile(x, [q1_val, q3_val])
+        iqr = q3 - q1 + eps
+        center = np.median(x)
+        return (x - center) / iqr
+
+    # 1. Signed slack power law: primary deadline pressure signal
+    slack_abs = np.abs(slack)
+    slack_sign = np.sign(slack)
+    slack_power = np.where(
+        slack_abs < eps,
+        0.0,
+        slack_sign * (slack_abs ** PARAMS["slack_sensitivity"])
+    )
+    base_slack_penalty = PARAMS["slack_penalty_scale"] * slack_power
+
+    # 2. Uncertainty-slack coupling: multiplicative gate only when slack < 0 (deadline risk)
+    unc_slack_gate = np.where(
+        slack < 0,
+        1.0 + PARAMS["uncertainty_slack_coupling"] * (uncertainty / (np.mean(uncertainty) + eps)),
+        1.0
+    )
+    gated_slack_penalty = base_slack_penalty * unc_slack_gate
+
+    # 3. Compute-dominance ratio: min_exec_time / (min_exec_time + min_comm_time) → [0,1]
+    exec_plus_comm = min_exec_time + min_comm_time + eps
+    duration_ratio = min_exec_time / exec_plus_comm
+    norm_duration_ratio = robust_normalize(duration_ratio)
+
+    # 4. Robust energy score: direct normalization of min_incremental_energy (no density confounding)
+    norm_energy = robust_normalize(min_incremental_energy)
+
+    # 5. Criticality boost: additive (not multiplicative) and activated solely on slack < 0
+    critical_boost = np.where(
+        slack < 0,
+        PARAMS["criticality_boost"] * robust_normalize(upward_rank),
+        0.0
+    )
+
+    # 6. Linear anti-starvation: monotonic, bounded, preserves DDL urgency under long waits
+    wait_boost = PARAMS["wait_linear_coeff"] * ready_wait_time
+    norm_wait_boost = robust_normalize(wait_boost)
+
+    # Composite score: smaller = higher priority
+    # Order of terms reflects hierarchical priority: DDL > Energy > Structure > Fairness
+    score = (
+        # Dominant: gated & amplified slack penalty (DDL risk)
+        1.0 * robust_normalize(gated_slack_penalty)
+        # Secondary: energy minimization (risk-adjusted marginal cost)
+        + PARAMS["energy_weight"] * norm_energy
+        # Tertiary: compute-dominance signal (edge-offload incentive)
+        + (1.0 - PARAMS["energy_weight"]) * norm_duration_ratio
+        # Quaternary: critical path reinforcement under lateness
+        - critical_boost
+        # Quinary: fairness via linear wait boost
+        - norm_wait_boost
+    )
+
+    # Final safeguard: ensure finite, shape-(N,) output
+    return np.nan_to_num(score, nan=finfo.max, posinf=finfo.max, neginf=finfo.min)
+```
