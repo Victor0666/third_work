@@ -1,0 +1,198 @@
+{
+  "best_episode": 175,
+  "best_validation": {
+    "all_seed_feasible": false,
+    "comparison_key": [
+      0.013333333333333334,
+      39.955213296313104,
+      0.4372309584373306,
+      345037.86913027626
+    ],
+    "comparison_key_fields": [
+      "deadline_violation_rate",
+      "max_fuzzy_lateness",
+      "mean_fuzzy_lateness",
+      "fuzzy_energy_score"
+    ],
+    "deadline_violation_rate": 0.013333333333333334,
+    "feasible_seed_rate": 0.6666666666666666,
+    "fuzzy_energy_score": 345037.86913027626,
+    "max_fuzzy_lateness": 39.955213296313104,
+    "mean_fuzzy_lateness": 0.4372309584373306,
+    "model_selection_schema_version": 1,
+    "validation_seed_count": 3,
+    "worst_seed_lateness": 39.955213296313104,
+    "worst_seed_violation": 0.04
+  },
+  "checkpoint_identity": "checkpoint_identity.json",
+  "checkpoint_path": "best_checkpoint.pt",
+  "checkpoint_sha256": "92247d655a3fcdb7a9d778f3fd8add3fad3c7b5fc8adaba1b5bbb922c1200440",
+  "deadline_cache_paths": {
+    "LM": "/T20050013/lyz/third_work/data/deadlines/fcfs/diagnostic/fcfs_fixed_LM_exactmix_formal38.json",
+    "MM": "/T20050013/lyz/third_work/data/deadlines/fcfs/diagnostic/fcfs_fixed_MM_exactmix_formal38.json",
+    "SM": "/T20050013/lyz/third_work/data/deadlines/fcfs/diagnostic/fcfs_fixed_SM_exactmix_formal38.json"
+  },
+  "episodes": 600,
+  "final_test_report": "final_test_metrics.json",
+  "final_test_used_for_selection": false,
+  "method_id": "fuzzy_irws",
+  "optimizer_seed": 0,
+  "policy_config": {
+    "intrinsic_reward": "deterministic_count_novelty",
+    "intrinsic_reward_weight": 0.05,
+    "task_feature_dim": 8,
+    "task_hidden_dim": 128,
+    "task_learning_rate": 0.0003,
+    "vm_learning_rate": 0.0003,
+    "vm_policy": "masked_ppo"
+  },
+  "protocol": {
+    "ddl_setting": "Tight",
+    "deadline_cache_path": "/T20050013/lyz/third_work/data/deadlines/fcfs/diagnostic/fcfs_fixed_SM_exactmix_formal38.json",
+    "deadline_cache_paths": {
+      "LM": "/T20050013/lyz/third_work/data/deadlines/fcfs/diagnostic/fcfs_fixed_LM_exactmix_formal38.json",
+      "MM": "/T20050013/lyz/third_work/data/deadlines/fcfs/diagnostic/fcfs_fixed_MM_exactmix_formal38.json",
+      "SM": "/T20050013/lyz/third_work/data/deadlines/fcfs/diagnostic/fcfs_fixed_SM_exactmix_formal38.json"
+    },
+    "environment": {
+      "arrival_lambda": 0.03,
+      "deadline_alpha_large": 3.0,
+      "deadline_alpha_small": 2.0,
+      "deadline_alpha_small_probability": 0.8,
+      "deadline_cache_path": "/T20050013/lyz/third_work/data/deadlines/fcfs/diagnostic/fcfs_fixed_SM_exactmix_formal38.json",
+      "environment_hash": "47a7907b496f8043425cdead082981b2491aebbefb82f19ca00e07c3c52193a7",
+      "fuzzy_resource_seed_mode": "episode_seed",
+      "horizon": 1000000000.0,
+      "resource_topology": {
+        "cloud_bw_tiers": [
+          1000.0,
+          2000.0,
+          4000.0,
+          6000.0,
+          8000.0
+        ],
+        "cloud_pc_tiers": [
+          1.0,
+          2.0,
+          4.0,
+          6.0,
+          8.0
+        ],
+        "cloud_vms_per_host": [
+          9,
+          9,
+          8
+        ],
+        "edge_bw_tiers": [
+          1000.0,
+          2000.0,
+          4000.0,
+          6000.0,
+          8000.0
+        ],
+        "edge_pc_tiers": [
+          1.0,
+          2.0,
+          4.0,
+          6.0,
+          8.0
+        ],
+        "edge_vms_per_host": [
+          8,
+          8,
+          8
+        ],
+        "num_cloud_hosts": 3,
+        "num_edge_hosts": 3
+      },
+      "safe_rl_enabled": false,
+      "workflow_families": [
+        "CyberShake",
+        "Epigenomics",
+        "Ligo",
+        "Montage",
+        "Sipht"
+      ],
+      "workflow_files": [
+        "/T20050013/lyz/third_work/data/dax/CyberShake_30.xml",
+        "/T20050013/lyz/third_work/data/dax/Epigenomics_24.xml",
+        "/T20050013/lyz/third_work/data/dax/Ligo_30.xml",
+        "/T20050013/lyz/third_work/data/dax/Montage_25.xml",
+        "/T20050013/lyz/third_work/data/dax/Sipht_29.xml"
+      ]
+    },
+    "fuzzy_deadline_eta": 0.95,
+    "fuzzy_delta1": 0.75,
+    "fuzzy_delta2": 1.2,
+    "fuzzy_energy_uncertainty_weight": 1.0,
+    "protocol_hash": "c96c3443358e91de03b5c663904effc6424fa731b91de5ee7dbc7915fa43d3e8",
+    "protocol_mode": "single",
+    "resource_scale": "M",
+    "scenario": "SM",
+    "schema_version": 1,
+    "source_scenario": "SM",
+    "test_scenarios": [
+      "SM",
+      "MM",
+      "LM"
+    ],
+    "test_seeds": [
+      201,
+      202,
+      203,
+      204,
+      205,
+      206,
+      207,
+      208,
+      209,
+      210,
+      211,
+      212,
+      213,
+      214,
+      215,
+      216,
+      217,
+      218,
+      219,
+      220,
+      221,
+      222,
+      223,
+      224,
+      225,
+      226,
+      227,
+      228,
+      229,
+      230
+    ],
+    "train_seeds": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "training_scenarios": [
+      "SM"
+    ],
+    "validation_seeds": [
+      101,
+      102,
+      103
+    ],
+    "workflows_per_episode": 50
+  },
+  "reward_config": {
+    "ddl_fraction": 0.75,
+    "energy_fraction": 0.25,
+    "energy_scale": 0.001,
+    "tardiness_normalizer": 300.0
+  },
+  "training_log": "training_metrics.jsonl",
+  "training_manifest_version": 1,
+  "validation_interval": 25,
+  "validation_log": "validation_metrics.jsonl"
+}
