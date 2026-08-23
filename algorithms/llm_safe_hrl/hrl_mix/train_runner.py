@@ -633,6 +633,21 @@ def train(
         resource_scale=resource_scale,
     )
 
+    print(
+        f"[deadline cache] active scenario={cfg.scenario} "
+        f"path={cfg.deadline_cache_path}"
+    )
+    if cfg.deadline_cache_paths:
+        print(
+            "[deadline cache] scenario mappings: "
+            + ", ".join(
+                f"{scenario_id}={path}"
+                for scenario_id, path in sorted(
+                    cfg.deadline_cache_paths.items()
+                )
+            )
+        )
+
     training_plan = None
     training_controller = None
     training_resume_payload = None

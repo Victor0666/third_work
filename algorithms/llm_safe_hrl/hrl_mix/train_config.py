@@ -843,16 +843,47 @@ def build_train_config(
 
     ddl_name = normalize_ddl(ddl)
     environment_values = environment_scenario_values(scenario)
-    normalized_cache_paths = parse_deadline_cache_overrides(
+    normalized_cache_paths = {}
+    for cache_scenario, cache_value in parse_deadline_cache_overrides(
         deadline_cache_paths
-    )
+    ).items():
+        cache_path = Path(cache_value).expanduser()
+        if not cache_path.is_absolute():
+            cache_path = ROOT_DIR / cache_path
+        normalized_cache_paths[cache_scenario] = str(
+            cache_path.resolve()
+        )
     if deadline_cache_override is not None:
         override_path = Path(deadline_cache_override).expanduser()
         if not override_path.is_absolute():
             override_path = ROOT_DIR / override_path
         override_path = override_path.resolve()
-        environment_values["deadline_cache_path"] = str(override_path)
         normalized_cache_paths[scenario] = str(override_path)
+
+    # An explicit scenario mapping is authoritative. Previously only the
+    # legacy single-path override replaced the registry value here, so callers
+    # that supplied the newer deadline_cache_paths mapping still had the old
+    # exact_mix_v1 cache checked and recorded as the active source cache.
+    selected_cache_path = normalized_cache_paths.get(scenario)
+    if selected_cache_path is not None:
+        environment_values["deadline_cache_path"] = selected_cache_path
+
+    if require_deadline_cache:
+        missing_explicit_caches = {
+            cache_scenario: cache_path
+            for cache_scenario, cache_path in normalized_cache_paths.items()
+            if not Path(cache_path).is_file()
+        }
+        if missing_explicit_caches:
+            details = ", ".join(
+                f"{cache_scenario}={cache_path}"
+                for cache_scenario, cache_path in sorted(
+                    missing_explicit_caches.items()
+                )
+            )
+            raise FileNotFoundError(
+                "explicit deadline cache file(s) not found: " + details
+            )
 
     task_code = environment_values["task_code"]
     res_code = environment_values["resource_code"]

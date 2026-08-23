@@ -1,0 +1,1263 @@
+[
+  {
+    "agent_name": "ddl_diagnostic_agent",
+    "confidence": "medium",
+    "decision_id": "iter31:a9708ef76051fc23:SL:1:d000000",
+    "diagnosis_code": "critical_path_or_successor_blocked+higher_ddl_risk_choice",
+    "evidence": {
+      "alternative_pessimistic_finish": 51.57412580680662,
+      "alternative_safety_margin": 3189.9540703831813,
+      "alternative_slack": 2860.9284898629376,
+      "alternative_upward_rank": 305.8889053222479,
+      "selected_pessimistic_finish": 51.73556552364618,
+      "selected_safety_margin": 3188.7464901576386,
+      "selected_slack": 2857.202066072016,
+      "selected_upward_rank": 308.3645464662878
+    },
+    "limitations": [
+      "local one-step evidence is not a long-horizon causal proof"
+    ],
+    "preferred_task": 0,
+    "quantitative_deltas": {
+      "critical_successor_release_regret": 0.0,
+      "predicted_violation_regret": 0.0,
+      "remaining_critical_path_regret": 1.0466262145142764,
+      "safety_margin_regret": 1.2075802255426424
+    },
+    "rejected_task": 1,
+    "scenario_id": "SL",
+    "seed": 1,
+    "severity": "medium",
+    "state_conditions": {
+      "critical_reasons": [
+        "selected_not_minimum_slack",
+        "selected_not_maximum_upward_rank",
+        "ready_queue_congestion",
+        "small_energy_gap_possible_ddl_risk_difference",
+        "successor_release_difference",
+        "critical_path_competition"
+      ],
+      "negative_slack_present": false,
+      "queue_size": 5
+    },
+    "suggested_structural_actions": [
+      "add_upward_rank_remaining_work_interaction",
+      "add_successor_release_interaction",
+      "add_conditional_ddl_protection_gate"
+    ]
+  },
+  {
+    "agent_name": "energy_diagnostic_agent",
+    "confidence": "medium",
+    "decision_id": "iter31:a9708ef76051fc23:SL:1:d000000",
+    "diagnosis_code": "avoidable_marginal_energy_or_load_cost",
+    "evidence": {
+      "alternative_active_time_extension": 49.652289050147985,
+      "alternative_energy": 76.94605003771446,
+      "alternative_host_load_after": 0.17647058823529413,
+      "ddl_priority_applied": true,
+      "relative_energy_difference": 0.010058051571335018,
+      "selected_active_time_extension": 49.80401465076259,
+      "selected_energy": 77.72784066767848,
+      "selected_host_load_after": 0.17647058823529413
+    },
+    "limitations": [
+      "marginal energy and active-time extension are local proxies"
+    ],
+    "preferred_task": 0,
+    "quantitative_deltas": {
+      "communication_regret": -1.0745292954420322,
+      "host_load_delta_difference": 0.0,
+      "marginal_fuzzy_energy_regret": 0.7817906299640214,
+      "predicted_violation_regret": 0.0
+    },
+    "rejected_task": 1,
+    "scenario_id": "SL",
+    "seed": 1,
+    "severity": "medium",
+    "state_conditions": {
+      "host_load_maximum": 0.0,
+      "queue_size": 5
+    },
+    "suggested_structural_actions": [
+      "add_host_load_conditional_gate",
+      "add_load_successor_release_interaction"
+    ]
+  },
+  {
+    "agent_name": "uncertainty_diagnostic_agent",
+    "confidence": "low",
+    "decision_id": "iter31:a9708ef76051fc23:SL:1:d000000",
+    "diagnosis_code": "insufficient_evidence",
+    "evidence": {
+      "comparison_count": 0
+    },
+    "limitations": [
+      "modal and pessimistic evidence do not disagree materially"
+    ],
+    "preferred_task": null,
+    "quantitative_deltas": {},
+    "rejected_task": null,
+    "scenario_id": "SL",
+    "seed": 1,
+    "severity": "none",
+    "state_conditions": {
+      "maximum_uncertainty": 0.14339734373741955,
+      "minimum_slack": 2854.0796901535664,
+      "queue_size": 5
+    },
+    "suggested_structural_actions": []
+  },
+  {
+    "agent_name": "ddl_diagnostic_agent",
+    "confidence": "medium",
+    "decision_id": "iter31:a9708ef76051fc23:SL:1:d000007",
+    "diagnosis_code": "higher_ddl_risk_choice",
+    "evidence": {
+      "alternative_pessimistic_finish": 160.4046434398033,
+      "alternative_safety_margin": 582.0950484001391,
+      "alternative_slack": 532.4436073295242,
+      "alternative_upward_rank": 154.60976750365006,
+      "selected_pessimistic_finish": 160.5551337402066,
+      "selected_safety_margin": 581.9454132703254,
+      "selected_slack": 532.3488080547392,
+      "selected_upward_rank": 154.832078984668
+    },
+    "limitations": [
+      "local one-step evidence is not a long-horizon causal proof"
+    ],
+    "preferred_task": 26,
+    "quantitative_deltas": {
+      "critical_successor_release_regret": 0.0,
+      "predicted_violation_regret": 0.0,
+      "remaining_critical_path_regret": 0.0,
+      "safety_margin_regret": 0.1496351298137597
+    },
+    "rejected_task": 40,
+    "scenario_id": "SL",
+    "seed": 1,
+    "severity": "medium",
+    "state_conditions": {
+      "critical_reasons": [
+        "selected_not_minimum_slack",
+        "selected_not_maximum_upward_rank",
+        "close_rule_scores",
+        "ready_queue_congestion",
+        "critical_path_competition"
+      ],
+      "negative_slack_present": false,
+      "queue_size": 19
+    },
+    "suggested_structural_actions": [
+      "add_conditional_ddl_protection_gate"
+    ]
+  },
+  {
+    "agent_name": "energy_diagnostic_agent",
+    "confidence": "medium",
+    "decision_id": "iter31:a9708ef76051fc23:SL:1:d000007",
+    "diagnosis_code": "avoidable_marginal_energy_or_load_cost",
+    "evidence": {
+      "alternative_active_time_extension": 0.44323507777892246,
+      "alternative_energy": 88.3453073210328,
+      "alternative_host_load_after": 0.20588235294117646,
+      "ddl_priority_applied": true,
+      "relative_energy_difference": 0.008071040322891732,
+      "selected_active_time_extension": 0.5766219663896663,
+      "selected_energy": 89.06414764802399,
+      "selected_host_load_after": 0.20588235294117646
+    },
+    "limitations": [
+      "marginal energy and active-time extension are local proxies"
+    ],
+    "preferred_task": 26,
+    "quantitative_deltas": {
+      "communication_regret": -0.1027665987130173,
+      "host_load_delta_difference": 0.0,
+      "marginal_fuzzy_energy_regret": 0.7188403269911845,
+      "predicted_violation_regret": 0.0
+    },
+    "rejected_task": 40,
+    "scenario_id": "SL",
+    "seed": 1,
+    "severity": "medium",
+    "state_conditions": {
+      "host_load_maximum": 0.20588235294117646,
+      "queue_size": 19
+    },
+    "suggested_structural_actions": [
+      "add_host_load_conditional_gate",
+      "add_load_successor_release_interaction"
+    ]
+  },
+  {
+    "agent_name": "uncertainty_diagnostic_agent",
+    "confidence": "low",
+    "decision_id": "iter31:a9708ef76051fc23:SL:1:d000007",
+    "diagnosis_code": "insufficient_evidence",
+    "evidence": {
+      "comparison_count": 0
+    },
+    "limitations": [
+      "modal and pessimistic evidence do not disagree materially"
+    ],
+    "preferred_task": null,
+    "quantitative_deltas": {},
+    "rejected_task": null,
+    "scenario_id": "SL",
+    "seed": 1,
+    "severity": "none",
+    "state_conditions": {
+      "maximum_uncertainty": 0.16329309766263647,
+      "minimum_slack": 526.8767676564422,
+      "queue_size": 19
+    },
+    "suggested_structural_actions": []
+  },
+  {
+    "agent_name": "ddl_diagnostic_agent",
+    "confidence": "medium",
+    "decision_id": "iter31:a9708ef76051fc23:SL:1:d000011",
+    "diagnosis_code": "higher_ddl_risk_choice",
+    "evidence": {
+      "alternative_pessimistic_finish": 210.65609499072647,
+      "alternative_safety_margin": 532.1487539978133,
+      "alternative_slack": 533.8551849730658,
+      "alternative_upward_rank": 151.3896303632381,
+      "selected_pessimistic_finish": 211.8948088221756,
+      "selected_safety_margin": 530.9172825682491,
+      "selected_slack": 533.0421344362508,
+      "selected_upward_rank": 153.21274001948825
+    },
+    "limitations": [
+      "local one-step evidence is not a long-horizon causal proof"
+    ],
+    "preferred_task": 41,
+    "quantitative_deltas": {
+      "critical_successor_release_regret": 0.0,
+      "predicted_violation_regret": 0.0,
+      "remaining_critical_path_regret": 0.0,
+      "safety_margin_regret": 1.2314714295641807
+    },
+    "rejected_task": 29,
+    "scenario_id": "SL",
+    "seed": 1,
+    "severity": "medium",
+    "state_conditions": {
+      "critical_reasons": [
+        "selected_not_minimum_slack",
+        "selected_not_maximum_upward_rank",
+        "close_rule_scores",
+        "ready_queue_congestion",
+        "critical_path_competition"
+      ],
+      "negative_slack_present": false,
+      "queue_size": 15
+    },
+    "suggested_structural_actions": [
+      "add_conditional_ddl_protection_gate"
+    ]
+  },
+  {
+    "agent_name": "energy_diagnostic_agent",
+    "confidence": "medium",
+    "decision_id": "iter31:a9708ef76051fc23:SL:1:d000011",
+    "diagnosis_code": "avoidable_marginal_energy_or_load_cost",
+    "evidence": {
+      "alternative_active_time_extension": 0.0,
+      "alternative_energy": 77.9085502393561,
+      "alternative_host_load_after": 0.20588235294117646,
+      "ddl_priority_applied": true,
+      "relative_energy_difference": 0.07059721742753489,
+      "selected_active_time_extension": 0.0,
+      "selected_energy": 83.82646544667689,
+      "selected_host_load_after": 0.20588235294117646
+    },
+    "limitations": [
+      "marginal energy and active-time extension are local proxies"
+    ],
+    "preferred_task": 41,
+    "quantitative_deltas": {
+      "communication_regret": -0.39169292873057726,
+      "host_load_delta_difference": 0.0,
+      "marginal_fuzzy_energy_regret": 5.917915207320789,
+      "predicted_violation_regret": 0.0
+    },
+    "rejected_task": 29,
+    "scenario_id": "SL",
+    "seed": 1,
+    "severity": "medium",
+    "state_conditions": {
+      "host_load_maximum": 0.20588235294117646,
+      "queue_size": 15
+    },
+    "suggested_structural_actions": [
+      "add_host_load_conditional_gate"
+    ]
+  },
+  {
+    "agent_name": "uncertainty_diagnostic_agent",
+    "confidence": "low",
+    "decision_id": "iter31:a9708ef76051fc23:SL:1:d000011",
+    "diagnosis_code": "insufficient_evidence",
+    "evidence": {
+      "comparison_count": 0
+    },
+    "limitations": [
+      "modal and pessimistic evidence do not disagree materially"
+    ],
+    "preferred_task": null,
+    "quantitative_deltas": {},
+    "rejected_task": null,
+    "scenario_id": "SL",
+    "seed": 1,
+    "severity": "none",
+    "state_conditions": {
+      "maximum_uncertainty": 0.16329309766263647,
+      "minimum_slack": 528.3910378491635,
+      "queue_size": 15
+    },
+    "suggested_structural_actions": []
+  },
+  {
+    "agent_name": "ddl_diagnostic_agent",
+    "confidence": "medium",
+    "decision_id": "iter31:a9708ef76051fc23:SL:1:d000012",
+    "diagnosis_code": "higher_ddl_risk_choice",
+    "evidence": {
+      "alternative_pessimistic_finish": 228.19386675442232,
+      "alternative_safety_margin": 514.717572637962,
+      "alternative_slack": 533.8551849730658,
+      "alternative_upward_rank": 151.3896303632381,
+      "selected_pessimistic_finish": 228.59805801354767,
+      "selected_safety_margin": 514.3155484740021,
+      "selected_slack": 533.6214617487296,
+      "selected_upward_rank": 151.99104595626414
+    },
+    "limitations": [
+      "local one-step evidence is not a long-horizon causal proof"
+    ],
+    "preferred_task": 41,
+    "quantitative_deltas": {
+      "critical_successor_release_regret": 0.0,
+      "predicted_violation_regret": 0.0,
+      "remaining_critical_path_regret": 0.0,
+      "safety_margin_regret": 0.40202416395993623
+    },
+    "rejected_task": 28,
+    "scenario_id": "SL",
+    "seed": 1,
+    "severity": "medium",
+    "state_conditions": {
+      "critical_reasons": [
+        "selected_not_minimum_slack",
+        "selected_not_maximum_upward_rank",
+        "close_rule_scores",
+        "ready_queue_congestion",
+        "small_energy_gap_possible_ddl_risk_difference",
+        "critical_path_competition"
+      ],
+      "negative_slack_present": false,
+      "queue_size": 14
+    },
+    "suggested_structural_actions": [
+      "add_conditional_ddl_protection_gate"
+    ]
+  },
+  {
+    "agent_name": "energy_diagnostic_agent",
+    "confidence": "medium",
+    "decision_id": "iter31:a9708ef76051fc23:SL:1:d000012",
+    "diagnosis_code": "avoidable_marginal_energy_or_load_cost",
+    "evidence": {
+      "alternative_active_time_extension": 0.0,
+      "alternative_energy": 77.9085502393561,
+      "alternative_host_load_after": 0.20588235294117646,
+      "ddl_priority_applied": true,
+      "relative_energy_difference": 0.024162309980633595,
+      "selected_active_time_extension": 0.0,
+      "selected_energy": 79.83761135298016,
+      "selected_host_load_after": 0.20588235294117646
+    },
+    "limitations": [
+      "marginal energy and active-time extension are local proxies"
+    ],
+    "preferred_task": 41,
+    "quantitative_deltas": {
+      "communication_regret": -0.565838465408119,
+      "host_load_delta_difference": 0.0,
+      "marginal_fuzzy_energy_regret": 1.9290611136240585,
+      "predicted_violation_regret": 0.0
+    },
+    "rejected_task": 28,
+    "scenario_id": "SL",
+    "seed": 1,
+    "severity": "medium",
+    "state_conditions": {
+      "host_load_maximum": 0.20588235294117646,
+      "queue_size": 14
+    },
+    "suggested_structural_actions": [
+      "add_host_load_conditional_gate"
+    ]
+  },
+  {
+    "agent_name": "uncertainty_diagnostic_agent",
+    "confidence": "low",
+    "decision_id": "iter31:a9708ef76051fc23:SL:1:d000012",
+    "diagnosis_code": "insufficient_evidence",
+    "evidence": {
+      "comparison_count": 0
+    },
+    "limitations": [
+      "modal and pessimistic evidence do not disagree materially"
+    ],
+    "preferred_task": null,
+    "quantitative_deltas": {},
+    "rejected_task": null,
+    "scenario_id": "SL",
+    "seed": 1,
+    "severity": "none",
+    "state_conditions": {
+      "maximum_uncertainty": 0.16329309766263647,
+      "minimum_slack": 528.3910378491635,
+      "queue_size": 14
+    },
+    "suggested_structural_actions": []
+  },
+  {
+    "agent_name": "ddl_diagnostic_agent",
+    "confidence": "medium",
+    "decision_id": "iter31:a9708ef76051fc23:SL:1:d000069",
+    "diagnosis_code": "higher_ddl_risk_choice",
+    "evidence": {
+      "alternative_pessimistic_finish": 612.6290574910709,
+      "alternative_safety_margin": 309.82251980531566,
+      "alternative_slack": 433.7978083939461,
+      "alternative_upward_rank": 137.81907566376722,
+      "selected_pessimistic_finish": 614.2014196999959,
+      "selected_safety_margin": 308.25398054371567,
+      "selected_slack": 432.131174048352,
+      "selected_upward_rank": 141.14330513582502
+    },
+    "limitations": [
+      "local one-step evidence is not a long-horizon causal proof"
+    ],
+    "preferred_task": 223,
+    "quantitative_deltas": {
+      "critical_successor_release_regret": 0.0,
+      "predicted_violation_regret": 0.0,
+      "remaining_critical_path_regret": 0.0,
+      "safety_margin_regret": 1.5685392615999945
+    },
+    "rejected_task": 218,
+    "scenario_id": "SL",
+    "seed": 1,
+    "severity": "medium",
+    "state_conditions": {
+      "critical_reasons": [
+        "selected_not_minimum_slack",
+        "selected_not_maximum_upward_rank",
+        "close_rule_scores",
+        "ready_queue_congestion",
+        "critical_path_competition"
+      ],
+      "negative_slack_present": false,
+      "queue_size": 19
+    },
+    "suggested_structural_actions": [
+      "add_conditional_ddl_protection_gate"
+    ]
+  },
+  {
+    "agent_name": "energy_diagnostic_agent",
+    "confidence": "medium",
+    "decision_id": "iter31:a9708ef76051fc23:SL:1:d000069",
+    "diagnosis_code": "avoidable_marginal_energy_or_load_cost",
+    "evidence": {
+      "alternative_active_time_extension": 0.0,
+      "alternative_energy": 61.24873151420034,
+      "alternative_host_load_after": 0.29411764705882354,
+      "ddl_priority_applied": true,
+      "relative_energy_difference": 0.12438444274991668,
+      "selected_active_time_extension": 0.0,
+      "selected_energy": 69.94934135998588,
+      "selected_host_load_after": 0.29411764705882354
+    },
+    "limitations": [
+      "marginal energy and active-time extension are local proxies"
+    ],
+    "preferred_task": 223,
+    "quantitative_deltas": {
+      "communication_regret": 1.212616855171813,
+      "host_load_delta_difference": 0.0,
+      "marginal_fuzzy_energy_regret": 8.700609845785543,
+      "predicted_violation_regret": 0.0
+    },
+    "rejected_task": 218,
+    "scenario_id": "SL",
+    "seed": 1,
+    "severity": "medium",
+    "state_conditions": {
+      "host_load_maximum": 0.29411764705882354,
+      "queue_size": 19
+    },
+    "suggested_structural_actions": [
+      "add_host_load_conditional_gate",
+      "add_load_successor_release_interaction"
+    ]
+  },
+  {
+    "agent_name": "uncertainty_diagnostic_agent",
+    "confidence": "low",
+    "decision_id": "iter31:a9708ef76051fc23:SL:1:d000069",
+    "diagnosis_code": "insufficient_evidence",
+    "evidence": {
+      "comparison_count": 0
+    },
+    "limitations": [
+      "modal and pessimistic evidence do not disagree materially"
+    ],
+    "preferred_task": null,
+    "quantitative_deltas": {},
+    "rejected_task": null,
+    "scenario_id": "SL",
+    "seed": 1,
+    "severity": "none",
+    "state_conditions": {
+      "maximum_uncertainty": 0.16060760478185343,
+      "minimum_slack": 402.5428024359892,
+      "queue_size": 19
+    },
+    "suggested_structural_actions": []
+  },
+  {
+    "agent_name": "ddl_diagnostic_agent",
+    "confidence": "medium",
+    "decision_id": "iter31:a9708ef76051fc23:SL:1:d000073",
+    "diagnosis_code": "higher_ddl_risk_choice",
+    "evidence": {
+      "alternative_pessimistic_finish": 384.5260673213762,
+      "alternative_safety_margin": 533.5763711945277,
+      "alternative_slack": 433.7978083939461,
+      "alternative_upward_rank": 137.81907566376722,
+      "selected_pessimistic_finish": 393.7053808218969,
+      "selected_safety_margin": 524.4556363417532,
+      "selected_slack": 431.5515540961156,
+      "selected_upward_rank": 142.26782041132097
+    },
+    "limitations": [
+      "local one-step evidence is not a long-horizon causal proof"
+    ],
+    "preferred_task": 223,
+    "quantitative_deltas": {
+      "critical_successor_release_regret": 0.0,
+      "predicted_violation_regret": 0.0,
+      "remaining_critical_path_regret": 0.0,
+      "safety_margin_regret": 9.12073485277449
+    },
+    "rejected_task": 234,
+    "scenario_id": "SL",
+    "seed": 1,
+    "severity": "medium",
+    "state_conditions": {
+      "critical_reasons": [
+        "selected_not_minimum_slack",
+        "selected_not_maximum_upward_rank",
+        "close_rule_scores",
+        "ready_queue_congestion",
+        "critical_path_competition"
+      ],
+      "negative_slack_present": false,
+      "queue_size": 15
+    },
+    "suggested_structural_actions": [
+      "add_conditional_ddl_protection_gate"
+    ]
+  },
+  {
+    "agent_name": "energy_diagnostic_agent",
+    "confidence": "medium",
+    "decision_id": "iter31:a9708ef76051fc23:SL:1:d000073",
+    "diagnosis_code": "avoidable_marginal_energy_or_load_cost",
+    "evidence": {
+      "alternative_active_time_extension": 0.0,
+      "alternative_energy": 66.40269313168203,
+      "alternative_host_load_after": 0.35294117647058826,
+      "ddl_priority_applied": true,
+      "relative_energy_difference": 0.16362678560428479,
+      "selected_active_time_extension": 0.0,
+      "selected_energy": 79.39361518130202,
+      "selected_host_load_after": 0.35294117647058826
+    },
+    "limitations": [
+      "marginal energy and active-time extension are local proxies"
+    ],
+    "preferred_task": 223,
+    "quantitative_deltas": {
+      "communication_regret": 7.092612566493203,
+      "host_load_delta_difference": 0.0,
+      "marginal_fuzzy_energy_regret": 12.990922049619996,
+      "predicted_violation_regret": 0.0
+    },
+    "rejected_task": 234,
+    "scenario_id": "SL",
+    "seed": 1,
+    "severity": "medium",
+    "state_conditions": {
+      "host_load_maximum": 0.29411764705882354,
+      "queue_size": 15
+    },
+    "suggested_structural_actions": [
+      "add_host_load_conditional_gate",
+      "add_load_successor_release_interaction"
+    ]
+  },
+  {
+    "agent_name": "uncertainty_diagnostic_agent",
+    "confidence": "low",
+    "decision_id": "iter31:a9708ef76051fc23:SL:1:d000073",
+    "diagnosis_code": "insufficient_evidence",
+    "evidence": {
+      "comparison_count": 0
+    },
+    "limitations": [
+      "modal and pessimistic evidence do not disagree materially"
+    ],
+    "preferred_task": null,
+    "quantitative_deltas": {},
+    "rejected_task": null,
+    "scenario_id": "SL",
+    "seed": 1,
+    "severity": "none",
+    "state_conditions": {
+      "maximum_uncertainty": 0.16060760478185343,
+      "minimum_slack": 428.4198696734975,
+      "queue_size": 15
+    },
+    "suggested_structural_actions": []
+  },
+  {
+    "agent_name": "ddl_diagnostic_agent",
+    "confidence": "medium",
+    "decision_id": "iter31:a9708ef76051fc23:SL:1:d000090",
+    "diagnosis_code": "critical_path_or_successor_blocked+higher_ddl_risk_choice",
+    "evidence": {
+      "alternative_pessimistic_finish": 487.4261545565322,
+      "alternative_safety_margin": 669.5311291794865,
+      "alternative_slack": 636.1782330143005,
+      "alternative_upward_rank": 145.95581761271754,
+      "selected_pessimistic_finish": 487.72006942176887,
+      "selected_safety_margin": 657.595686953935,
+      "selected_slack": 595.6208532238172,
+      "selected_upward_rank": 170.374537814323
+    },
+    "limitations": [
+      "local one-step evidence is not a long-horizon causal proof"
+    ],
+    "preferred_task": 257,
+    "quantitative_deltas": {
+      "critical_successor_release_regret": 0.0,
+      "predicted_violation_regret": 0.0,
+      "remaining_critical_path_regret": 11.659508861798692,
+      "safety_margin_regret": 11.93544222555147
+    },
+    "rejected_task": 264,
+    "scenario_id": "SL",
+    "seed": 1,
+    "severity": "medium",
+    "state_conditions": {
+      "critical_reasons": [
+        "selected_not_minimum_slack",
+        "selected_not_maximum_upward_rank",
+        "ready_queue_congestion",
+        "small_energy_gap_possible_ddl_risk_difference",
+        "critical_path_competition"
+      ],
+      "negative_slack_present": false,
+      "queue_size": 21
+    },
+    "suggested_structural_actions": [
+      "add_upward_rank_remaining_work_interaction",
+      "add_successor_release_interaction",
+      "add_conditional_ddl_protection_gate"
+    ]
+  },
+  {
+    "agent_name": "energy_diagnostic_agent",
+    "confidence": "medium",
+    "decision_id": "iter31:a9708ef76051fc23:SL:1:d000090",
+    "diagnosis_code": "avoidable_marginal_energy_or_load_cost",
+    "evidence": {
+      "alternative_active_time_extension": 0.0,
+      "alternative_energy": 68.93042521826108,
+      "alternative_host_load_after": 0.47058823529411764,
+      "ddl_priority_applied": true,
+      "relative_energy_difference": 0.0019177265604027299,
+      "selected_active_time_extension": 0.0,
+      "selected_energy": 69.06286891631952,
+      "selected_host_load_after": 0.47058823529411764
+    },
+    "limitations": [
+      "marginal energy and active-time extension are local proxies"
+    ],
+    "preferred_task": 257,
+    "quantitative_deltas": {
+      "communication_regret": -2.0165995888063,
+      "host_load_delta_difference": 0.0,
+      "marginal_fuzzy_energy_regret": 0.13244369805843803,
+      "predicted_violation_regret": 0.0
+    },
+    "rejected_task": 264,
+    "scenario_id": "SL",
+    "seed": 1,
+    "severity": "medium",
+    "state_conditions": {
+      "host_load_maximum": 0.47058823529411764,
+      "queue_size": 21
+    },
+    "suggested_structural_actions": [
+      "add_host_load_conditional_gate"
+    ]
+  },
+  {
+    "agent_name": "uncertainty_diagnostic_agent",
+    "confidence": "low",
+    "decision_id": "iter31:a9708ef76051fc23:SL:1:d000090",
+    "diagnosis_code": "insufficient_evidence",
+    "evidence": {
+      "comparison_count": 0
+    },
+    "limitations": [
+      "modal and pessimistic evidence do not disagree materially"
+    ],
+    "preferred_task": null,
+    "quantitative_deltas": {},
+    "rejected_task": null,
+    "scenario_id": "SL",
+    "seed": 1,
+    "severity": "none",
+    "state_conditions": {
+      "maximum_uncertainty": 0.14939591567242128,
+      "minimum_slack": 591.2907284070361,
+      "queue_size": 21
+    },
+    "suggested_structural_actions": []
+  },
+  {
+    "agent_name": "ddl_diagnostic_agent",
+    "confidence": "medium",
+    "decision_id": "iter31:a9708ef76051fc23:SL:1:d000095",
+    "diagnosis_code": "higher_ddl_risk_choice",
+    "evidence": {
+      "alternative_pessimistic_finish": 641.9823326316731,
+      "alternative_safety_margin": 516.576250372091,
+      "alternative_slack": 636.1782330143005,
+      "alternative_upward_rank": 145.95581761271754,
+      "selected_pessimistic_finish": 653.7068885331636,
+      "selected_safety_margin": 504.9635410188296,
+      "selected_slack": 631.104217841495,
+      "selected_upward_rank": 156.49762309817268
+    },
+    "limitations": [
+      "local one-step evidence is not a long-horizon causal proof"
+    ],
+    "preferred_task": 257,
+    "quantitative_deltas": {
+      "critical_successor_release_regret": 0.0,
+      "predicted_violation_regret": 0.0,
+      "remaining_critical_path_regret": 0.0,
+      "safety_margin_regret": 11.61270935326138
+    },
+    "rejected_task": 248,
+    "scenario_id": "SL",
+    "seed": 1,
+    "severity": "medium",
+    "state_conditions": {
+      "critical_reasons": [
+        "selected_not_minimum_slack",
+        "selected_not_maximum_upward_rank",
+        "close_rule_scores",
+        "ready_queue_congestion",
+        "critical_path_competition"
+      ],
+      "negative_slack_present": false,
+      "queue_size": 16
+    },
+    "suggested_structural_actions": [
+      "add_conditional_ddl_protection_gate"
+    ]
+  },
+  {
+    "agent_name": "energy_diagnostic_agent",
+    "confidence": "medium",
+    "decision_id": "iter31:a9708ef76051fc23:SL:1:d000095",
+    "diagnosis_code": "avoidable_marginal_energy_or_load_cost",
+    "evidence": {
+      "alternative_active_time_extension": 0.0,
+      "alternative_energy": 68.93042521826108,
+      "alternative_host_load_after": 0.47058823529411764,
+      "ddl_priority_applied": true,
+      "relative_energy_difference": 0.31208219316580216,
+      "selected_active_time_extension": 0.0,
+      "selected_energy": 100.2015422968615,
+      "selected_host_load_after": 0.47058823529411764
+    },
+    "limitations": [
+      "marginal energy and active-time extension are local proxies"
+    ],
+    "preferred_task": 257,
+    "quantitative_deltas": {
+      "communication_regret": 3.679951198720741,
+      "host_load_delta_difference": 0.0,
+      "marginal_fuzzy_energy_regret": 31.271117078600426,
+      "predicted_violation_regret": 0.0
+    },
+    "rejected_task": 248,
+    "scenario_id": "SL",
+    "seed": 1,
+    "severity": "medium",
+    "state_conditions": {
+      "host_load_maximum": 0.47058823529411764,
+      "queue_size": 16
+    },
+    "suggested_structural_actions": [
+      "add_host_load_conditional_gate",
+      "add_load_successor_release_interaction"
+    ]
+  },
+  {
+    "agent_name": "uncertainty_diagnostic_agent",
+    "confidence": "low",
+    "decision_id": "iter31:a9708ef76051fc23:SL:1:d000095",
+    "diagnosis_code": "insufficient_evidence",
+    "evidence": {
+      "comparison_count": 0
+    },
+    "limitations": [
+      "modal and pessimistic evidence do not disagree materially"
+    ],
+    "preferred_task": null,
+    "quantitative_deltas": {},
+    "rejected_task": null,
+    "scenario_id": "SL",
+    "seed": 1,
+    "severity": "none",
+    "state_conditions": {
+      "maximum_uncertainty": 0.14939591567242128,
+      "minimum_slack": 591.2907284070361,
+      "queue_size": 16
+    },
+    "suggested_structural_actions": []
+  },
+  {
+    "agent_name": "ddl_diagnostic_agent",
+    "confidence": "medium",
+    "decision_id": "iter31:a9708ef76051fc23:SL:1:d000175",
+    "diagnosis_code": "higher_ddl_risk_choice",
+    "evidence": {
+      "alternative_pessimistic_finish": 1176.4129072338192,
+      "alternative_safety_margin": 184.1056394404659,
+      "alternative_slack": 696.294263897083,
+      "alternative_upward_rank": 150.61084764468524,
+      "selected_pessimistic_finish": 1177.5738881811083,
+      "selected_safety_margin": 182.9614808286417,
+      "selected_slack": 695.5213698353639,
+      "selected_upward_rank": 152.4431459513245
+    },
+    "limitations": [
+      "local one-step evidence is not a long-horizon causal proof"
+    ],
+    "preferred_task": 404,
+    "quantitative_deltas": {
+      "critical_successor_release_regret": 0.0,
+      "predicted_violation_regret": 0.0,
+      "remaining_critical_path_regret": 0.0,
+      "safety_margin_regret": 1.1441586118241958
+    },
+    "rejected_task": 398,
+    "scenario_id": "SL",
+    "seed": 1,
+    "severity": "medium",
+    "state_conditions": {
+      "critical_reasons": [
+        "selected_not_minimum_slack",
+        "selected_not_maximum_upward_rank",
+        "close_rule_scores",
+        "ready_queue_congestion",
+        "critical_path_competition"
+      ],
+      "negative_slack_present": false,
+      "queue_size": 17
+    },
+    "suggested_structural_actions": [
+      "add_conditional_ddl_protection_gate"
+    ]
+  },
+  {
+    "agent_name": "energy_diagnostic_agent",
+    "confidence": "medium",
+    "decision_id": "iter31:a9708ef76051fc23:SL:1:d000175",
+    "diagnosis_code": "avoidable_marginal_energy_or_load_cost",
+    "evidence": {
+      "alternative_active_time_extension": 0.0,
+      "alternative_energy": 68.46613197049753,
+      "alternative_host_load_after": 0.2647058823529412,
+      "ddl_priority_applied": true,
+      "relative_energy_difference": 0.07143035641399949,
+      "selected_active_time_extension": 0.0,
+      "selected_energy": 73.73289924285196,
+      "selected_host_load_after": 0.2647058823529412
+    },
+    "limitations": [
+      "marginal energy and active-time extension are local proxies"
+    ],
+    "preferred_task": 404,
+    "quantitative_deltas": {
+      "communication_regret": -0.7154331847898918,
+      "host_load_delta_difference": 0.0,
+      "marginal_fuzzy_energy_regret": 5.2667672723544285,
+      "predicted_violation_regret": 0.0
+    },
+    "rejected_task": 398,
+    "scenario_id": "SL",
+    "seed": 1,
+    "severity": "medium",
+    "state_conditions": {
+      "host_load_maximum": 0.5294117647058824,
+      "queue_size": 17
+    },
+    "suggested_structural_actions": [
+      "add_host_load_conditional_gate"
+    ]
+  },
+  {
+    "agent_name": "uncertainty_diagnostic_agent",
+    "confidence": "low",
+    "decision_id": "iter31:a9708ef76051fc23:SL:1:d000175",
+    "diagnosis_code": "insufficient_evidence",
+    "evidence": {
+      "comparison_count": 0
+    },
+    "limitations": [
+      "modal and pessimistic evidence do not disagree materially"
+    ],
+    "preferred_task": null,
+    "quantitative_deltas": {},
+    "rejected_task": null,
+    "scenario_id": "SL",
+    "seed": 1,
+    "severity": "none",
+    "state_conditions": {
+      "maximum_uncertainty": 0.16005297150088468,
+      "minimum_slack": 663.4060937610584,
+      "queue_size": 17
+    },
+    "suggested_structural_actions": []
+  },
+  {
+    "agent_name": "ddl_diagnostic_agent",
+    "confidence": "medium",
+    "decision_id": "iter31:a9708ef76051fc23:SL:1:d000180",
+    "diagnosis_code": "higher_ddl_risk_choice",
+    "evidence": {
+      "alternative_pessimistic_finish": 1137.5902026521198,
+      "alternative_safety_margin": 219.84036303777566,
+      "alternative_slack": 696.294263897083,
+      "alternative_upward_rank": 150.61084764468524,
+      "selected_pessimistic_finish": 1140.5582902930237,
+      "selected_safety_margin": 216.89281346769644,
+      "selected_slack": 695.6032729725789,
+      "selected_upward_rank": 152.03158443602644
+    },
+    "limitations": [
+      "local one-step evidence is not a long-horizon causal proof"
+    ],
+    "preferred_task": 404,
+    "quantitative_deltas": {
+      "critical_successor_release_regret": 0.0,
+      "predicted_violation_regret": 0.0,
+      "remaining_critical_path_regret": 0.0,
+      "safety_margin_regret": 2.947549570079218
+    },
+    "rejected_task": 390,
+    "scenario_id": "SL",
+    "seed": 1,
+    "severity": "medium",
+    "state_conditions": {
+      "critical_reasons": [
+        "selected_not_minimum_slack",
+        "selected_not_maximum_upward_rank",
+        "close_rule_scores",
+        "ready_queue_congestion",
+        "critical_path_competition"
+      ],
+      "negative_slack_present": false,
+      "queue_size": 12
+    },
+    "suggested_structural_actions": [
+      "add_conditional_ddl_protection_gate"
+    ]
+  },
+  {
+    "agent_name": "energy_diagnostic_agent",
+    "confidence": "medium",
+    "decision_id": "iter31:a9708ef76051fc23:SL:1:d000180",
+    "diagnosis_code": "avoidable_marginal_energy_or_load_cost",
+    "evidence": {
+      "alternative_active_time_extension": 0.0,
+      "alternative_energy": 69.3338370504726,
+      "alternative_host_load_after": 0.5,
+      "ddl_priority_applied": true,
+      "relative_energy_difference": 0.056254634577106014,
+      "selected_active_time_extension": 0.0,
+      "selected_energy": 73.46667818538529,
+      "selected_host_load_after": 0.5
+    },
+    "limitations": [
+      "marginal energy and active-time extension are local proxies"
+    ],
+    "preferred_task": 404,
+    "quantitative_deltas": {
+      "communication_regret": 1.2637365425756197,
+      "host_load_delta_difference": 0.0,
+      "marginal_fuzzy_energy_regret": 4.132841134912695,
+      "predicted_violation_regret": 0.0
+    },
+    "rejected_task": 390,
+    "scenario_id": "SL",
+    "seed": 1,
+    "severity": "medium",
+    "state_conditions": {
+      "host_load_maximum": 0.5294117647058824,
+      "queue_size": 12
+    },
+    "suggested_structural_actions": [
+      "add_host_load_conditional_gate",
+      "add_load_successor_release_interaction"
+    ]
+  },
+  {
+    "agent_name": "uncertainty_diagnostic_agent",
+    "confidence": "low",
+    "decision_id": "iter31:a9708ef76051fc23:SL:1:d000180",
+    "diagnosis_code": "insufficient_evidence",
+    "evidence": {
+      "comparison_count": 0
+    },
+    "limitations": [
+      "modal and pessimistic evidence do not disagree materially"
+    ],
+    "preferred_task": null,
+    "quantitative_deltas": {},
+    "rejected_task": null,
+    "scenario_id": "SL",
+    "seed": 1,
+    "severity": "none",
+    "state_conditions": {
+      "maximum_uncertainty": 0.16005297150088468,
+      "minimum_slack": 663.4060937610584,
+      "queue_size": 12
+    },
+    "suggested_structural_actions": []
+  },
+  {
+    "agent_name": "ddl_diagnostic_agent",
+    "confidence": "medium",
+    "decision_id": "iter31:a9708ef76051fc23:SL:1:d000181",
+    "diagnosis_code": "higher_ddl_risk_choice",
+    "evidence": {
+      "alternative_pessimistic_finish": 1009.8788640360058,
+      "alternative_safety_margin": 339.3554856745851,
+      "alternative_slack": 663.4060937610584,
+      "alternative_upward_rank": 177.47888611498317,
+      "selected_pessimistic_finish": 1166.2744873917566,
+      "selected_safety_margin": 192.44316393826307,
+      "selected_slack": 695.9714068513247,
+      "selected_upward_rank": 151.26555761152042
+    },
+    "limitations": [
+      "local one-step evidence is not a long-horizon causal proof"
+    ],
+    "preferred_task": 408,
+    "quantitative_deltas": {
+      "critical_successor_release_regret": 0.0,
+      "predicted_violation_regret": 0.0,
+      "remaining_critical_path_regret": -8.362164791743787,
+      "safety_margin_regret": 146.91232173632204
+    },
+    "rejected_task": 400,
+    "scenario_id": "SL",
+    "seed": 1,
+    "severity": "medium",
+    "state_conditions": {
+      "critical_reasons": [
+        "selected_not_minimum_slack",
+        "selected_not_maximum_upward_rank",
+        "ready_queue_congestion",
+        "small_energy_gap_possible_ddl_risk_difference",
+        "critical_path_competition"
+      ],
+      "negative_slack_present": false,
+      "queue_size": 11
+    },
+    "suggested_structural_actions": [
+      "add_conditional_ddl_protection_gate"
+    ]
+  },
+  {
+    "agent_name": "energy_diagnostic_agent",
+    "confidence": "medium",
+    "decision_id": "iter31:a9708ef76051fc23:SL:1:d000181",
+    "diagnosis_code": "avoidable_marginal_energy_or_load_cost",
+    "evidence": {
+      "alternative_active_time_extension": 0.0,
+      "alternative_energy": 70.49415221616051,
+      "alternative_host_load_after": 0.5,
+      "ddl_priority_applied": true,
+      "relative_energy_difference": 0.027156684235481433,
+      "selected_active_time_extension": 0.0,
+      "selected_energy": 72.46197930728648,
+      "selected_host_load_after": 0.5
+    },
+    "limitations": [
+      "marginal energy and active-time extension are local proxies"
+    ],
+    "preferred_task": 404,
+    "quantitative_deltas": {
+      "communication_regret": 0.7506705037407251,
+      "host_load_delta_difference": 0.0,
+      "marginal_fuzzy_energy_regret": 1.9678270911259688,
+      "predicted_violation_regret": 0.0
+    },
+    "rejected_task": 400,
+    "scenario_id": "SL",
+    "seed": 1,
+    "severity": "medium",
+    "state_conditions": {
+      "host_load_maximum": 0.5294117647058824,
+      "queue_size": 11
+    },
+    "suggested_structural_actions": [
+      "add_host_load_conditional_gate",
+      "add_load_successor_release_interaction"
+    ]
+  },
+  {
+    "agent_name": "uncertainty_diagnostic_agent",
+    "confidence": "low",
+    "decision_id": "iter31:a9708ef76051fc23:SL:1:d000181",
+    "diagnosis_code": "insufficient_evidence",
+    "evidence": {
+      "comparison_count": 0
+    },
+    "limitations": [
+      "modal and pessimistic evidence do not disagree materially"
+    ],
+    "preferred_task": null,
+    "quantitative_deltas": {},
+    "rejected_task": null,
+    "scenario_id": "SL",
+    "seed": 1,
+    "severity": "none",
+    "state_conditions": {
+      "maximum_uncertainty": 0.16005297150088468,
+      "minimum_slack": 663.4060937610584,
+      "queue_size": 11
+    },
+    "suggested_structural_actions": []
+  },
+  {
+    "agent_name": "ddl_diagnostic_agent",
+    "confidence": "medium",
+    "decision_id": "iter31:a9708ef76051fc23:SL:1:d000192",
+    "diagnosis_code": "critical_path_or_successor_blocked",
+    "evidence": {
+      "alternative_pessimistic_finish": 1229.5469453342412,
+      "alternative_safety_margin": 1085.1650503522878,
+      "alternative_slack": 1470.3398683547957,
+      "alternative_upward_rank": 301.2542139551746,
+      "selected_pessimistic_finish": 1227.3122575689467,
+      "selected_safety_margin": 1087.4150345736598,
+      "selected_slack": 1471.2416228391587,
+      "selected_upward_rank": 299.05296328370287
+    },
+    "limitations": [
+      "local one-step evidence is not a long-horizon causal proof"
+    ],
+    "preferred_task": 419,
+    "quantitative_deltas": {
+      "critical_successor_release_regret": 1.0,
+      "predicted_violation_regret": 0.0,
+      "remaining_critical_path_regret": -0.01672480964271017,
+      "safety_margin_regret": -2.2499842213719603
+    },
+    "rejected_task": 421,
+    "scenario_id": "SL",
+    "seed": 1,
+    "severity": "medium",
+    "state_conditions": {
+      "critical_reasons": [
+        "selected_not_minimum_slack",
+        "selected_not_maximum_upward_rank",
+        "ready_queue_congestion",
+        "successor_release_difference",
+        "critical_path_competition"
+      ],
+      "negative_slack_present": false,
+      "queue_size": 5
+    },
+    "suggested_structural_actions": [
+      "add_upward_rank_remaining_work_interaction",
+      "add_successor_release_interaction"
+    ]
+  },
+  {
+    "agent_name": "energy_diagnostic_agent",
+    "confidence": "low",
+    "decision_id": "iter31:a9708ef76051fc23:SL:1:d000192",
+    "diagnosis_code": "insufficient_evidence",
+    "evidence": {
+      "comparison_count": 0
+    },
+    "limitations": [
+      "energy differences are immaterial or justified by a selected-task DDL advantage"
+    ],
+    "preferred_task": null,
+    "quantitative_deltas": {},
+    "rejected_task": null,
+    "scenario_id": "SL",
+    "seed": 1,
+    "severity": "none",
+    "state_conditions": {
+      "maximum_uncertainty": 0.1370643397443215,
+      "minimum_slack": 1467.473962179095,
+      "queue_size": 5
+    },
+    "suggested_structural_actions": []
+  },
+  {
+    "agent_name": "uncertainty_diagnostic_agent",
+    "confidence": "low",
+    "decision_id": "iter31:a9708ef76051fc23:SL:1:d000192",
+    "diagnosis_code": "insufficient_evidence",
+    "evidence": {
+      "comparison_count": 0
+    },
+    "limitations": [
+      "modal and pessimistic evidence do not disagree materially"
+    ],
+    "preferred_task": null,
+    "quantitative_deltas": {},
+    "rejected_task": null,
+    "scenario_id": "SL",
+    "seed": 1,
+    "severity": "none",
+    "state_conditions": {
+      "maximum_uncertainty": 0.1370643397443215,
+      "minimum_slack": 1467.473962179095,
+      "queue_size": 5
+    },
+    "suggested_structural_actions": []
+  }
+]

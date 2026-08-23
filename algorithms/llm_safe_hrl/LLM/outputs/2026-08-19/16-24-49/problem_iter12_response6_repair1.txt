@@ -1,0 +1,212 @@
+```python
+import numpy as np
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "slack_risk_penalty",
+            "initial_value": 5.4,
+            "lower_bound": 0.5,
+            "upper_bound": 12.0,
+            "semantic_description": "Linear penalty multiplier for negative slack (deadline violation risk).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "slack_urgency_scale",
+            "initial_value": 1.88,
+            "lower_bound": 0.3,
+            "upper_bound": 4.0,
+            "semantic_description": "Gain for capped exponential urgency in tight-positive slack region [0, slack_cap].",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "slack_cap",
+            "initial_value": 6.5,
+            "lower_bound": 1.0,
+            "upper_bound": 100.0,
+            "semantic_description": "Upper bound of slack interval where exponential urgency applies; beyond this, flat decay.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_sensitivity",
+            "initial_value": 0.93,
+            "lower_bound": 0.1,
+            "upper_bound": 3.0,
+            "semantic_description": "Weight for uncertainty-weighted incremental energy (not gated).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "critical_path_leverage",
+            "initial_value": 1.37,
+            "lower_bound": 0.0,
+            "upper_bound": 5.0,
+            "semantic_description": "Boost for high upward_rank tasks only when slack >= 0, applied via clipped quantile-normalized rank.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "duration_balance",
+            "initial_value": 0.45,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight on combined exec+comm time, normalized via median-IQR scaling with fixed epsilon.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "work_density_weight",
+            "initial_value": 0.29,
+            "lower_bound": 0.0,
+            "upper_bound": 1.0,
+            "semantic_description": "Bonus weight for high remaining_work per unit duration — favors throughput-critical tasks.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "uncertainty_sensitivity",
+            "initial_value": 0.71,
+            "lower_bound": 0.0,
+            "upper_bound": 3.0,
+            "semantic_description": "Modulates how much uncertainty scales energy and urgency components multiplicatively.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "sigmoid_steepness",
+            "initial_value": 2.1,
+            "lower_bound": 0.1,
+            "upper_bound": 10.0,
+            "semantic_description": "Steepness parameter for bounded sigmoid joint feasibility gate: 1/(1+exp(-k*x)).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "quantile_q1",
+            "initial_value": 0.25,
+            "lower_bound": 0.05,
+            "upper_bound": 0.45,
+            "semantic_description": "Lower quantile for interquartile range (Q1).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "quantile_q3",
+            "initial_value": 0.75,
+            "lower_bound": 0.55,
+            "upper_bound": 0.95,
+            "semantic_description": "Upper quantile for interquartile range (Q3).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "normalization_epsilon",
+            "initial_value": 1e-9,
+            "lower_bound": 1e-12,
+            "upper_bound": 1e-6,
+            "semantic_description": "Fixed epsilon for IQR denominator to avoid division by zero in median-IQR normalization.",
+            "parameter_type": "float",
+            "transform": "log"
+        }
+    ]
+}
+
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """
+    Self-evolved priority rule featuring:
+      - Replaced tanh joint gate with robust, differentiable sigmoid of normalized slack/uncertainty ratio.
+      - Simplified critical-path leverage to pure slack>=0 gating + clipped quantile-normalized upward_rank.
+      - Replaced Q1/Q3 normalization with fixed-epsilon median-IQR scaling using declared normalization_epsilon.
+      - All numeric literals are {-2,-1,0,1,2}; no loops, randomness, or side effects.
+    """
+    finfo = np.finfo(np.float64)
+    eps = PARAMS["normalization_epsilon"]
+
+    # Cast and sanitize inputs — ensure no NaN/inf persists
+    min_exec_time = np.nan_to_num(np.asarray(min_exec_time, dtype=np.float64), nan=eps, posinf=finfo.max, neginf=finfo.min)
+    min_comm_time = np.nan_to_num(np.asarray(min_comm_time, dtype=np.float64), nan=eps, posinf=finfo.max, neginf=finfo.min)
+    min_incremental_energy = np.nan_to_num(np.asarray(min_incremental_energy, dtype=np.float64), nan=eps, posinf=finfo.max, neginf=finfo.min)
+    slack = np.nan_to_num(np.asarray(slack, dtype=np.float64), nan=0.0, posinf=finfo.max, neginf=finfo.min)
+    upward_rank = np.nan_to_num(np.asarray(upward_rank, dtype=np.float64), nan=eps, posinf=finfo.max, neginf=finfo.min)
+    remaining_work = np.nan_to_num(np.asarray(remaining_work, dtype=np.float64), nan=eps, posinf=finfo.max, neginf=finfo.min)
+    ready_wait_time = np.nan_to_num(np.asarray(ready_wait_time, dtype=np.float64), nan=0.0, posinf=finfo.max, neginf=0.0)
+    uncertainty = np.nan_to_num(np.asarray(uncertainty, dtype=np.float64), nan=eps, posinf=finfo.max, neginf=eps)
+
+    # Robust median-IQR normalization using declared epsilon
+    def median_iqr_normalize(x):
+        x = np.asarray(x, dtype=np.float64)
+        q1 = np.quantile(x, PARAMS["quantile_q1"])
+        q3 = np.quantile(x, PARAMS["quantile_q3"])
+        iqr = np.maximum(q3 - q1, eps)
+        return (x - np.median(x)) / iqr
+
+    # --- Slack transformation: piecewise-smooth, bounded ---
+    neg_mask = slack < 0.0
+    tight_mask = (slack >= 0.0) & (slack <= PARAMS["slack_cap"])
+    loose_mask = slack > PARAMS["slack_cap"]
+    
+    slack_norm = np.zeros_like(slack)
+    slack_norm[neg_mask] = PARAMS["slack_risk_penalty"] * (-slack[neg_mask])  # linear penalty
+    slack_norm[tight_mask] = PARAMS["slack_urgency_scale"] * (np.exp(slack[tight_mask]) - 1.0)  # saturating urgency
+    slack_norm[loose_mask] = PARAMS["slack_urgency_scale"] * (np.exp(PARAMS["slack_cap"]) - 1.0)  # flat decay cap
+
+    # --- Duration: exec + comm, median-IQR normalized ---
+    duration = min_exec_time + min_comm_time
+    duration_norm = median_iqr_normalize(duration)
+
+    # --- Energy: monotonic uncertainty-weighted ---
+    unc_norm = median_iqr_normalize(uncertainty)
+    energy_base = min_incremental_energy * (1.0 + np.abs(unc_norm))
+    energy_norm = median_iqr_normalize(energy_base)
+    energy_score = PARAMS["energy_sensitivity"] * energy_norm
+
+    # --- Rank: upward_rank, clipped quantile-normalized for bounded influence ---
+    rank_norm = median_iqr_normalize(upward_rank)
+    # Clip to [-1, 1] to prevent extreme outliers from dominating critical boost
+    rank_clipped = np.clip(rank_norm, -1.0, 1.0)
+
+    # --- Critical path: slack-gated only (no uncertainty median coupling), using clipped rank ---
+    critical_gate = (slack >= 0.0).astype(float)
+    critical_boost = PARAMS["critical_path_leverage"] * rank_clipped * critical_gate
+
+    # --- Work density: remaining_work per unit duration, gated by smooth sigmoid joint feasibility ---
+    work_density = np.divide(remaining_work, duration + eps)
+    work_density_norm = median_iqr_normalize(work_density)
+    # Sigmoid gate: 1 / (1 + exp(-k * slack/(uncertainty+eps))) ∈ (0,1)
+    joint_ratio = slack / (uncertainty + eps)
+    joint_feasibility = 1.0 / (1.0 + np.exp(-PARAMS["sigmoid_steepness"] * joint_ratio))
+    work_density_bonus = PARAMS["work_density_weight"] * work_density_norm * joint_feasibility
+
+    # --- Uncertainty coupling: multiplicative modulation of energy and slack components ---
+    unc_mod = 1.0 + PARAMS["uncertainty_sensitivity"] * np.abs(unc_norm)
+    modulated_energy_score = energy_score * unc_mod
+    modulated_slack_norm = slack_norm * unc_mod
+
+    # --- Assemble final score: smaller = higher priority ---
+    score = (
+        modulated_slack_norm
+        + PARAMS["duration_balance"] * duration_norm
+        + modulated_energy_score
+        - critical_boost
+        - work_density_bonus
+    )
+
+    # Final safeguard: ensure finite output
+    score = np.nan_to_num(score, nan=0.0, posinf=finfo.max, neginf=-finfo.max)
+    
+    return score
+```

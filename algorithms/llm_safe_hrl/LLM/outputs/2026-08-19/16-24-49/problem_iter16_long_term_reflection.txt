@@ -1,0 +1,5 @@
+- Enforce strict lexicographic DDL-first ordering via hard `slack <= ddl_protection_threshold` gating—validated across ≥19 decisions, 2 seeds, 1 scenario.  
+- Prioritize critical-path release via unconditional `upward_rank × remaining_work` interaction—confirmed in 6+ replayed starvation failures and 17+ counterfactual consensus decisions.  
+- Use unified MAD-based global feature scaling (not per-feature) for rank stability—cross-generation evidence shows improved CMA-ES gradient flow and N=1 robustness.  
+- Gate energy-aware terms only under *meaningfully positive slack* (`slack > threshold`) to prevent premature optimization—tighter than `>0`, reducing feasibility drops.  
+- Replace all fragile sigmoid/percentile thresholds with bounded, monotonic, or hard gates—supported by fragility analysis of 5+ parameters across seeds.

@@ -1,0 +1,22 @@
+[cews-eval] candidate=E:\读博生活\0.科研\1.论文\3. 第三个任务\2. 论文实验材料\sec_job\out\main_single\SL\generated\candidate_iter28_ind3.py seeds=[1, 2, 3]
+E:\读博生活\0.科研\1.论文\3. 第三个任务\2. 论文实验材料\sec_job\out\main_single\SL\generated\candidate_iter28_ind3.py:40: RuntimeWarning: invalid value encountered in power
+  severe_slack_penalty = np.where(slack < -eps, (-slack) ** 2.4703320226340377, 0.0)
+Traceback (most recent call last):
+  File "E:\读博生活\0.科研\1.论文\3. 第三个任务\2. 论文实验材料\sec_job\algorithms\llm_safe_hrl\LLM\problems\cews_task_constructive\eval.py", line 925, in <module>
+    main()
+  File "E:\读博生活\0.科研\1.论文\3. 第三个任务\2. 论文实验材料\sec_job\algorithms\llm_safe_hrl\LLM\problems\cews_task_constructive\eval.py", line 911, in main
+    result = evaluate_candidate(
+             ^^^^^^^^^^^^^^^^^^^
+  File "E:\读博生活\0.科研\1.论文\3. 第三个任务\2. 论文实验材料\sec_job\algorithms\llm_safe_hrl\LLM\problems\cews_task_constructive\eval.py", line 622, in evaluate_candidate
+    metrics = run_instance(
+              ^^^^^^^^^^^^^
+  File "E:\读博生活\0.科研\1.论文\3. 第三个任务\2. 论文实验材料\sec_job\algorithms\llm_safe_hrl\LLM\problems\cews_task_constructive\eval.py", line 476, in run_instance
+    selected_task = environment.select_task_with_priority_rule(
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\读博生活\0.科研\1.论文\3. 第三个任务\2. 论文实验材料\sec_job\algorithms\llm_safe_hrl\base\hrl_env.py", line 3323, in select_task_with_priority_rule
+    scores = priority_rule(
+             ^^^^^^^^^^^^^^
+  File "E:\读博生活\0.科研\1.论文\3. 第三个任务\2. 论文实验材料\sec_job\out\main_single\SL\generated\candidate_iter28_ind3.py", line 60, in get_task_priority_v2
+    score += np.where(is_tight_or_violated & (upward_rank >= np.median(upward_rank) if N > 1 else np.mean(upward_rank)) & (remaining_work >= np.median(remaining_work) if N > 1 else np.mean(remaining_work)), 1.8692378094424233, 0.0)
+                      ~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+TypeError: ufunc 'bitwise_and' not supported for the input types, and the inputs could not be safely coerced to any supported types according to the casting rule ''safe''

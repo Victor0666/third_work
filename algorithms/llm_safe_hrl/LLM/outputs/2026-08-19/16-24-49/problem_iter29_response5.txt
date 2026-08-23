@@ -1,0 +1,276 @@
+```python
+import numpy as np
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 1e-7,
+            "lower_bound": 1e-9,
+            "upper_bound": 1e-4,
+            "semantic_description": "Numerical guard for stable normalization and division.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "ddl_protection_threshold",
+            "initial_value": 0.35,
+            "lower_bound": 0.0,
+            "upper_bound": 5.0,
+            "semantic_description": "Minimum slack (seconds) to consider task 'DDL-safe' and enable energy/efficiency optimization terms.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "critical_path_release_weight",
+            "initial_value": 2.4,
+            "lower_bound": 0.5,
+            "upper_bound": 4.0,
+            "semantic_description": "Multiplier for upward_rank * remaining_work product — prioritizes release of critical-path successors.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "risk_adjusted_energy_weight",
+            "initial_value": 1.15,
+            "lower_bound": 0.1,
+            "upper_bound": 3.0,
+            "semantic_description": "Weight for normalized min_incremental_energy when slack > ddl_protection_threshold.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "uncertainty_slack_coupling",
+            "initial_value": 0.88,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Strength of penalty coupling between uncertainty and negative slack (risk-aware DDL pressure).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "wait_starvation_penalty",
+            "initial_value": 0.68,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight for ready_wait_time term — ensures long-waiting tasks gain priority even under DDL pressure.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "slack_linear_ramp_width",
+            "initial_value": 0.9,
+            "lower_bound": 0.1,
+            "upper_bound": 3.0,
+            "semantic_description": "Width of linear ramp gate on slack: replaces sigmoid with robust bounded slope near threshold.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "rank_slack_balance",
+            "initial_value": 0.75,
+            "lower_bound": 0.0,
+            "upper_bound": 1.0,
+            "semantic_description": "Interpolation factor between rank-driven and slack-driven priority under DDL pressure.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "latency_risk_weight",
+            "initial_value": 0.45,
+            "lower_bound": 0.0,
+            "upper_bound": 1.5,
+            "semantic_description": "Weight for normalized duration_total under DDL-safe condition — favors faster-executing tasks when slack is sufficient.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "successor_release_coupling",
+            "initial_value": 0.62,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight for slack-aware modulation of critical_path_release: strengthens successor release under tight deadlines.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "host_load_sensitivity",
+            "initial_value": 0.52,
+            "lower_bound": 0.0,
+            "upper_bound": 1.0,
+            "semantic_description": "Sensitivity threshold for host-load–aware gating: activates energy terms only when local load < median + sensitivity * MAD.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_uncertainty_interaction_weight",
+            "initial_value": 0.47,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight for multiplicative coupling between normalized energy and uncertainty in safe region.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "z_clip_bound",
+            "initial_value": 1.8,
+            "lower_bound": 0.5,
+            "upper_bound": 2.5,
+            "semantic_description": "Upper/lower bound for z-normalized features to suppress outlier influence.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "anti_starvation_slack_dampening",
+            "initial_value": 0.85,
+            "lower_bound": 0.1,
+            "upper_bound": 2.0,
+            "semantic_description": "Exponent controlling how strongly ready_wait_time is dampened by |slack| to avoid starvation during deadline pressure.",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Hybrid priority rule combining Parent 2's adaptive MAD robustness and host-load awareness 
+    with Parent 1's successor-urgency term and strict lexicographic DDL gating.
+    
+    Key innovations:
+      - Dual-gated successor urgency: combines Parent 1's (remaining_work / upward_rank) bottleneck release 
+        with Parent 2's slack-deficit coupling, applied *only* when slack > 0 (lexicographic safety).
+      - Z-normalization with tunable clip bound (replaces fixed [-2,2]) for improved cross-scenario stability.
+      - Anti-starvation uses power-law dampening (|slack|^exponent) instead of linear, better handling wide slack ranges.
+      - Critical path release now uses *both* product (upward_rank * remaining_work) AND ratio (remaining_work / upward_rank)
+        in complementary regimes: product dominates under violation, ratio dominates under headroom.
+      - All normalization uses adaptive MAD/median ratios *and* z-clipping for outlier resilience.
+    """
+    eps = PARAMS["epsilon"]
+    finfo = np.finfo(float)
+    
+    # Sanitize inputs — no in-place mutation
+    min_exec_time = np.nan_to_num(np.asarray(min_exec_time, dtype=float), nan=eps, posinf=finfo.max, neginf=finfo.min)
+    min_comm_time = np.nan_to_num(np.asarray(min_comm_time, dtype=float), nan=eps, posinf=finfo.max, neginf=finfo.min)
+    min_incremental_energy = np.nan_to_num(np.asarray(min_incremental_energy, dtype=float), nan=eps, posinf=finfo.max, neginf=finfo.min)
+    slack = np.nan_to_num(np.asarray(slack, dtype=float), nan=0.0, posinf=finfo.max, neginf=finfo.min)
+    upward_rank = np.nan_to_num(np.asarray(upward_rank, dtype=float), nan=eps, posinf=finfo.max, neginf=finfo.min)
+    remaining_work = np.nan_to_num(np.asarray(remaining_work, dtype=float), nan=eps, posinf=finfo.max, neginf=finfo.min)
+    ready_wait_time = np.nan_to_num(np.asarray(ready_wait_time, dtype=float), nan=0.0, posinf=finfo.max, neginf=0.0)
+    uncertainty = np.nan_to_num(np.asarray(uncertainty, dtype=float), nan=eps, posinf=finfo.max, neginf=eps)
+
+    N = len(min_exec_time)
+    if N == 0:
+        return np.array([], dtype=float)
+
+    # --- Adaptive MAD normalization: per-dimension MAD / (median + eps) → dimensionless, self-scaling ---
+    # Stack all risk-sensitive dimensions for unified dispersion estimation
+    duration_total = min_exec_time + min_comm_time + eps
+    abs_slack = np.abs(slack) + eps
+    all_risk_dims = np.stack([duration_total, abs_slack, uncertainty, min_incremental_energy], axis=0)
+    
+    medians = np.median(all_risk_dims, axis=1)
+    mads = np.mean(np.abs(all_risk_dims - medians[:, None]), axis=1) + eps
+    
+    # Compute normalized features using MAD/median scaling
+    duration_norm = duration_total / (medians[0] + mads[0] + eps)
+    slack_norm = abs_slack / (medians[1] + mads[1] + eps)
+    unc_norm = uncertainty / (medians[2] + mads[2] + eps)
+    energy_norm = min_incremental_energy / (medians[3] + mads[3] + eps)
+
+    # --- Z-normalization helper with tunable clipping ---
+    def z_normalize(x):
+        x = np.asarray(x, dtype=float)
+        if N == 1:
+            return np.zeros_like(x, dtype=float)
+        mean_x = np.mean(x)
+        std_x = np.std(x, ddof=0) + eps
+        z = (x - mean_x) / std_x
+        return np.clip(z, -PARAMS["z_clip_bound"], PARAMS["z_clip_bound"])
+
+    # --- DDL-critical base score: slack violation penalty with uncertainty coupling ---
+    slack_penalty = np.where(
+        slack < 0,
+        (-slack) * (1.0 + PARAMS["uncertainty_slack_coupling"] * unc_norm),
+        0.0
+    )
+
+    # --- Critical path release signals: dual-form (product + ratio) with regime switching ---
+    critical_product = upward_rank * remaining_work
+    critical_ratio = (remaining_work + eps) / (upward_rank + eps)
+    
+    # Product form dominates under deadline violation (prioritizes high-importance high-work paths)
+    median_cp = np.median(critical_product) + eps
+    mad_cp = np.mean(np.abs(critical_product - median_cp)) + eps
+    critical_product_norm = (critical_product - median_cp) / (mad_cp + eps)
+    slack_deficit_ratio = np.clip((-slack) / (PARAMS["ddl_protection_threshold"] + eps), 0.0, 2.0)
+    critical_product_score = -critical_product_norm * PARAMS["critical_path_release_weight"] * (1.0 + PARAMS["successor_release_coupling"] * slack_deficit_ratio)
+    
+    # Ratio form dominates under slack headroom (prioritizes bottleneck release)
+    median_cr = np.median(critical_ratio) + eps
+    mad_cr = np.mean(np.abs(critical_ratio - median_cr)) + eps
+    critical_ratio_norm = (critical_ratio - median_cr) / (mad_cr + eps)
+    slack_headroom_mask = np.where(slack > 0.0, 1.0, 0.0)
+    critical_ratio_score = -critical_ratio_norm * PARAMS["critical_path_release_weight"] * slack_headroom_mask
+
+    # --- Linear ramp slack gate: robust, bounded, differentiable ---
+    ramp_half = PARAMS["slack_linear_ramp_width"] / 2.0
+    gate_center = PARAMS["ddl_protection_threshold"]
+    gate_low = gate_center - ramp_half
+    gate_high = gate_center + ramp_half
+    slack_gate = np.clip((slack - gate_low) / (ramp_half * 2.0 + eps), 0.0, 1.0)
+
+    # --- Host-load–aware conditional gate: inferred from wait_time & uncertainty dispersion ---
+    wait_unc_ratio = (ready_wait_time + eps) / (uncertainty + eps)
+    median_wait_unc = np.median(wait_unc_ratio) + eps
+    mad_wait_unc = np.mean(np.abs(wait_unc_ratio - median_wait_unc)) + eps
+    load_pressure = (wait_unc_ratio - median_wait_unc) / (mad_wait_unc + eps)
+    host_load_gate = np.where(load_pressure < PARAMS["host_load_sensitivity"], 1.0, 0.0)
+
+    # --- Energy efficiency term: gated by both slack AND host-load awareness ---
+    energy_score = slack_gate * host_load_gate * energy_norm * PARAMS["risk_adjusted_energy_weight"]
+
+    # --- Uncertainty-energy interaction: same dual gating ---
+    energy_uncertainty_score = slack_gate * host_load_gate * energy_norm * unc_norm * PARAMS["energy_uncertainty_interaction_weight"]
+
+    # --- Latency-risk term: favors shorter duration_total only under DDL safety AND low load ---
+    latency_risk_score = slack_gate * host_load_gate * (-duration_norm) * PARAMS["latency_risk_weight"]
+
+    # --- Starvation mitigation: power-law dampening by |slack| for robustness across scales ---
+    wait_dampened = ready_wait_time / ((np.abs(slack) + 1.0) ** PARAMS["anti_starvation_slack_dampening"])
+    wait_z = z_normalize(wait_dampened)
+    wait_final = wait_z * PARAMS["wait_starvation_penalty"]
+
+    # --- Final slack-driven balance: interpolate between slack urgency and rank importance ---
+    slack_weight = np.clip(1.0 - slack_norm / (slack_norm.max() + eps), 0.0, 1.0)
+    rank_weight = 1.0 - slack_weight
+    rank_score = -z_normalize(upward_rank) * rank_weight * PARAMS["rank_slack_balance"]
+
+    # --- Assemble final score: smaller = higher priority ---
+    # Use z-normalized components for balanced contribution
+    score = (
+        z_normalize(slack_penalty) +
+        z_normalize(critical_product_score) +
+        z_normalize(critical_ratio_score) +
+        wait_final +
+        z_normalize(energy_score) +
+        z_normalize(energy_uncertainty_score) +
+        z_normalize(latency_risk_score) +
+        z_normalize(rank_score)
+    )
+
+    # Final safeguard: ensure finite output with shape (N,)
+    score = np.nan_to_num(score, nan=0.0, posinf=finfo.max, neginf=finfo.min)
+    
+    return score
+```

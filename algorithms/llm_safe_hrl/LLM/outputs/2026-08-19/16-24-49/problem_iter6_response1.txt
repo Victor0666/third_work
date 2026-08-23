@@ -1,0 +1,221 @@
+```python
+import numpy as np
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 1e-7,
+            "lower_bound": 1e-9,
+            "upper_bound": 1e-4,
+            "semantic_description": "Numerical guard for stable normalization and division.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "slack_risk_penalty",
+            "initial_value": 5.2,
+            "lower_bound": 0.5,
+            "upper_bound": 12.0,
+            "semantic_description": "Amplified penalty for negative slack (deadline violation risk).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "slack_urgency_scale",
+            "initial_value": 1.9,
+            "lower_bound": 0.3,
+            "upper_bound": 4.0,
+            "semantic_description": "Nonlinear gain for low-positive slack to emphasize tight deadlines.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "slack_transition_width",
+            "initial_value": 2.5,
+            "lower_bound": 0.5,
+            "upper_bound": 10.0,
+            "semantic_description": "Width parameter controlling smoothness of sigmoidal slack transition.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_efficiency_bias",
+            "initial_value": 0.85,
+            "lower_bound": 0.1,
+            "upper_bound": 3.0,
+            "semantic_description": "Base weight on normalized marginal energy.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "critical_path_leverage",
+            "initial_value": 1.3,
+            "lower_bound": 0.0,
+            "upper_bound": 5.0,
+            "semantic_description": "Boost for high upward_rank tasks only when slack >= 0 AND uncertainty is low.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "wait_fairness_gain",
+            "initial_value": 0.4,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Anti-starvation boost: saturating exponential in ready_wait_time, gated by slack feasibility.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "uncertainty_sensitivity",
+            "initial_value": 0.65,
+            "lower_bound": 0.0,
+            "upper_bound": 3.0,
+            "semantic_description": "Modulates how much uncertainty amplifies priority under deadline pressure.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "duration_balance",
+            "initial_value": 0.45,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight on combined exec+comm time, normalized robustly.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "work_density_weight",
+            "initial_value": 0.28,
+            "lower_bound": 0.0,
+            "upper_bound": 1.0,
+            "semantic_description": "Bonus weight for high remaining_work per unit duration — favors throughput-critical tasks.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_confidence_threshold",
+            "initial_value": 0.7,
+            "lower_bound": 0.1,
+            "upper_bound": 1.5,
+            "semantic_description": "Uncertainty ratio threshold below which energy gating activates; task-specific median relative scale.",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Self-evolved priority rule with unified smooth slack transition and adaptive energy gating.
+    
+    Key structural improvements:
+    - Replaces piecewise + tanh-based slack handling with a single bounded sigmoid transition
+      centered at slack=0 and width controlled by 'slack_transition_width', eliminating discontinuities
+      and improving gradient stability for CMA-ES.
+    - Energy gating now uses *relative uncertainty*: activates only when uncertainty < median * threshold,
+      making confidence-aware energy optimization task-local and robust to workload skew.
+    - Removes redundant parameters (slack_cap, slack_pressure_tanh_scale, robustness_mad_factor)
+      per self-reflection; simplifies normalization to direct MAD where needed, and uses raw median
+      for gating thresholds to avoid cascaded normalization artifacts.
+    - All feature interactions remain bounded, epsilon-guarded, and deterministic.
+    """
+    eps = PARAMS["epsilon"]
+    finfo = np.finfo(float)
+    
+    # Sanitize inputs uniformly
+    min_exec_time = np.nan_to_num(np.asarray(min_exec_time, dtype=float), nan=eps, posinf=finfo.max, neginf=finfo.min)
+    min_comm_time = np.nan_to_num(np.asarray(min_comm_time, dtype=float), nan=eps, posinf=finfo.max, neginf=finfo.min)
+    min_incremental_energy = np.nan_to_num(np.asarray(min_incremental_energy, dtype=float), nan=eps, posinf=finfo.max, neginf=finfo.min)
+    slack = np.nan_to_num(np.asarray(slack, dtype=float), nan=0.0, posinf=finfo.max, neginf=finfo.min)
+    upward_rank = np.nan_to_num(np.asarray(upward_rank, dtype=float), nan=eps, posinf=finfo.max, neginf=finfo.min)
+    remaining_work = np.nan_to_num(np.asarray(remaining_work, dtype=float), nan=eps, posinf=finfo.max, neginf=finfo.min)
+    ready_wait_time = np.nan_to_num(np.asarray(ready_wait_time, dtype=float), nan=0.0, posinf=finfo.max, neginf=0.0)
+    uncertainty = np.nan_to_num(np.asarray(uncertainty, dtype=float), nan=eps, posinf=finfo.max, neginf=eps)
+
+    # Robust MAD normalization (used only where distributional scaling improves fairness)
+    def mad_normalize(x):
+        x = np.asarray(x, dtype=float)
+        med = np.median(x)
+        mad = np.median(np.abs(x - med))
+        scale = (mad if mad > eps else eps)
+        return (x - med) / scale
+
+    # --- Smooth, bounded slack transformation: sigmoid centered at 0 ---
+    # Maps slack ∈ ℝ → [0, slack_risk_penalty * max_penalty] smoothly:
+    #   negative slack → amplified linear penalty
+    #   slack ≈ 0 → steep urgency ramp
+    #   positive slack → saturating decay toward zero priority contribution
+    slack_centered = slack
+    slack_normalized_width = np.abs(slack_centered) / (PARAMS["slack_transition_width"] + eps)
+    # Sigmoid envelope: 1/(1+exp(-x)) shaped but inverted & scaled for urgency
+    slack_urgency = 1.0 - 1.0 / (1.0 + np.exp(slack_centered / (PARAMS["slack_transition_width"] + eps)))
+    
+    # Negative slack → linear penalty branch
+    neg_mask = slack < 0.0
+    slack_norm = np.zeros_like(slack)
+    slack_norm[neg_mask] = PARAMS["slack_risk_penalty"] * (-slack[neg_mask])
+    
+    # Non-negative slack → smooth urgency curve (no hard cap, naturally bounded)
+    nonneg_mask = ~neg_mask
+    slack_norm[nonneg_mask] = PARAMS["slack_urgency_scale"] * slack_urgency[nonneg_mask]
+
+    # --- Adaptive energy gating: activates only under local uncertainty confidence ---
+    unc_median = np.median(uncertainty)
+    energy_gate = (uncertainty <= (unc_median * PARAMS["energy_confidence_threshold"] + eps)).astype(float)
+    gated_energy = min_incremental_energy * energy_gate
+
+    # --- Duration: exec + comm, robustly normalized ---
+    duration = min_exec_time + min_comm_time
+    duration_norm = mad_normalize(duration)
+
+    # --- Energy: base weight applied to gated energy ---
+    energy_norm = mad_normalize(gated_energy)
+    energy_score = PARAMS["energy_efficiency_bias"] * energy_norm
+
+    # --- Critical path: conditional leverage only if slack >= 0 AND uncertainty is low ---
+    rank_norm = mad_normalize(upward_rank)
+    critical_gate = ((slack >= 0.0) & (uncertainty <= unc_median + eps)).astype(float)
+    critical_boost = PARAMS["critical_path_leverage"] * rank_norm * critical_gate
+
+    # --- Work density: remaining_work per unit duration, uncertainty-gated ---
+    work_density = np.divide(remaining_work, duration + eps)
+    work_density_norm = mad_normalize(work_density)
+    work_density_gate = (uncertainty <= unc_median + eps).astype(float)
+    work_density_bonus = PARAMS["work_density_weight"] * work_density_norm * work_density_gate
+
+    # --- Fairness: saturating exponential wait boost ---
+    wait_norm = mad_normalize(ready_wait_time)
+    wait_score = PARAMS["wait_fairness_gain"] * (1.0 - np.exp(-wait_norm))
+
+    # --- Uncertainty interaction: multiplicative with slack urgency (not pressure) ---
+    unc_norm = mad_normalize(uncertainty)
+    # Use same urgency signal as slack_norm for coherent coupling
+    uncertainty_amplifier = PARAMS["uncertainty_sensitivity"] * unc_norm * slack_urgency
+
+    # --- Assemble final score: smaller = higher priority ---
+    score = (
+        slack_norm
+        + PARAMS["duration_balance"] * duration_norm
+        + energy_score
+        - critical_boost
+        - work_density_bonus
+        + wait_score
+        + uncertainty_amplifier
+    )
+
+    # Final safeguard: ensure finite output
+    score = np.nan_to_num(score, nan=0.0, posinf=finfo.max, neginf=finfo.min)
+    
+    return score
+```

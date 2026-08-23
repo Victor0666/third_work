@@ -1,0 +1,210 @@
+problem_name: cews_task_constructive
+problem_type: constructive
+obj_type: min
+problem_size: 50
+func_name: get_task_priority
+description: 'Offline safety admission of get_task_priority_v2 rules for the HRL SS
+  topology. LLM code ranks ready tasks only; the CEWS evaluator retains its deterministic
+  VM controller.
+
+  '
+objective:
+  metric: total_energy
+constraints:
+  deadline_violation_rate_max: 0.0
+  comparison: feasibility_first
+fuzzy:
+  enabled: true
+  delta1: 0.75
+  delta2: 1.2
+  energy_uncertainty_weight: 1.0
+  deadline_eta: 0.95
+  use_fuzzy_deadline_constraint: true
+  resource_seed_mode: episode_seed
+  resource_seed_offset: 0
+normalization:
+  energy_scale: 0.001
+  lateness_scale: 300.0
+dataset:
+  scenario: SL
+  train_seeds:
+  - 1
+  - 2
+  - 3
+  validation_seeds:
+  - 4
+  - 5
+  test_seeds:
+  - 201
+  - 202
+  - 203
+  - 204
+  - 205
+  - 206
+  - 207
+  - 208
+  - 209
+  - 210
+  - 211
+  - 212
+  - 213
+  - 214
+  - 215
+  - 216
+  - 217
+  - 218
+  - 219
+  - 220
+  - 221
+  - 222
+  - 223
+  - 224
+  - 225
+  - 226
+  - 227
+  - 228
+  - 229
+  - 230
+  dax_files:
+  - CyberShake_30.xml
+  - Epigenomics_24.xml
+  - Ligo_30.xml
+  - Montage_25.xml
+  - Sipht_29.xml
+  workflows_per_instance: 50
+  arrival_lambda: 0.03
+  horizon: 1000000000.0
+  deadline_mode: cache_fcfs
+  deadline_alpha_small: 2.0
+  deadline_alpha_large: 3.0
+  deadline_alpha_small_prob: 0.8
+  deadline_cache_path: E:\读博生活\0.科研\1.论文\3. 第三个任务\2. 论文实验材料\sec_job\data\deadlines\fcfs\diagnostic\fcfs_fixed_SL_exactmix_formal38.json
+safety:
+  max_decisions: 1000000
+  max_stalled_steps: 10
+admission_scope:
+  mode: resource_task_domain
+  resource_code: L
+  allowed_scenarios:
+  - SL
+  - ML
+  - LL
+  workflow_families:
+  - CyberShake
+  - Epigenomics
+  - Ligo
+  - Montage
+  - Sipht
+admission:
+  policy_version: hrl_resS_50wf_3seed_v2
+  required_evaluation_seeds:
+  - 1
+  - 2
+  - 3
+  minimum_evaluation_seed_count: 3
+  deadline_violation_rate_max: 0.0
+  max_fuzzy_lateness_max: 0.0
+  feasible_seed_rate_min: 1.0
+  fuzzy_energy_score_max: 330000.0
+  objective_cv_max: 0.05
+resources:
+  num_cloud_hosts: 5
+  num_edge_hosts: 4
+  cloud_vms_per_host:
+  - 9
+  - 9
+  - 9
+  - 8
+  - 8
+  edge_vms_per_host:
+  - 8
+  - 8
+  - 8
+  - 8
+  cloud_pc_tiers:
+  - 1.0
+  - 2.0
+  - 4.0
+  - 6.0
+  - 8.0
+  edge_pc_tiers:
+  - 1.0
+  - 2.0
+  - 4.0
+  - 6.0
+  - 8.0
+  cloud_bw_tiers:
+  - 1000.0
+  - 2000.0
+  - 4000.0
+  - 6000.0
+  - 8000.0
+  edge_bw_tiers:
+  - 1000.0
+  - 2000.0
+  - 4000.0
+  - 6000.0
+  - 8000.0
+deadline_cache_paths:
+  SL: E:\读博生活\0.科研\1.论文\3. 第三个任务\2. 论文实验材料\sec_job\data\deadlines\fcfs\diagnostic\fcfs_fixed_SL_exactmix_formal38.json
+  ML: E:\读博生活\0.科研\1.论文\3. 第三个任务\2. 论文实验材料\sec_job\data\deadlines\fcfs\diagnostic\fcfs_fixed_ML_exactmix_formal38.json
+  LL: E:\读博生活\0.科研\1.论文\3. 第三个任务\2. 论文实验材料\sec_job\data\deadlines\fcfs\diagnostic\fcfs_fixed_LL_exactmix_formal38.json
+experiment_protocol:
+  protocol: single
+  source_scenario: SL
+  training_scenarios:
+  - SL
+  test_scenarios:
+  - SL
+  - ML
+  - LL
+  llm_train_seeds:
+  - 1
+  - 2
+  - 3
+  llm_validation_seeds:
+  - 4
+  - 5
+  safe_hrl_train_seeds:
+  - 1
+  - 2
+  - 3
+  - 4
+  - 5
+  safe_hrl_validation_seeds:
+  - 101
+  - 102
+  - 103
+  final_test_seeds:
+  - 201
+  - 202
+  - 203
+  - 204
+  - 205
+  - 206
+  - 207
+  - 208
+  - 209
+  - 210
+  - 211
+  - 212
+  - 213
+  - 214
+  - 215
+  - 216
+  - 217
+  - 218
+  - 219
+  - 220
+  - 221
+  - 222
+  - 223
+  - 224
+  - 225
+  - 226
+  - 227
+  - 228
+  - 229
+  - 230
+admission_evaluation_scenarios:
+- SL

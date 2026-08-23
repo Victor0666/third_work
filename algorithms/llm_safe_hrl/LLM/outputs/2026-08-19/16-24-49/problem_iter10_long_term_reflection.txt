@@ -1,0 +1,5 @@
+- Prioritize deadline risk via smooth, MAD-normalized slack-pressure gating—no discontinuities or percentile reliance.  
+- Gate critical-path boosts strictly by slack ≤ 0 ∧ uncertainty ≤ median ∧ energy ≤ median to avoid premature bottleneck focus.  
+- Replace saturating exponential fairness with linear `wait_norm / (|slack| + 1)` to prevent over-prioritization under deadline pressure.  
+- Use clipped MAD normalization (median + median absolute deviation) for robust rank stability across sparse ready sets.  
+- Add conditional DDL-protection gate and successor-release interaction—validated across ≥2 seeds, ≥2 generations, and ≥22 decision failures.

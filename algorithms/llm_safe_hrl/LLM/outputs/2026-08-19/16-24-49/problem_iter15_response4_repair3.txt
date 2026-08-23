@@ -1,0 +1,252 @@
+```python
+import numpy as np
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "slack_penalty_exponent",
+            "initial_value": 2.3,
+            "lower_bound": 1.0,
+            "upper_bound": 4.0,
+            "semantic_description": "Exponent for smooth penalty on negative slack: max(0,-slack)^p ensures continuity and monotonicity.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "slack_aware_criticality_scale",
+            "initial_value": 0.87,
+            "lower_bound": 0.1,
+            "upper_bound": 2.0,
+            "semantic_description": "Scale factor for slack-modulated upward_rank boost: multiplies clipped negative slack.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_efficiency_ratio_weight",
+            "initial_value": 0.76,
+            "lower_bound": 0.1,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight for energy-per-duration efficiency: lower energy per second → higher priority.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "uncertainty_slack_coupling",
+            "initial_value": 1.18,
+            "lower_bound": 0.0,
+            "upper_bound": 3.0,
+            "semantic_description": "Strength of interaction between uncertainty and slack pressure (penalizes high-uncertainty + low-slack tasks).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "duration_risk_penalty",
+            "initial_value": 0.61,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Penalty weight for tasks with high min_exec_time + min_comm_time under uncertainty.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_uncertainty_interaction",
+            "initial_value": 0.85,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight for multiplicative coupling between normalized energy and uncertainty (risk-aware energy emphasis).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "uncertainty_tanh_steepness",
+            "initial_value": 4.8,
+            "lower_bound": 0.5,
+            "upper_bound": 10.0,
+            "semantic_description": "Steepness of bounded tanh gate suppressing energy/efficiency terms at high uncertainty.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "wait_fairness_gain",
+            "initial_value": 0.27,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Anti-starvation boost: tanh-scaled in ready_wait_time, capped by slack pressure.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "work_density_weight",
+            "initial_value": 0.74,
+            "lower_bound": 0.0,
+            "upper_bound": 1.0,
+            "semantic_description": "Bonus weight for high remaining_work per unit duration — favors throughput-critical tasks.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "tanh_bias",
+            "initial_value": 0.44,
+            "lower_bound": 0.0,
+            "upper_bound": 1.0,
+            "semantic_description": "Bias term for tanh fairness scaling: ensures wait_boost ∈ [0,1] via 0.5*(1 + tanh(...)).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "rank_percentile_alpha",
+            "initial_value": 0.75,
+            "lower_bound": 0.5,
+            "upper_bound": 0.95,
+            "semantic_description": "Percentile threshold for rank-based normalization center (e.g., Q75 for robust median shift).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "density_slack_sigmoid_steepness",
+            "initial_value": 3.2,
+            "lower_bound": 0.5,
+            "upper_bound": 8.0,
+            "semantic_description": "Steepness for deadline-aware work-density gating: sigmoid(steepness * slack) suppresses density priority when slack < 0.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "percentile_q_lo",
+            "initial_value": 0.25,
+            "lower_bound": 0.05,
+            "upper_bound": 0.45,
+            "semantic_description": "Lower quantile for IQR-like spread estimation in percentile normalization.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "percentile_q_hi",
+            "initial_value": 0.75,
+            "lower_bound": 0.55,
+            "upper_bound": 0.95,
+            "semantic_description": "Upper quantile for IQR-like spread estimation in percentile normalization.",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Self-evolved priority rule with percentile-based normalization and deadline-aware work-density gating.
+    
+    Key structural improvements:
+    - Replaces MAD normalization with rank-based percentile normalization (Qα-centered) for improved cross-seed robustness and outlier insensitivity.
+    - Introduces explicit deadline-aware gating of work-density: `work_density × sigmoid(slack)` to prioritize throughput only when slack > 0.
+    - All divisions guarded by finfo.eps — no hidden epsilon literals.
+    - Uses clipped tanh gate consistently across all risk-sensitive terms.
+    - All normalizations handle N=1 gracefully via identity fallback.
+    """
+    finfo = np.finfo(float)
+    
+    # Sanitize inputs without mutation
+    min_exec_time = np.nan_to_num(np.asarray(min_exec_time, dtype=float), nan=finfo.eps, posinf=finfo.max, neginf=finfo.min)
+    min_comm_time = np.nan_to_num(np.asarray(min_comm_time, dtype=float), nan=finfo.eps, posinf=finfo.max, neginf=finfo.min)
+    min_incremental_energy = np.nan_to_num(np.asarray(min_incremental_energy, dtype=float), nan=finfo.eps, posinf=finfo.max, neginf=finfo.min)
+    slack = np.nan_to_num(np.asarray(slack, dtype=float), nan=0.0, posinf=finfo.max, neginf=finfo.min)
+    upward_rank = np.nan_to_num(np.asarray(upward_rank, dtype=float), nan=finfo.eps, posinf=finfo.max, neginf=finfo.min)
+    remaining_work = np.nan_to_num(np.asarray(remaining_work, dtype=float), nan=finfo.eps, posinf=finfo.max, neginf=finfo.min)
+    ready_wait_time = np.nan_to_num(np.asarray(ready_wait_time, dtype=float), nan=0.0, posinf=finfo.max, neginf=0.0)
+    uncertainty = np.nan_to_num(np.asarray(uncertainty, dtype=float), nan=finfo.eps, posinf=finfo.max, neginf=finfo.eps)
+
+    N = len(min_exec_time)
+    if N == 0:
+        return np.array([], dtype=float)
+    
+    # Rank-based percentile normalization: robust to outliers, stable for small N
+    def percentile_normalize(x):
+        x = np.asarray(x, dtype=float)
+        if N == 1:
+            return np.zeros_like(x, dtype=float)
+        center = np.quantile(x, PARAMS["rank_percentile_alpha"])
+        q_lo = np.quantile(x, PARAMS["percentile_q_lo"])
+        q_hi = np.quantile(x, PARAMS["percentile_q_hi"])
+        scale = (q_hi - q_lo) + finfo.eps
+        normalized = (x - center) / scale
+        return np.clip(normalized, -2.0, 2.0)
+
+    # --- Unified uncertainty gate: clipped tanh for zero-saturated, monotonic suppression ---
+    unc_gate = np.clip(np.tanh(PARAMS["uncertainty_tanh_steepness"] * uncertainty), 0.0, 1.0)
+
+    # --- Smooth slack penalty + deadline pressure ---
+    slack_penalty = np.maximum(0.0, -slack) ** PARAMS["slack_penalty_exponent"]
+    deadline_pressure = np.maximum(0.0, -slack)
+
+    # --- Duration risk: normalized and gated ---
+    duration_total = min_exec_time + min_comm_time + finfo.eps
+    duration_norm = percentile_normalize(duration_total)
+    duration_risk = duration_norm * (1.0 + unc_gate * PARAMS["duration_risk_penalty"])
+
+    # --- Energy efficiency ratio: gated and normalized ---
+    energy_per_sec = min_incremental_energy / (duration_total + finfo.eps)
+    energy_eff_norm = percentile_normalize(energy_per_sec)
+    energy_eff_score = energy_eff_norm * PARAMS["energy_efficiency_ratio_weight"] * (1.0 + unc_gate)
+
+    # --- Uncertainty-slack coupling ---
+    unc_slack_coupling = percentile_normalize(uncertainty * deadline_pressure) * PARAMS["uncertainty_slack_coupling"]
+
+    # --- Slack-aware criticality boost ---
+    rank_norm = percentile_normalize(upward_rank)
+    clipped_slack = np.maximum(0.0, -slack)
+    critical_bonus = rank_norm * (1.0 + PARAMS["slack_aware_criticality_scale"] * clipped_slack)
+
+    # --- Deadline-aware work-density: prioritizes throughput only when slack > 0 ---
+    work_density = remaining_work / (duration_total + finfo.eps)
+    work_density_norm = percentile_normalize(work_density)
+    # Sigmoid gating on slack: soft transition from 0 (violation) to 1 (safe headroom)
+    slack_sigmoid = 1.0 / (1.0 + np.exp(-PARAMS["density_slack_sigmoid_steepness"] * slack))
+    work_density_term = PARAMS["work_density_weight"] * work_density_norm * slack_sigmoid * (1.0 + unc_gate)
+
+    # --- Energy-uncertainty interaction ---
+    energy_norm = percentile_normalize(min_incremental_energy)
+    unc_norm = percentile_normalize(uncertainty)
+    energy_uncertainty_score = PARAMS["energy_uncertainty_interaction"] * energy_norm * unc_norm * unc_gate
+
+    # --- Base energy term ---
+    energy_base_score = percentile_normalize(min_incremental_energy) * (1.0 + unc_gate)
+
+    # --- Fairness boost: DDL-safe and uncertainty-gated ---
+    slack_headroom_mask = np.where(slack > 0.0, 1.0, 0.0)
+    wait_norm = percentile_normalize(ready_wait_time)
+    wait_boost = PARAMS["tanh_bias"] * (1.0 + np.tanh(PARAMS["wait_fairness_gain"] * wait_norm)) * slack_headroom_mask * unc_gate
+
+    # --- Critical-path congestion signal: gated by both slack safety and uncertainty ---
+    rank_work_product = upward_rank * remaining_work
+    congestion_strength = np.clip(1.0 - (1.0 / (1.0 + np.exp(-PARAMS["uncertainty_tanh_steepness"] * (slack + 1.0)))) , 0.0, 1.0)
+    congestion_term = percentile_normalize(rank_work_product) * congestion_strength * unc_gate * PARAMS["slack_aware_criticality_scale"]
+
+    # --- Assemble final score: smaller = higher priority ---
+    score = (
+        percentile_normalize(slack_penalty) +
+        duration_risk +
+        energy_eff_score +
+        unc_slack_coupling +
+        energy_uncertainty_score +
+        energy_base_score +
+        wait_boost -
+        critical_bonus -
+        work_density_term -
+        congestion_term
+    )
+
+    # Final safeguard
+    score = np.nan_to_num(score, nan=0.0, posinf=finfo.max, neginf=finfo.min)
+    
+    return score
+```

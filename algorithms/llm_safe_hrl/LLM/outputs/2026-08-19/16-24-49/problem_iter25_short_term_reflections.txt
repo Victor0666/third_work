@@ -1,0 +1,30 @@
+- **Hard feasibility mask** ensures strict DDL adherence by assigning massive penalty to slack < 0 tasks — eliminates deadline violations unconditionally.  
+- **Task-wise MAD normalization** preserves per-dimension risk granularity, improving robustness across heterogeneous task scales vs. joint normalization.  
+- **Dual gating (DDL-safe ∧ host-capacity-sufficient)** prevents energy-aware terms from activating under congestion or deadline pressure, reducing regret in 19+ counterfactual decisions.
+- Replaced brittle hard thresholding (`slack > ddl_protection_threshold`) with smooth sigmoid gating → improves robustness near deadline boundaries and reduces decision instability.  
+- Introduced explicit starvation mitigation via `ready_wait_time` scaled by slack-driven urgency → prioritizes long-waiting tasks without violating DDL feasibility.  
+- Unified joint MAD normalization across `|slack|`, `uncertainty`, and `duration_total` → aligns risk dimensions coherently, reducing scale-induced bias in energy/DDL tradeoffs.
+- Replaced brittle hard threshold (`slack > ddl_protection_threshold`) with smooth sigmoid gating (`slack_sigmoid_steepness`), improving feasibility robustness under fuzzy slack uncertainty.  
+- Introduced `rank_slack_balance` interpolation to dynamically blend critical-path urgency and deadline pressure—reducing over-prioritization of slack-extreme tasks.  
+- Unified MAD normalization across `duration_total`, `|slack|`, and `uncertainty` (not per-feature) for coherent risk-scale alignment, suppressing outlier-driven priority inversion.
+- Replace brittle percentile-based normalization with robust, bounded quantile clipping (e.g., `np.clip((x - q_low) / (q_high - q_low + eps), 0, 1)`) to stabilize ranking under sparse or skewed ready sets.  
+- Introduce a lexicographic DDL gate: strictly disable non-deadline terms (`energy`, `wait`, `uncertainty`) when `slack ≤ 0`, enforcing feasibility-first ordering per cross-generation counterfactual evidence.  
+- Add successor-aware criticality boost: multiply priority score by `upward_rank * remaining_work` only under DDL pressure (`slack ≤ 0` and both rank/work above median), validated by repeated `critical_path_or_successor_blocked` replay failures.
+- Replaces brittle percentile-based slack bounds with robust MAD-aligned risk-feature normalization (`|slack|`, `uncertainty`, `duration_total`) for stable cross-scenario scale coherence.  
+- Introduces power-law anti-starvation (`ready_wait_time ** wait_time_decay_exponent`) gated by slack headroom—more responsive than linear division near zero slack.  
+- Simplifies DDL enforcement to strict lexicographic gating (`slack > ddl_protection_threshold`) instead of interpolated or coupled penalties, improving feasibility-first reliability.
+- Replace fragile `ddl_protection_threshold` gate with strict `slack > 0` lexicographic activation (evidenced by high-confidence `add_conditional_ddl_protection_gate` across 18 decisions).  
+- Swap MAD normalization for clipped percentile normalization (`percentile_clip_low` + symmetric `q_high = 2*med − q_low`) to stabilize ranking under sparse/variable-ready-set conditions.  
+- Introduce `criticality_boost` multiplicative gate conditioned on *joint* slack violation, high upward rank, *and* high remaining work—tightening evidence alignment for critical-path urgency.
+- **Simplified lexicographic gating**: Version 2 uses a single, hard `slack > ddl_protection_threshold` gate for *all* non-DDL terms — eliminating fragile conditional scaling (e.g., `host_load_conditional_gate`) that caused feasibility collapse in Version 1.  
+- **Robust critical-path signal**: Unconditional `upward_rank × remaining_work` replaces Version 1’s fragile `successor_release_factor`-amplified term, validated across ≥4 starvation recoveries and avoiding division-by-slack instability.  
+- **Joint risk normalization**: MAD-normalizing `|slack|`, `uncertainty`, and `duration_total` together aligns risk scales coherently — unlike Version 1’s per-feature MADs that weakened DDL dominance via cross-dimension coupling.
+- Replaces joint MAD with task-wise MAD normalization → preserves risk granularity per dimension and avoids distortion from heterogeneity.  
+- Introduces hard feasibility mask (`feasibility_mask_penalty`) → guarantees DDL compliance by dominating score for slack < 0 tasks.  
+- Adds host-load conditional gate → restricts energy-aware terms to capacity-sufficient regimes, preventing premature optimization under congestion.
+- Replaces brittle percentile-based slack bounds with robust MAD-aligned risk-feature normalization (`|slack|`, `uncertainty`, `duration_total`) for stable cross-scenario scale coherence.  
+- Introduces power-law anti-starvation (`ready_wait_time ** wait_time_decay_exponent`) gated by slack headroom—more responsive than linear division near zero slack.  
+- Simplifies DDL enforcement to strict lexicographic gating (`slack > ddl_protection_threshold`) instead of interpolated or coupled penalties, improving feasibility-first reliability.
+- Replaced brittle sigmoid gating on slack with hard lexicographic `slack > ddl_protection_threshold` masking — enforces strict DDL feasibility before energy optimization.  
+- Introduced `duration_risk_penalty = (min_exec_time + min_comm_time) * uncertainty`, directly penalizing high-risk duration-uncertainty coupling under deadline pressure.  
+- Switched from percentile-based to MAD-normalization across `|slack|`, `uncertainty`, and `duration_total`, improving robustness to outliers and cross-workflow scale alignment.

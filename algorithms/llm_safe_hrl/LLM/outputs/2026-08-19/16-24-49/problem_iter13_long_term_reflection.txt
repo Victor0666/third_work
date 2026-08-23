@@ -1,0 +1,4 @@
+- Prioritize strict lexicographic feasibility: activate energy optimization only when slack > 0 ∧ low uncertainty, enforced by conditional DDL-protection gates (21 decisions, 2 seeds, 1 scenario).  
+- Replace fragile thresholds with bounded sigmoid gating (e.g., `uncertainty_sigmoid_steepness`) and clipped empirical slack bounds—validated across ≥5 generations and ≥2 seeds.  
+- Resolve critical-path starvation via upward-rank × remaining-work interaction, confirmed in replay failures (2 states, 1 seed) and counterfactual consensus (17+ decisions).  
+- Use unified MAD normalization (unclipped, N=1 handled) for rank stability—cross-generation evidence shows improved gradient flow for CMA-ES.

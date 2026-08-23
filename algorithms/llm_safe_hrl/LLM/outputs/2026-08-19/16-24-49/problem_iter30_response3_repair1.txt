@@ -1,0 +1,252 @@
+```python
+import numpy as np
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 1e-7,
+            "lower_bound": 1e-9,
+            "upper_bound": 1e-4,
+            "semantic_description": "Numerical guard for stable normalization and division.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "slack_penalty_exponent",
+            "initial_value": 2.4,
+            "lower_bound": 1.0,
+            "upper_bound": 4.0,
+            "semantic_description": "Exponent for nonlinear penalty on negative slack (stronger for lateness risk).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "critical_path_additive_weight",
+            "initial_value": 1.9,
+            "lower_bound": 0.5,
+            "upper_bound": 4.0,
+            "semantic_description": "Weight for additive criticality: upward_rank + remaining_work * slack-aware decay.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_efficiency_ratio_weight",
+            "initial_value": 0.82,
+            "lower_bound": 0.1,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight for energy-per-duration efficiency: lower energy per second → higher priority.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "uncertainty_slack_coupling",
+            "initial_value": 1.25,
+            "lower_bound": 0.0,
+            "upper_bound": 3.0,
+            "semantic_description": "Strength of interaction between uncertainty and slack pressure (penalizes high-uncertainty + low-slack tasks).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "rank_slack_balance",
+            "initial_value": 0.62,
+            "lower_bound": 0.0,
+            "upper_bound": 1.0,
+            "semantic_description": "Interpolation factor between pure slack-driven and rank-driven priority under deadline pressure.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "duration_risk_penalty",
+            "initial_value": 0.52,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Penalty weight for tasks with high min_exec_time + min_comm_time under uncertainty.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_uncertainty_interaction",
+            "initial_value": 0.78,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight for multiplicative coupling between normalized energy and uncertainty (risk-aware energy emphasis).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "uncertainty_sigmoid_steepness",
+            "initial_value": 3.3,
+            "lower_bound": 0.5,
+            "upper_bound": 10.0,
+            "semantic_description": "Steepness of bounded sigmoid gate suppressing energy-uncertainty interaction at high uncertainty.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "minmax_stability_eps",
+            "initial_value": 1e-3,
+            "lower_bound": 1e-6,
+            "upper_bound": 1e-1,
+            "semantic_description": "Additive epsilon to prevent zero-range in robust min-max normalization.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "quantile_low",
+            "initial_value": 0.1,
+            "lower_bound": 0.01,
+            "upper_bound": 0.25,
+            "semantic_description": "Lower quantile for adaptive slack bound estimation.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "quantile_high",
+            "initial_value": 0.9,
+            "lower_bound": 0.75,
+            "upper_bound": 0.99,
+            "semantic_description": "Upper quantile for adaptive slack bound estimation.",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Self-evolved priority rule with three structural improvements:
+      - Replaces multiplicative criticality (upward_rank * remaining_work) with monotonic additive slack-gated form:
+        upward_rank + remaining_work * (1 - ReLU(slack)/max(1, quantile_90(slack)+eps)) — improves gradient flow and outlier robustness.
+      - Derives slack bounds adaptively from current ready set via tunable quantiles (quantile_low/quantile_high), eliminating fragile static parameters.
+      - Replaces binary slack_headroom_mask with smooth bounded ReLU gate: clip(slack, 0, None) / (quantile_90(slack) + eps),
+        enabling continuous CMA-ES optimization without threshold artifacts.
+    All numeric literals are restricted to {-2,-1,0,1,2}; no other constants used.
+    """
+    eps = PARAMS["epsilon"]
+    mm_eps = PARAMS["minmax_stability_eps"]
+    finfo = np.finfo(float)
+    
+    # Sanitize inputs — no in-place mutation
+    min_exec_time = np.nan_to_num(np.asarray(min_exec_time, dtype=float), nan=eps, posinf=finfo.max, neginf=finfo.min)
+    min_comm_time = np.nan_to_num(np.asarray(min_comm_time, dtype=float), nan=eps, posinf=finfo.max, neginf=finfo.min)
+    min_incremental_energy = np.nan_to_num(np.asarray(min_incremental_energy, dtype=float), nan=eps, posinf=finfo.max, neginf=finfo.min)
+    slack = np.nan_to_num(np.asarray(slack, dtype=float), nan=0.0, posinf=finfo.max, neginf=finfo.min)
+    upward_rank = np.nan_to_num(np.asarray(upward_rank, dtype=float), nan=eps, posinf=finfo.max, neginf=finfo.min)
+    remaining_work = np.nan_to_num(np.asarray(remaining_work, dtype=float), nan=eps, posinf=finfo.max, neginf=finfo.min)
+    ready_wait_time = np.nan_to_num(np.asarray(ready_wait_time, dtype=float), nan=0.0, posinf=finfo.max, neginf=0.0)
+    uncertainty = np.nan_to_num(np.asarray(uncertainty, dtype=float), nan=eps, posinf=finfo.max, neginf=eps)
+
+    N = len(min_exec_time)
+    if N == 0:
+        return np.array([], dtype=float)
+
+    # Adaptive slack bounds from current ready set using tunable quantiles
+    slack_q_low = np.quantile(slack, PARAMS["quantile_low"]) if N > 1 else np.mean(slack)
+    slack_q_high = np.quantile(slack, PARAMS["quantile_high"]) if N > 1 else np.mean(slack)
+    slack_range = np.maximum(slack_q_high - slack_q_low, eps)
+
+    # Robust min-max normalization: bounded by task-set extrema + stability epsilon
+    def minmax_normalize(x):
+        x = np.asarray(x, dtype=float)
+        if N == 1:
+            return np.zeros_like(x, dtype=float)
+        x_min = np.min(x)
+        x_max = np.max(x)
+        denom = x_max - x_min + mm_eps
+        normalized = (x - x_min) / denom
+        return np.clip(normalized, 0.0, 1.0)
+
+    # --- DDL-critical base scores (always active) ---
+    # Slack violation penalty: power-law for strong lateness pressure
+    slack_score = np.where(
+        slack < 0,
+        (-slack) ** PARAMS["slack_penalty_exponent"],
+        0.0
+    )
+    # Uncertainty-slack coupling: amplifies penalty for uncertain tasks near deadline
+    deadline_pressure = np.maximum(0.0, -slack)
+    unc_slack_coupling = uncertainty * deadline_pressure * PARAMS["uncertainty_slack_coupling"]
+    # Bounded duration-risk penalty: linear penalty on (exec+comm)*uncertainty under tight slack
+    duration_total = min_exec_time + min_comm_time + eps
+    duration_risk_base = duration_total * uncertainty
+    duration_risk_penalty = np.where(
+        slack <= 0.0,
+        duration_risk_base * PARAMS["duration_risk_penalty"],
+        0.0
+    )
+
+    # --- Additive slack-gated criticality: upward_rank + remaining_work * decayed_by_slack ---
+    # Decay factor: 1 when slack <= 0, smoothly ramps to 0 as slack approaches q_high
+    slack_decay = np.clip((slack_q_high - slack) / (slack_range + eps), 0.0, 1.0)
+    critical_release = upward_rank + remaining_work * slack_decay
+    critical_release_norm = minmax_normalize(critical_release)
+    critical_release_score = -critical_release_norm * PARAMS["critical_path_additive_weight"]
+
+    # --- Smooth lexicographic gate: non-DDL terms scaled by normalized positive slack ---
+    # Replaces binary mask with continuous, bounded ReLU gate: [0,1] range
+    slack_headroom = np.clip(slack, 0.0, None)
+    slack_gate = slack_headroom / (slack_q_high + eps)
+    slack_gate = np.clip(slack_gate, 0.0, 1.0)
+
+    # --- Host-load–aware energy scaling: synthetic load proxy = 1 + normalized uncertainty ---
+    load_proxy = 1.0 + minmax_normalize(uncertainty)
+    scaled_energy = min_incremental_energy * load_proxy
+
+    # --- Non-DDL terms (smoothly activated by slack_gate) ---
+    # Energy efficiency: energy per unit duration
+    energy_per_sec = scaled_energy / duration_total
+    energy_eff_score = minmax_normalize(energy_per_sec)
+
+    # Slack-scaled rank importance: interpolates between slack-driven and rank-driven
+    slack_scaled = np.clip((slack - slack_q_low) / (slack_range + eps), 0.0, 1.0)
+    weight_rank = PARAMS["rank_slack_balance"] + (1.0 - PARAMS["rank_slack_balance"]) * (1.0 - slack_scaled)
+    rank_score = -minmax_normalize(upward_rank) * weight_rank
+
+    # Energy-uncertainty interaction with bounded sigmoid gate
+    unc_sigmoid = 1.0 / (1.0 + np.exp(-PARAMS["uncertainty_sigmoid_steepness"] * (uncertainty - 1.0)))
+    energy_norm = minmax_normalize(scaled_energy)
+    unc_norm = minmax_normalize(uncertainty)
+    energy_uncertainty_score = PARAMS["energy_uncertainty_interaction"] * energy_norm * unc_norm * unc_sigmoid
+
+    # --- DDL-gated starvation mitigation: ONLY active when slack <= 0 ---
+    wait_normalized = np.where(
+        slack <= 0.0,
+        ready_wait_time / (np.abs(slack) + 1.0),
+        0.0
+    )
+    wait_score = minmax_normalize(wait_normalized)
+
+    # --- Assemble final score: smaller = higher priority ---
+    # DDL-critical terms always contribute
+    score = (
+        minmax_normalize(slack_score) +
+        minmax_normalize(unc_slack_coupling) +
+        minmax_normalize(duration_risk_penalty) +
+        critical_release_score +
+        wait_score
+    )
+    
+    # Non-DDL terms smoothly weighted by slack_gate (continuous activation)
+    score += slack_gate * (
+        PARAMS["energy_efficiency_ratio_weight"] * energy_eff_score +
+        rank_score +
+        energy_uncertainty_score
+    )
+
+    # Final safeguard: ensure finite output with shape (N,)
+    score = np.nan_to_num(score, nan=0.0, posinf=finfo.max, neginf=finfo.min)
+    
+    return score
+```

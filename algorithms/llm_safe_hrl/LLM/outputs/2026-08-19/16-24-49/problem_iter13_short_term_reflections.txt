@@ -1,0 +1,32 @@
+- Replace fragile `mad_normalize` with robust `percentile_normalize` using clipped quantiles and allowed literal `2.0` for symmetry — improves stability across sparse ready sets.  
+- Introduce lexicographic slack gate (`slack > 0.0`) to activate energy/rank terms only when DDL-safe — enforces strict feasibility-first ordering.  
+- Add bounded sigmoid via `uncertainty_sigmoid_steepness` to suppress energy-uncertainty coupling at high uncertainty — mitigates fragile parameter sensitivity observed in cross-generation diagnostics.
+- Replace unbounded `tanh`-based joint feasibility with a **clipped empirical slack gate**: `np.clip((slack - slack_min_bound) / (slack_max_bound - slack_min_bound + eps), 0, 1)` — improves stability and interpretability under sparse/edge-case ready sets.  
+- Introduce **conditional criticality boost**: activate only when `slack ≤ 0`, `uncertainty ≤ median(uncertainty)`, and `energy ≤ median(energy)` — enforces DDL-first feasibility without fragile thresholds.  
+- Use **bounded MAD normalization with [-2, 2] clipping** and explicit N=1 handling — ensures rank stability across variable-ready-set sizes and prevents explosion in sparse regimes.
+- Replaces fragile hard-threshold gates (e.g., `ddl_protection_gate`) with bounded sigmoid gating (`uncertainty_sigmoid`) — improves robustness to uncertainty estimation noise while preserving deadline-aware energy suppression.  
+- Introduces slack-aware energy suppression (`energy_suppression_gate`) that disables energy optimization when slack > 0 *and* uncertainty is low — directly addresses counterfactual evidence of avoidable marginal energy cost under safe conditions.  
+- Uses unified MAD normalization without clipping (Version 2’s `mad_normalize` lacks `np.clip`) — avoids artificial score saturation and enables smoother gradient flow for CMA-ES, supported by cross-generation stability of `robustness_mad_factor`.
+- Replaces brittle piecewise slack gating (Version 1) with smooth, differentiable power-penalty and slack-aware criticality boost — improves gradient stability and cross-scenario feasibility robustness.  
+- Uses *declared quantile parameter* for work-density denominator instead of fixed Q3 — enables adaptive sensitivity to duration skew across workloads.  
+- Substitutes tanh-based fairness scaling for exponential wait saturation — ensures bounded anti-starvation without fragile cap tuning.
+- Replaces fragile sigmoid gating with hard-bounded uncertainty threshold, improving robustness under sparse or skewed uncertainty distributions.  
+- Introduces conditional DDL-protection gate that activates critical-path boosting only when slack ≤ 0 ∧ uncertainty ≤ median ∧ energy ≤ median — enforcing feasibility-first logic.  
+- Switches from mean-based to clipped MAD normalization, stabilizing rank scoring across small/variable ready sets and reducing outlier sensitivity.
+- **Conditional DDL-protection gate**: Version 2’s `(slack <= 0) & (uncertainty <= median_unc)` gate directly enforces hard deadline feasibility *before* energy optimization—aligning with lexicographic objective ranking and eliminating premature bottleneck focus observed in replay failures.
+
+- **Successor-release interaction**: Upward_rank × remaining_work gated by DDL risk captures critical-path unblocking behavior, resolving “CRITICAL_PATH_STARVATION” replay failures and counterfactual-dominated choices where high-rank tasks with large descendant work were ignored.
+
+- **Bounded sigmoid uncertainty gate**: Replaces brittle clamping with smooth, steepness-tuned suppression of energy-uncertainty coupling—mitigating fragility in `energy_efficiency_ratio_weight` and `rank_slack_balance` revealed by perturbation analysis.
+- Replace MAD normalization with Q1/Q3-based interquartile scaling for robustness under skew and small-N ready sets.  
+- Use piecewise slack transformation (linear penalty + capped exponential urgency) instead of tanh to better separate deadline violation and tight-deadline regimes.  
+- Apply multiplicative uncertainty coupling (1 + unc_norm) to both energy and urgency terms—unifying risk amplification without fragile gating logic.
+- Replaces fragile Q1/Q3 normalization with robust clipped MAD + bounded scaling, improving stability under sparse ready sets and skewed distributions.  
+- Introduces conditional DDL-protection gate (slack ≤ 0 ∧ low uncertainty ∧ low energy), prioritizing deadline feasibility before energy optimization.  
+- Uses empirical slack bounds (`slack_min_bound`/`slack_max_bound`) instead of percentile-based caps, eliminating sensitivity to small-N quantile estimation.
+- Replaced fragile percentile-based normalization (`q1_q3_normalize`) with robust MAD-based scaling, improving stability under skewed/small-N ready sets and eliminating boundary-sensitive quantile parameters.  
+- Introduced bounded critical-path release boost: `upward_rank * (1 + criticality_boost * (1 - slack_scaled))` gated by `slack ≤ 0`, directly addressing “critical_path starvation” replay failures.  
+- Added empirical slack bounds (`slack_min_bound`, `slack_max_bound`) instead of percentile-derived caps, avoiding overfitting to distribution tails and aligning with cross-generation evidence of fragile `slack_cap`.
+- Replaces fragile hard-threshold gates (e.g., `ddl_protection_gate`) with bounded sigmoid coupling (`uncertainty_sigmoid_steepness`), improving robustness to uncertainty outliers while preserving deadline-aware energy suppression.  
+- Introduces slack-aware energy gating (`energy_suppression_gate`) that disables energy optimization when slack > 0 *and* uncertainty is low—aligning with cross-generation evidence of scenario-sensitive fragility in `energy_efficiency_ratio_weight`.  
+- Uses unified MAD normalization (not clipped) and removes redundant `epsilon`-dependent clipping, eliminating inactive parameter bloat and strengthening cross-seed stability per `inactivity_analysis` and `fragility_analysis`.

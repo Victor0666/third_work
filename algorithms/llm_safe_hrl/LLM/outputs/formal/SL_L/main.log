@@ -1,0 +1,1637 @@
+[2026-08-19 15:50:06,103][root][INFO] - Experiment protocol=single training_scenarios=['SL'] test_scenarios=['SL', 'ML', 'LL']
+[2026-08-19 16:05:24,710][root][INFO] - Experiment protocol=single training_scenarios=['SL'] test_scenarios=['SL', 'ML', 'LL']
+[2026-08-19 16:05:26,886][root][INFO] - Problem: cews_task_constructive
+[2026-08-19 16:05:26,886][root][INFO] - Problem description: Dynamic deadline-aware cloud-edge workflow scheduling. Workflows are represented as DAGs. At each decision point, the heuristic ranks all currently ready tasks. After one task is selected, a deterministic resource-selection policy assigns it to a feasible cloud or edge VM. The objective is to minimize risk-adjusted fuzzy total energy subject to hard workflow deadline constraints.
+
+[2026-08-19 16:05:26,889][root][INFO] - Function name: get_task_priority
+[2026-08-19 16:05:26,893][root][INFO] - Train mode: Evaluating seed function...
+[2026-08-19 16:05:26,893][root][INFO] - Seed function code: 
+import numpy as np
+
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """为当前 ready tasks 生成优先级分数；分数越小越先调度。
+
+    这是 SeEvo 的可执行种子，而不是最终固定策略。后续个体可以改变特征组合，
+    但必须继续满足相同的输入/输出、安全性和数值稳定性契约。
+    fuzzy 模式下 min_incremental_energy 已是风险调整模糊边际能耗，slack 已由
+    eta 风险完成时刻构造；DDL 仍是硬约束，不能与模糊总能耗加权求和。
+    """
+    # 防止归一化分母在所有元素均为 0 时变成 0。
+    eps = 1e-8
+
+    # 使用 np.asarray 做非原地类型转换。这里不修改调用方提供的输入数组。
+    # 八个数组的第 i 项必须始终描述同一个 ready task。
+    min_exec_time = np.asarray(min_exec_time, dtype=float)
+    min_comm_time = np.asarray(min_comm_time, dtype=float)
+    min_incremental_energy = np.asarray(
+        min_incremental_energy, dtype=float
+    )
+    slack = np.asarray(slack, dtype=float)
+    upward_rank = np.asarray(upward_rank, dtype=float)
+    remaining_work = np.asarray(remaining_work, dtype=float)
+    ready_wait_time = np.asarray(ready_wait_time, dtype=float)
+    uncertainty = np.asarray(uncertainty, dtype=float)
+
+    def normalize(x):
+        """按平均绝对值缩放，使秒、风险调整焦耳和无量纲特征具有可比数量级。"""
+        return x / (np.mean(np.abs(x)) + eps)
+
+    # 只截取负 slack 的绝对风险：slack>=0 时风险为 0，slack<0 时风险为 -slack。
+    deadline_risk = np.maximum(-slack, 0.0)
+
+
+    # slack 越小，urgency 越接近 1；slack 充足时 urgency 自动下降。
+    slack_scale = np.mean(np.abs(slack)) + eps
+
+    urgency = 1.0 / (
+        1.0
+        + np.maximum(slack, 0.0) / slack_scale
+    )
+
+    # 只对紧迫的高不确定任务给予提前量，
+    # 避免高不确定但 slack 充足的任务无条件抢占资源。
+    uncertainty_priority = (
+        normalize(uncertainty) * urgency
+    )
+
+    # 约定分数越小越优先：正系数会增大分数，负系数让高风险/关键/久候任务靠前。
+    # deadline_risk 使用绝对值较大的负权重，保证负 slack 任务获得紧急优先级，
+    # 这服务于 DDL 可行性约束，而不是把延期加入能耗目标。
+    score = (
+        0.25 * normalize(min_exec_time)
+        + 0.15 * normalize(min_comm_time)
+        + 0.25 * normalize(min_incremental_energy)
+        - 2.00 * normalize(deadline_risk)
+        + 0.10 * normalize(remaining_work)
+        - 0.10 * uncertainty_priority
+        - 0.15 * normalize(upward_rank)
+        - 0.05 * normalize(ready_wait_time)
+    )
+
+    # 最后一层数值保险；用有限大数替代意外出现的 NaN/无穷。
+    return np.nan_to_num(
+        score,
+        nan=1e12,
+        posinf=1e12,
+        neginf=-1e12
+    )
+[2026-08-19 16:05:26,896][root][INFO] - Iteration 0: Running Code 0
+[2026-08-19 16:05:27,266][root][INFO] - Iteration 0: Code Run 0 successful!
+[2026-08-19 16:07:16,960][root][INFO] - Iteration 0, response_id 0: Objective value: 377831.9036765513
+[2026-08-19 16:07:16,960][root][INFO] - Iteration 0: Improvement = 0.0000
+[2026-08-19 16:07:16,960][root][INFO] - Iteration 0: New Elitist: 377831.9036765513
+[2026-08-19 16:07:16,960][root][INFO] - Iteration 0 finished...
+[2026-08-19 16:07:16,961][root][INFO] - Best obj: 377831.9036765513, Constraint key: (0.0, 0.0, 0.0, 37783190.0, 9814.396361719722, 0, 0, 305, 377831.9036765513), Best Code Path: E:\读博生活\0.科研\1.论文\3. 第三个任务\2. 论文实验材料\sec_job\out\main_single\SL\generated\candidate_iter0_ind0.py
+[2026-08-19 16:07:16,961][root][INFO] - Function Evals: 0
+[2026-08-19 16:07:16,961][root][INFO] - Initial Population Prompt: 
+System Prompt: 
+You are an expert in optimization heuristics and algorithm design.
+
+Your task is to design effective heuristic functions for solving optimization problems.
+
+IMPORTANT REQUIREMENTS:
+1. Output ONLY Python code - no explanations, no comments outside the code
+2. Always enclose your code in a Python code block: ```python ... ```
+3. Ensure the code is syntactically correct and runnable
+4. Follow the exact function signature provided
+5. Use meaningful variable names and include inline comments for clarity
+
+User Prompt: 
+Write a get_task_priority function for Dynamic deadline-aware cloud-edge workflow scheduling. Workflows are represented as DAGs. At each decision point, the heuristic ranks all currently ready tasks. After one task is selected, a deterministic resource-selection policy assigns it to a feasible cloud or edge VM. The objective is to minimize risk-adjusted fuzzy total energy subject to hard workflow deadline constraints.
+
+Design a deterministic NumPy function that assigns one priority score to each
+currently ready workflow task.
+
+请设计一个确定性的 NumPy 函数，为当前每个就绪工作流任务计算一个优先级分数。
+该函数是“任务排序器”，不是资源分配器；环境只会选择分数最小的任务。
+
+Interface contract:
+
+接口契约（以下要求必须同时满足）：
+
+1. The function only ranks ready tasks. It must not select a Host or VM.
+2. Every input is a one-dimensional NumPy array of length N, where N is the
+   number of currently ready tasks. Equal indices always describe the same task.
+3. Return a one-dimensional finite numeric array with shape (N,).
+4. A smaller score means higher scheduling priority.
+5. Do not perform file operations, network access, subprocess creation, or
+   modification of global state.
+6. Do not use unbounded or infinite loops.
+7. Protect divisions and all other operations against zero, NaN, and infinity.
+8. NumPy and ordinary Python standard operations may be used.
+9. The environment enforces resource and precedence feasibility. The function
+   must not create, remove, or mutate tasks.
+10. Do not modify any input array in place.
+11. A single ready task must still produce an array with shape (1,).
+12. The returned values must be deterministic for identical inputs.
+
+中文说明：
+
+1. 函数只对 ready tasks 排序，绝不能选择 Host 或 VM。
+2. 所有输入都是长度为 N 的一维 NumPy 数组，数组同一下标描述同一任务。
+3. 返回值必须是形状严格等于 (N,) 的有限数值数组，不能返回标量或二维列向量。
+4. 分数越小表示越优先；环境使用 np.argmin 选择任务。
+5. 禁止文件、网络、子进程操作，也禁止修改全局状态。
+6. 禁止无界循环或任何可能无限执行的逻辑。
+7. 除法及其他数值运算必须防止除零、NaN 和正负无穷。
+8. 可使用 NumPy 和普通 Python 标准运算。
+9. 前驱约束和 VM 可行性由环境负责，函数不得创建、删除或修改任务。
+10. 禁止原地修改任一输入数组；如需转换类型，应创建新的数组视图或副本。
+11. N=1 时也必须返回形状为 (1,) 的数组。
+12. 相同输入必须产生相同输出，不能依赖随机数、时间或隐藏状态。
+
+Inputs:
+
+输入含义与单位：
+
+- `min_exec_time`: minimum estimated execution time over feasible VMs, seconds.
+- `min_comm_time`: minimum estimated task-data communication time over feasible
+  VMs, seconds.
+- `min_incremental_energy`: minimum risk-adjusted fuzzy marginal energy score
+  over feasible VMs, computed as fuzzy mean plus uncertainty weight times fuzzy
+  standard deviation; its scale remains joules.
+- `slack`: task sub-deadline (or workflow deadline) minus its earliest predicted
+  risk completion time. In fuzzy mode the risk time uses eta=0.95 by default.
+  Negative values indicate lateness risk.
+- `upward_rank`: HEFT upward rank / remaining critical-path importance.
+- `remaining_work`: estimated computation work from this task through all of its
+  descendants.
+- `ready_wait_time`: elapsed time since the task entered the ready set, seconds.
+- `uncertainty`: execution/bandwidth uncertainty risk aggregated consistently
+  over feasible VMs.
+
+逐项中文解释：
+
+- `min_exec_time`：该任务在所有可行 VM 上的最小预计纯计算时间，单位秒；
+  不包含排队与通信。
+- `min_comm_time`：该任务在所有可行 VM 上的最小预计输入/输出通信时间，单位秒。
+- `min_incremental_energy`：该任务加入某个可行 VM 后，三场景边际 Host 能耗
+  ``mean + uncertainty_weight * std`` 在所有可行 VM 中的最小值；量纲仍可解释为
+  风险调整后的焦耳，不是整个 episode 的累计能耗。
+- `slack`：任务子截止期（缺失时为工作流截止期）减去当前最早风险完成时刻。
+  fuzzy 模式默认使用 eta=0.95 的上侧概率测度；单位秒，负值表示延期风险。
+- `upward_rank`：HEFT upward rank，反映从当前节点到出口节点的关键路径重要性。
+- `remaining_work`：当前任务及其全部后继任务的去重计算工作量，单位 MI。
+- `ready_wait_time`：从任务首次进入 ready 集到当前仿真时刻的等待时间，单位秒。
+- `uncertainty`：可行 VM 上模糊计算与通信总时长标准差的统一聚合风险量。
+
+The function must contain only the task-priority rule. VM feasibility, VM
+selection, assignment, and event advancement are handled by the evaluator.
+
+Parameterized structure contract for offline co-evolution:
+- The LLM designs feature selection, normalization, interactions, nonlinear or
+  piecewise forms, and bounded conditional gates.
+- Put one literal `PARAMETER_SCHEMA` mapping in the same Python code block. It
+  must contain `schema_version` and a `parameters` list. Every parameter item
+  must define `name`, `initial_value`, `lower_bound`, `upper_bound`, and
+  `semantic_description`; optional `parameter_type` is `float` and optional
+  `transform` is `identity`, `log`, or `logit`.
+- Reference every continuous parameter only as `PARAMS["declared_name"]` inside
+  `get_task_priority_v2`. Do not define PARAMS and do not hide tunable numeric
+  constants. Structural constants are limited to -2, -1, 0, 1, and 2.
+- Keep 5-12 parameters, at most 6 conditional branches, bounded AST depth, and
+  at most 8 feature interaction terms. Loops, recursion, external I/O, random
+  state, and Host/VM selection are forbidden.
+- CMA-ES optimizes only the declared continuous parameters offline. The final
+  admitted rule has those values frozen into an ordinary deterministic
+  `get_task_priority_v2` with the unchanged eight-array signature.
+
+函数体只能包含任务优先级计算。VM 可行性检查、确定性 VM 选择、任务分配和
+离散事件推进均由评价器及环境处理。不要在规则内部猜测或构造 VM 编号。
+优化问题采用“DDL 硬约束下最小化风险调整模糊总能耗”。最终能耗目标为三个
+固定影子场景总能耗构造出的 ``mean(fuzzy energy) + uncertainty_weight *
+std(fuzzy energy)``。DDL 延期和违反率始终是独立约束，绝不能与能耗加权求和。
+规则应优先帮助调度满足模糊截止期约束；在可行个体之间降低模糊能耗目标。
+
+
+For a parameterized problem, output the literal PARAMETER_SCHEMA assignment and
+the function together in one Python code block. Design the discrete rule
+structure; expose all tunable continuous values through declared PARAMS entries.
+Before answering, verify that every PARAMS reference is declared exactly once,
+every declared parameter is used, and get_task_priority_v2 contains no numeric
+literals other than -2, -1, 0, 1, and 2. Use np.finfo for immutable machine
+precision safeguards instead of a literal epsilon.
+
+## Reference Implementation (Baseline)
+
+```python
+import numpy as np
+
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 0.001,
+            "lower_bound": 0.000001,
+            "upper_bound": 0.1,
+            "semantic_description": "Positive numerical scale guard used by normalization.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "slack_weight",
+            "initial_value": 3.0,
+            "lower_bound": 0.1,
+            "upper_bound": 8.0,
+            "semantic_description": "Priority strength assigned to deadline slack.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_weight",
+            "initial_value": 1.0,
+            "lower_bound": 0.01,
+            "upper_bound": 4.0,
+            "semantic_description": "Secondary weight for risk-adjusted marginal fuzzy energy.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "duration_weight",
+            "initial_value": 0.5,
+            "lower_bound": 0.0,
+            "upper_bound": 3.0,
+            "semantic_description": "Weight for normalized execution and communication duration.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "rank_weight",
+            "initial_value": 0.8,
+            "lower_bound": 0.0,
+            "upper_bound": 4.0,
+            "semantic_description": "Priority strength assigned to HEFT upward rank.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "work_weight",
+            "initial_value": 0.3,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Priority strength assigned to remaining workflow work.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "wait_weight",
+            "initial_value": 0.2,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Anti-starvation priority strength for ready waiting time.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "uncertainty_weight",
+            "initial_value": 0.4,
+            "lower_bound": 0.0,
+            "upper_bound": 3.0,
+            "semantic_description": "Strength of the uncertainty and deadline-pressure interaction.",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Parameterized structural example; smaller scores have higher priority."""
+    epsilon = PARAMS["epsilon"]
+
+    def normalize(values):
+        values = np.asarray(values, dtype=float)
+        return values / (np.mean(np.abs(values)) + epsilon)
+
+    duration = normalize(min_exec_time + min_comm_time)
+    slack_pressure = normalize(slack)
+    uncertainty_gate = normalize(uncertainty) * np.maximum(-slack_pressure, 0)
+    score = (
+        PARAMS["slack_weight"] * slack_pressure
+        + PARAMS["energy_weight"] * normalize(min_incremental_energy)
+        + PARAMS["duration_weight"] * duration
+        - PARAMS["rank_weight"] * normalize(upward_rank)
+        - PARAMS["work_weight"] * normalize(remaining_work)
+        - PARAMS["wait_weight"] * normalize(ready_wait_time)
+        - PARAMS["uncertainty_weight"] * uncertainty_gate
+    )
+    return np.nan_to_num(score)
+```
+
+
+---
+
+For a parameterized problem, treat the reference above as a contract-compliant
+structural example. Its parameter values are examples only: CMA-ES, not the
+LLM, chooses continuous values. Do not add undeclared PARAMS names or hidden
+numeric literals. Legacy non-parameterized problems keep their original rules.
+
+**Your Task:**
+Create a novel `get_task_priority_v2` function that improves upon the reference implementation.
+
+**Guidelines:**
+1. Use the reference implementation as a starting point for understanding the structure
+2. Be creative - explore significantly different approaches
+3. Consider combining multiple strategies or introducing new heuristic components
+4. Aim for diversity - avoid simply tweaking coefficients
+
+**Requirements:**
+- Output ONLY Python code in a code block: ```python ... ```
+- Follow the same function signature format as the reference
+- Ensure code is syntactically correct and executable
+- Include brief inline comments explaining your approach
+
+**Generate your creative design below:**
+
+- Give stronger priority to tasks with small or negative deadline slack; negative
+  slack should receive a substantial risk penalty.
+- Use HEFT upward rank to identify tasks on important remaining DAG paths.
+- Consider computation time, communication time, and incremental energy together.
+- Include ready-set waiting time so that long-waiting tasks do not starve.
+- Under uncertain processing capacity and bandwidth, use the provided
+  risk-adjusted fuzzy marginal-energy, slack, and duration-uncertainty signals.
+- Do not directly add seconds, joules, and dimensionless features. Normalize or
+  otherwise make their scales comparable first.
+- Do not unconditionally favor only short tasks or only critical tasks.
+- Avoid unstable exponentials, logarithms near invalid domains, and overly
+  complicated trigonometric combinations.
+
+中文调度知识：
+
+- 优化目标是满足全部工作流 DDL 约束后的总能耗最小化。延期量和违反率用于
+  判断可行性及引导不可行个体改进，不与焦耳能耗组成加权目标。
+
+- 当前总能耗由 optimistic/modal/pessimistic 三个固定影子场景的 SPECpower
+  积分构成三角模糊数，评价目标是其均值加不确定性权重乘标准差。该风险调整仍
+  属于总能耗目标，不是货币执行成本，也不能再叠加 lateness/violation 惩罚。
+
+- slack 越小，任务越接近子截止期；fuzzy 模式下它使用默认 eta=0.95 的风险
+  完成时刻。slack 为负表示即使采用当前最有利的可行 VM 风险估计也存在延期
+  风险，因此通常应给予更高优先级。
+- upward rank 反映从当前任务到出口的关键路径长度，可用于识别阻塞大量后继
+  任务的关键节点，但不应无条件压倒能耗和截止期因素。
+- min_incremental_energy 已是风险调整后的模糊边际能耗。执行时间、通信时间、
+  风险调整能耗的物理量纲不同，组合前必须做稳健归一化，
+  不能直接把秒、焦耳和无量纲风险相加。
+- ready_wait_time 可作为抗饥饿项：等待越久，适度提高优先级，避免短任务或
+  关键任务长期占据调度机会。
+- uncertainty 来自模糊处理能力与带宽导致的时长离散程度。高风险任务可获得
+  适度提前量，但风险项不应造成数值爆炸，也不应无条件压倒能耗和 slack。
+- 对负 slack 使用较强惩罚时，要牢记最终选择的是最小分数；可把风险作为负向
+  优先项，或用其他与符号约定一致的稳定表达式。
+- 避免只偏向最短任务或只偏向关键路径任务，否则可能造成能耗恶化或任务饥饿。
+- 优先使用均值绝对值、范围、标准差等带 epsilon 的稳定缩放，谨慎使用指数、
+  对数和复杂三角函数，避免溢出、非法定义域和极端敏感性。
+
+Structure-parameter feedback rules:
+- CMA-ES values are evidence about a fixed structure, not the final structural
+  design. The next LLM step should normally change a feature, interaction,
+  normalization, gate, or linear/nonlinear/piecewise form, then re-optimize.
+- Boundary contact may indicate an inadequate bound or functional form. Low
+  variance and weak perturbation effects may indicate redundancy or a feature
+  that should be conditionally enabled. Fragile DDL feasibility calls for a
+  smoother bounded gate or simpler normalization.
+- Parameter correlation is not causation. Use it only as a structural hint,
+  and make strong changes only when evidence persists across generations,
+  seeds, or scenarios. Never add complexity merely to fit one diagnostic.
+- DDL violations, tardiness, fuzzy energy, robustness, and complexity remain
+  lexicographic criteria; they must never be collapsed into a weighted sum.
+Counterfactual mechanism feedback rules:
+- Parameter diagnostics expose limitations of a fixed parameter space;
+  counterfactual diagnostics explain which concrete ready-task choice failed
+  under the same state and deterministic VM model. Use both kinds of evidence.
+- A local one-step comparison is mechanism evidence, not a strict causal proof.
+  Strong structural changes require repetition across decisions, seeds, or
+  scenarios; preserve reported counts and conflicts.
+- Convert repeated evidence only into feature, interaction, normalization,
+  conditional gate, nonlinear/piecewise, or smooth-risk changes. Do not hand
+  tune final continuous weights; every new structure must return to CMA-ES and
+  full feasibility-first evaluation.
+- Do not add complexity for an isolated case. DDL evidence has priority,
+  uncertainty modifies DDL risk, and energy is considered only when DDL risk
+  is comparable.
+
+[2026-08-19 16:07:17,434][openai._base_client][INFO] - Retrying request to /chat/completions in 0.480207 seconds
+[2026-08-19 16:07:17,434][openai._base_client][INFO] - Retrying request to /chat/completions in 0.476375 seconds
+[2026-08-19 16:07:17,437][openai._base_client][INFO] - Retrying request to /chat/completions in 0.476571 seconds
+[2026-08-19 16:07:17,438][openai._base_client][INFO] - Retrying request to /chat/completions in 0.437775 seconds
+[2026-08-19 16:07:17,442][openai._base_client][INFO] - Retrying request to /chat/completions in 0.472063 seconds
+[2026-08-19 16:07:17,442][openai._base_client][INFO] - Retrying request to /chat/completions in 0.458878 seconds
+[2026-08-19 16:07:17,442][openai._base_client][INFO] - Retrying request to /chat/completions in 0.449870 seconds
+[2026-08-19 16:07:17,443][openai._base_client][INFO] - Retrying request to /chat/completions in 0.480664 seconds
+[2026-08-19 16:07:17,443][openai._base_client][INFO] - Retrying request to /chat/completions in 0.447841 seconds
+[2026-08-19 16:07:17,462][openai._base_client][INFO] - Retrying request to /chat/completions in 0.381141 seconds
+[2026-08-19 16:07:17,910][openai._base_client][INFO] - Retrying request to /chat/completions in 0.959987 seconds
+[2026-08-19 16:07:17,944][openai._base_client][INFO] - Retrying request to /chat/completions in 0.843325 seconds
+[2026-08-19 16:07:17,954][openai._base_client][INFO] - Retrying request to /chat/completions in 0.850778 seconds
+[2026-08-19 16:07:17,954][openai._base_client][INFO] - Retrying request to /chat/completions in 0.966933 seconds
+[2026-08-19 16:07:17,965][openai._base_client][INFO] - Retrying request to /chat/completions in 0.786975 seconds
+[2026-08-19 16:07:17,973][openai._base_client][INFO] - Retrying request to /chat/completions in 0.961428 seconds
+[2026-08-19 16:07:17,974][openai._base_client][INFO] - Retrying request to /chat/completions in 0.766729 seconds
+[2026-08-19 16:07:17,977][openai._base_client][INFO] - Retrying request to /chat/completions in 0.866147 seconds
+[2026-08-19 16:07:17,978][openai._base_client][INFO] - Retrying request to /chat/completions in 0.868049 seconds
+[2026-08-19 16:07:17,986][openai._base_client][INFO] - Retrying request to /chat/completions in 0.907576 seconds
+[2026-08-19 16:07:18,815][root][INFO] - Attempt 1 failed with error: Connection error.
+[2026-08-19 16:07:18,818][root][INFO] - Attempt 1 failed with error: Connection error.
+[2026-08-19 16:07:18,850][root][INFO] - Attempt 1 failed with error: Connection error.
+[2026-08-19 16:07:18,862][root][INFO] - Attempt 1 failed with error: Connection error.
+[2026-08-19 16:07:18,908][root][INFO] - Attempt 1 failed with error: Connection error.
+[2026-08-19 16:07:18,909][root][INFO] - Attempt 1 failed with error: Connection error.
+[2026-08-19 16:07:18,937][root][INFO] - Attempt 1 failed with error: Connection error.
+[2026-08-19 16:07:18,959][root][INFO] - Attempt 1 failed with error: Connection error.
+[2026-08-19 16:07:18,989][root][INFO] - Attempt 1 failed with error: Connection error.
+[2026-08-19 16:07:19,000][root][INFO] - Attempt 1 failed with error: Connection error.
+[2026-08-19 16:07:19,884][openai._base_client][INFO] - Retrying request to /chat/completions in 0.434284 seconds
+[2026-08-19 16:07:19,884][openai._base_client][INFO] - Retrying request to /chat/completions in 0.427306 seconds
+[2026-08-19 16:07:19,910][openai._base_client][INFO] - Retrying request to /chat/completions in 0.428152 seconds
+[2026-08-19 16:07:19,926][openai._base_client][INFO] - Retrying request to /chat/completions in 0.471602 seconds
+[2026-08-19 16:07:19,973][openai._base_client][INFO] - Retrying request to /chat/completions in 0.490889 seconds
+[2026-08-19 16:07:19,973][openai._base_client][INFO] - Retrying request to /chat/completions in 0.380768 seconds
+[2026-08-19 16:07:20,000][openai._base_client][INFO] - Retrying request to /chat/completions in 0.483665 seconds
+[2026-08-19 16:07:20,024][openai._base_client][INFO] - Retrying request to /chat/completions in 0.395026 seconds
+[2026-08-19 16:07:20,057][openai._base_client][INFO] - Retrying request to /chat/completions in 0.459441 seconds
+[2026-08-19 16:07:20,062][openai._base_client][INFO] - Retrying request to /chat/completions in 0.475690 seconds
+[2026-08-19 16:07:20,388][openai._base_client][INFO] - Retrying request to /chat/completions in 0.897250 seconds
+[2026-08-19 16:07:20,400][openai._base_client][INFO] - Retrying request to /chat/completions in 0.989350 seconds
+[2026-08-19 16:07:20,405][openai._base_client][INFO] - Retrying request to /chat/completions in 0.998961 seconds
+[2026-08-19 16:07:20,415][openai._base_client][INFO] - Retrying request to /chat/completions in 0.970971 seconds
+[2026-08-19 16:07:20,462][openai._base_client][INFO] - Retrying request to /chat/completions in 0.908205 seconds
+[2026-08-19 16:07:20,478][openai._base_client][INFO] - Retrying request to /chat/completions in 0.880236 seconds
+[2026-08-19 16:07:20,530][openai._base_client][INFO] - Retrying request to /chat/completions in 0.769935 seconds
+[2026-08-19 16:07:20,551][openai._base_client][INFO] - Retrying request to /chat/completions in 0.855134 seconds
+[2026-08-19 16:07:20,604][openai._base_client][INFO] - Retrying request to /chat/completions in 0.844138 seconds
+[2026-08-19 16:07:20,605][openai._base_client][INFO] - Retrying request to /chat/completions in 0.923592 seconds
+[2026-08-19 16:07:21,364][root][INFO] - Attempt 2 failed with error: Connection error.
+[2026-08-19 16:07:21,376][root][INFO] - Attempt 2 failed with error: Connection error.
+[2026-08-19 16:07:21,418][root][INFO] - Attempt 2 failed with error: Connection error.
+[2026-08-19 16:07:21,440][root][INFO] - Attempt 2 failed with error: Connection error.
+[2026-08-19 16:07:21,444][root][INFO] - Attempt 2 failed with error: Connection error.
+[2026-08-19 16:07:21,453][root][INFO] - Attempt 2 failed with error: Connection error.
+[2026-08-19 16:07:21,465][root][INFO] - Attempt 2 failed with error: Connection error.
+[2026-08-19 16:07:21,469][root][INFO] - Attempt 2 failed with error: Connection error.
+[2026-08-19 16:07:21,514][root][INFO] - Attempt 2 failed with error: Connection error.
+[2026-08-19 16:07:21,589][root][INFO] - Attempt 2 failed with error: Connection error.
+[2026-08-19 16:07:22,436][openai._base_client][INFO] - Retrying request to /chat/completions in 0.416473 seconds
+[2026-08-19 16:07:22,443][openai._base_client][INFO] - Retrying request to /chat/completions in 0.385391 seconds
+[2026-08-19 16:07:22,485][openai._base_client][INFO] - Retrying request to /chat/completions in 0.489866 seconds
+[2026-08-19 16:07:22,509][openai._base_client][INFO] - Retrying request to /chat/completions in 0.406499 seconds
+[2026-08-19 16:07:22,511][openai._base_client][INFO] - Retrying request to /chat/completions in 0.456189 seconds
+[2026-08-19 16:07:22,516][openai._base_client][INFO] - Retrying request to /chat/completions in 0.400417 seconds
+[2026-08-19 16:07:22,524][openai._base_client][INFO] - Retrying request to /chat/completions in 0.378282 seconds
+[2026-08-19 16:07:22,531][openai._base_client][INFO] - Retrying request to /chat/completions in 0.400780 seconds
+[2026-08-19 16:07:22,581][openai._base_client][INFO] - Retrying request to /chat/completions in 0.475776 seconds
+[2026-08-19 16:07:22,651][openai._base_client][INFO] - Retrying request to /chat/completions in 0.435431 seconds
+[2026-08-19 16:07:22,894][openai._base_client][INFO] - Retrying request to /chat/completions in 0.831188 seconds
+[2026-08-19 16:07:22,916][openai._base_client][INFO] - Retrying request to /chat/completions in 0.918406 seconds
+[2026-08-19 16:07:22,967][openai._base_client][INFO] - Retrying request to /chat/completions in 0.889332 seconds
+[2026-08-19 16:07:22,977][openai._base_client][INFO] - Retrying request to /chat/completions in 0.960856 seconds
+[2026-08-19 16:07:22,981][openai._base_client][INFO] - Retrying request to /chat/completions in 0.901610 seconds
+[2026-08-19 16:07:22,999][openai._base_client][INFO] - Retrying request to /chat/completions in 0.904889 seconds
+[2026-08-19 16:07:23,032][openai._base_client][INFO] - Retrying request to /chat/completions in 0.932802 seconds
+[2026-08-19 16:07:23,034][openai._base_client][INFO] - Retrying request to /chat/completions in 0.777058 seconds
+[2026-08-19 16:07:23,123][openai._base_client][INFO] - Retrying request to /chat/completions in 0.787794 seconds
+[2026-08-19 16:07:23,159][openai._base_client][INFO] - Retrying request to /chat/completions in 0.898933 seconds
+[2026-08-19 16:07:23,788][root][INFO] - Attempt 3 failed with error: Connection error.
+[2026-08-19 16:07:23,870][root][INFO] - Attempt 3 failed with error: Connection error.
+[2026-08-19 16:07:23,916][root][INFO] - Attempt 3 failed with error: Connection error.
+[2026-08-19 16:07:23,930][root][INFO] - Attempt 3 failed with error: Connection error.
+[2026-08-19 16:07:23,943][root][INFO] - Attempt 3 failed with error: Connection error.
+[2026-08-19 16:07:23,968][root][INFO] - Attempt 3 failed with error: Connection error.
+[2026-08-19 16:07:23,976][root][INFO] - Attempt 3 failed with error: Connection error.
+[2026-08-19 16:07:24,003][root][INFO] - Attempt 3 failed with error: Connection error.
+[2026-08-19 16:07:24,029][root][INFO] - Attempt 3 failed with error: Connection error.
+[2026-08-19 16:07:24,122][root][INFO] - Attempt 3 failed with error: Connection error.
+[2026-08-19 16:07:24,862][openai._base_client][INFO] - Retrying request to /chat/completions in 0.456139 seconds
+[2026-08-19 16:07:24,972][openai._base_client][INFO] - Retrying request to /chat/completions in 0.467091 seconds
+[2026-08-19 16:07:24,993][openai._base_client][INFO] - Retrying request to /chat/completions in 0.391713 seconds
+[2026-08-19 16:07:25,032][openai._base_client][INFO] - Retrying request to /chat/completions in 0.496074 seconds
+[2026-08-19 16:07:25,033][openai._base_client][INFO] - Retrying request to /chat/completions in 0.452660 seconds
+[2026-08-19 16:07:25,053][openai._base_client][INFO] - Retrying request to /chat/completions in 0.386505 seconds
+[2026-08-19 16:07:25,053][openai._base_client][INFO] - Retrying request to /chat/completions in 0.387688 seconds
+[2026-08-19 16:07:25,092][openai._base_client][INFO] - Retrying request to /chat/completions in 0.465661 seconds
+[2026-08-19 16:07:25,112][openai._base_client][INFO] - Retrying request to /chat/completions in 0.473552 seconds
+[2026-08-19 16:07:25,202][openai._base_client][INFO] - Retrying request to /chat/completions in 0.469552 seconds
+[2026-08-19 16:07:25,412][openai._base_client][INFO] - Retrying request to /chat/completions in 0.971571 seconds
+[2026-08-19 16:07:25,473][openai._base_client][INFO] - Retrying request to /chat/completions in 0.801798 seconds
+[2026-08-19 16:07:25,515][openai._base_client][INFO] - Retrying request to /chat/completions in 0.969311 seconds
+[2026-08-19 16:07:25,515][openai._base_client][INFO] - Retrying request to /chat/completions in 0.779706 seconds
+[2026-08-19 16:07:25,516][openai._base_client][INFO] - Retrying request to /chat/completions in 0.853147 seconds
+[2026-08-19 16:07:25,572][openai._base_client][INFO] - Retrying request to /chat/completions in 0.969774 seconds
+[2026-08-19 16:07:25,605][openai._base_client][INFO] - Retrying request to /chat/completions in 0.795094 seconds
+[2026-08-19 16:07:25,642][openai._base_client][INFO] - Retrying request to /chat/completions in 0.939754 seconds
+[2026-08-19 16:07:25,662][openai._base_client][INFO] - Retrying request to /chat/completions in 0.936329 seconds
+[2026-08-19 16:07:25,773][openai._base_client][INFO] - Retrying request to /chat/completions in 0.881159 seconds
+[2026-08-19 16:07:26,352][root][INFO] - Attempt 4 failed with error: Connection error.
+[2026-08-19 16:07:26,394][root][INFO] - Attempt 4 failed with error: Connection error.
+[2026-08-19 16:07:26,452][root][INFO] - Attempt 4 failed with error: Connection error.
+[2026-08-19 16:07:26,473][root][INFO] - Attempt 4 failed with error: Connection error.
+[2026-08-19 16:07:26,473][root][INFO] - Attempt 4 failed with error: Connection error.
+[2026-08-19 16:07:26,565][root][INFO] - Attempt 4 failed with error: Connection error.
+[2026-08-19 16:07:26,625][root][INFO] - Attempt 4 failed with error: Connection error.
+[2026-08-19 16:07:26,662][root][INFO] - Attempt 4 failed with error: Connection error.
+[2026-08-19 16:07:26,683][root][INFO] - Attempt 4 failed with error: Connection error.
+[2026-08-19 16:07:26,735][root][INFO] - Attempt 4 failed with error: Connection error.
+[2026-08-19 16:07:27,452][openai._base_client][INFO] - Retrying request to /chat/completions in 0.393188 seconds
+[2026-08-19 16:07:27,495][openai._base_client][INFO] - Retrying request to /chat/completions in 0.451325 seconds
+[2026-08-19 16:07:27,535][openai._base_client][INFO] - Retrying request to /chat/completions in 0.496929 seconds
+[2026-08-19 16:07:27,552][openai._base_client][INFO] - Retrying request to /chat/completions in 0.401588 seconds
+[2026-08-19 16:07:27,562][openai._base_client][INFO] - Retrying request to /chat/completions in 0.422636 seconds
+[2026-08-19 16:07:27,645][openai._base_client][INFO] - Retrying request to /chat/completions in 0.452972 seconds
+[2026-08-19 16:07:27,723][openai._base_client][INFO] - Retrying request to /chat/completions in 0.380839 seconds
+[2026-08-19 16:07:27,744][openai._base_client][INFO] - Retrying request to /chat/completions in 0.449694 seconds
+[2026-08-19 16:07:27,762][openai._base_client][INFO] - Retrying request to /chat/completions in 0.420995 seconds
+[2026-08-19 16:07:27,825][openai._base_client][INFO] - Retrying request to /chat/completions in 0.489948 seconds
+[2026-08-19 16:07:27,951][openai._base_client][INFO] - Retrying request to /chat/completions in 0.858717 seconds
+[2026-08-19 16:07:28,044][openai._base_client][INFO] - Retrying request to /chat/completions in 0.773820 seconds
+[2026-08-19 16:07:28,044][openai._base_client][INFO] - Retrying request to /chat/completions in 0.784706 seconds
+[2026-08-19 16:07:28,083][openai._base_client][INFO] - Retrying request to /chat/completions in 0.957271 seconds
+[2026-08-19 16:07:28,134][openai._base_client][INFO] - Retrying request to /chat/completions in 0.938383 seconds
+[2026-08-19 16:07:28,174][openai._base_client][INFO] - Retrying request to /chat/completions in 0.818279 seconds
+[2026-08-19 16:07:28,175][openai._base_client][INFO] - Retrying request to /chat/completions in 0.754573 seconds
+[2026-08-19 16:07:28,297][openai._base_client][INFO] - Retrying request to /chat/completions in 0.910595 seconds
+[2026-08-19 16:07:28,343][openai._base_client][INFO] - Retrying request to /chat/completions in 0.756449 seconds
+[2026-08-19 16:07:28,403][openai._base_client][INFO] - Retrying request to /chat/completions in 0.983640 seconds
+[2026-08-19 16:07:28,892][root][INFO] - Attempt 5 failed with error: Connection error.
+[2026-08-19 16:07:28,892][root][INFO] - Attempt 5 failed with error: Connection error.
+[2026-08-19 16:07:28,931][root][INFO] - Attempt 5 failed with error: Connection error.
+[2026-08-19 16:07:29,012][root][INFO] - Attempt 5 failed with error: Connection error.
+[2026-08-19 16:07:29,072][root][INFO] - Attempt 5 failed with error: Connection error.
+[2026-08-19 16:07:29,132][root][INFO] - Attempt 5 failed with error: Connection error.
+[2026-08-19 16:07:29,152][root][INFO] - Attempt 5 failed with error: Connection error.
+[2026-08-19 16:07:29,173][root][INFO] - Attempt 5 failed with error: Connection error.
+[2026-08-19 16:07:29,273][root][INFO] - Attempt 5 failed with error: Connection error.
+[2026-08-19 16:07:29,472][root][INFO] - Attempt 5 failed with error: Connection error.
+[2026-08-19 16:07:29,983][openai._base_client][INFO] - Retrying request to /chat/completions in 0.468143 seconds
+[2026-08-19 16:07:29,983][openai._base_client][INFO] - Retrying request to /chat/completions in 0.375871 seconds
+[2026-08-19 16:07:30,022][openai._base_client][INFO] - Retrying request to /chat/completions in 0.398585 seconds
+[2026-08-19 16:07:30,092][openai._base_client][INFO] - Retrying request to /chat/completions in 0.417346 seconds
+[2026-08-19 16:07:30,153][openai._base_client][INFO] - Retrying request to /chat/completions in 0.431490 seconds
+[2026-08-19 16:07:30,215][openai._base_client][INFO] - Retrying request to /chat/completions in 0.479187 seconds
+[2026-08-19 16:07:30,242][openai._base_client][INFO] - Retrying request to /chat/completions in 0.449812 seconds
+[2026-08-19 16:07:30,283][openai._base_client][INFO] - Retrying request to /chat/completions in 0.456757 seconds
+[2026-08-19 16:07:30,362][openai._base_client][INFO] - Retrying request to /chat/completions in 0.489059 seconds
+[2026-08-19 16:07:30,444][openai._base_client][INFO] - Retrying request to /chat/completions in 0.843689 seconds
+[2026-08-19 16:07:30,499][openai._base_client][INFO] - Retrying request to /chat/completions in 0.783660 seconds
+[2026-08-19 16:07:30,522][openai._base_client][INFO] - Retrying request to /chat/completions in 0.983588 seconds
+[2026-08-19 16:07:30,562][openai._base_client][INFO] - Retrying request to /chat/completions in 0.415521 seconds
+[2026-08-19 16:07:30,593][openai._base_client][INFO] - Retrying request to /chat/completions in 0.999797 seconds
+[2026-08-19 16:07:30,672][openai._base_client][INFO] - Retrying request to /chat/completions in 0.913445 seconds
+[2026-08-19 16:07:30,771][openai._base_client][INFO] - Retrying request to /chat/completions in 0.764991 seconds
+[2026-08-19 16:07:30,777][openai._base_client][INFO] - Retrying request to /chat/completions in 0.780589 seconds
+[2026-08-19 16:07:30,812][openai._base_client][INFO] - Retrying request to /chat/completions in 0.852535 seconds
+[2026-08-19 16:07:30,942][openai._base_client][INFO] - Retrying request to /chat/completions in 0.800967 seconds
+[2026-08-19 16:07:31,052][openai._base_client][INFO] - Retrying request to /chat/completions in 0.850615 seconds
+[2026-08-19 16:07:31,367][root][INFO] - Attempt 6 failed with error: Connection error.
+[2026-08-19 16:07:31,392][root][INFO] - Attempt 6 failed with error: Connection error.
+[2026-08-19 16:07:31,623][root][INFO] - Attempt 6 failed with error: Connection error.
+[2026-08-19 16:07:31,623][root][INFO] - Attempt 6 failed with error: Connection error.
+[2026-08-19 16:07:31,641][root][INFO] - Attempt 6 failed with error: Connection error.
+[2026-08-19 16:07:31,684][root][INFO] - Attempt 6 failed with error: Connection error.
+[2026-08-19 16:07:31,684][root][INFO] - Attempt 6 failed with error: Connection error.
+[2026-08-19 16:07:31,744][root][INFO] - Attempt 6 failed with error: Connection error.
+[2026-08-19 16:07:31,834][root][INFO] - Attempt 6 failed with error: Connection error.
+[2026-08-19 16:07:31,983][root][INFO] - Attempt 6 failed with error: Connection error.
+[2026-08-19 16:07:32,475][openai._base_client][INFO] - Retrying request to /chat/completions in 0.493846 seconds
+[2026-08-19 16:07:32,475][openai._base_client][INFO] - Retrying request to /chat/completions in 0.493942 seconds
+[2026-08-19 16:07:32,718][openai._base_client][INFO] - Retrying request to /chat/completions in 0.441403 seconds
+[2026-08-19 16:07:32,718][openai._base_client][INFO] - Retrying request to /chat/completions in 0.492964 seconds
+[2026-08-19 16:07:32,725][openai._base_client][INFO] - Retrying request to /chat/completions in 0.387818 seconds
+[2026-08-19 16:07:32,766][openai._base_client][INFO] - Retrying request to /chat/completions in 0.401149 seconds
+[2026-08-19 16:07:32,766][openai._base_client][INFO] - Retrying request to /chat/completions in 0.409735 seconds
+[2026-08-19 16:07:32,822][openai._base_client][INFO] - Retrying request to /chat/completions in 0.480811 seconds
+[2026-08-19 16:07:32,932][openai._base_client][INFO] - Retrying request to /chat/completions in 0.472712 seconds
+[2026-08-19 16:07:33,053][openai._base_client][INFO] - Retrying request to /chat/completions in 0.795532 seconds
+[2026-08-19 16:07:33,054][openai._base_client][INFO] - Retrying request to /chat/completions in 0.849697 seconds
+[2026-08-19 16:07:33,074][openai._base_client][INFO] - Retrying request to /chat/completions in 0.434066 seconds
+[2026-08-19 16:07:33,195][openai._base_client][INFO] - Retrying request to /chat/completions in 0.836825 seconds
+[2026-08-19 16:07:33,250][openai._base_client][INFO] - Retrying request to /chat/completions in 0.881812 seconds
+[2026-08-19 16:07:33,251][openai._base_client][INFO] - Retrying request to /chat/completions in 0.842846 seconds
+[2026-08-19 16:07:33,251][openai._base_client][INFO] - Retrying request to /chat/completions in 0.768971 seconds
+[2026-08-19 16:07:33,293][openai._base_client][INFO] - Retrying request to /chat/completions in 0.898469 seconds
+[2026-08-19 16:07:33,382][openai._base_client][INFO] - Retrying request to /chat/completions in 0.760513 seconds
+[2026-08-19 16:07:33,494][openai._base_client][INFO] - Retrying request to /chat/completions in 0.891360 seconds
+[2026-08-19 16:07:33,583][openai._base_client][INFO] - Retrying request to /chat/completions in 0.796323 seconds
+[2026-08-19 16:07:33,921][root][INFO] - Attempt 7 failed with error: Connection error.
+[2026-08-19 16:07:33,982][root][INFO] - Attempt 7 failed with error: Connection error.
+[2026-08-19 16:07:34,091][root][INFO] - Attempt 7 failed with error: Connection error.
+[2026-08-19 16:07:34,122][root][INFO] - Attempt 7 failed with error: Connection error.
+[2026-08-19 16:07:34,182][root][INFO] - Attempt 7 failed with error: Connection error.
+[2026-08-19 16:07:34,224][root][INFO] - Attempt 7 failed with error: Connection error.
+[2026-08-19 16:07:34,225][root][INFO] - Attempt 7 failed with error: Connection error.
+[2026-08-19 16:07:34,263][root][INFO] - Attempt 7 failed with error: Connection error.
+[2026-08-19 16:07:34,464][root][INFO] - Attempt 7 failed with error: Connection error.
+[2026-08-19 16:07:34,482][root][INFO] - Attempt 7 failed with error: Connection error.
+[2026-08-19 16:07:34,996][openai._base_client][INFO] - Retrying request to /chat/completions in 0.391240 seconds
+[2026-08-19 16:07:35,071][openai._base_client][INFO] - Retrying request to /chat/completions in 0.412882 seconds
+[2026-08-19 16:07:35,176][openai._base_client][INFO] - Retrying request to /chat/completions in 0.430429 seconds
+[2026-08-19 16:07:35,224][openai._base_client][INFO] - Retrying request to /chat/completions in 0.482187 seconds
+[2026-08-19 16:07:35,247][openai._base_client][INFO] - Retrying request to /chat/completions in 0.388905 seconds
+[2026-08-19 16:07:35,294][openai._base_client][INFO] - Retrying request to /chat/completions in 0.412826 seconds
+[2026-08-19 16:07:35,315][openai._base_client][INFO] - Retrying request to /chat/completions in 0.386535 seconds
+[2026-08-19 16:07:35,331][openai._base_client][INFO] - Retrying request to /chat/completions in 0.453778 seconds
+[2026-08-19 16:07:35,455][openai._base_client][INFO] - Retrying request to /chat/completions in 0.775036 seconds
+[2026-08-19 16:07:35,526][openai._base_client][INFO] - Retrying request to /chat/completions in 0.407021 seconds
+[2026-08-19 16:07:35,548][openai._base_client][INFO] - Retrying request to /chat/completions in 0.452158 seconds
+[2026-08-19 16:07:35,552][openai._base_client][INFO] - Retrying request to /chat/completions in 0.905682 seconds
+[2026-08-19 16:07:35,676][openai._base_client][INFO] - Retrying request to /chat/completions in 0.825227 seconds
+[2026-08-19 16:07:35,700][openai._base_client][INFO] - Retrying request to /chat/completions in 0.894546 seconds
+[2026-08-19 16:07:35,768][openai._base_client][INFO] - Retrying request to /chat/completions in 0.961903 seconds
+[2026-08-19 16:07:35,795][openai._base_client][INFO] - Retrying request to /chat/completions in 0.889447 seconds
+[2026-08-19 16:07:35,848][openai._base_client][INFO] - Retrying request to /chat/completions in 0.939318 seconds
+[2026-08-19 16:07:36,062][openai._base_client][INFO] - Retrying request to /chat/completions in 0.903125 seconds
+[2026-08-19 16:07:36,069][openai._base_client][INFO] - Retrying request to /chat/completions in 0.809084 seconds
+[2026-08-19 16:07:36,070][openai._base_client][INFO] - Retrying request to /chat/completions in 0.925733 seconds
+[2026-08-19 16:07:36,295][root][INFO] - Attempt 8 failed with error: Connection error.
+[2026-08-19 16:07:36,520][root][INFO] - Attempt 8 failed with error: Connection error.
+[2026-08-19 16:07:36,564][root][INFO] - Attempt 8 failed with error: Connection error.
+[2026-08-19 16:07:36,664][root][INFO] - Attempt 8 failed with error: Connection error.
+[2026-08-19 16:07:36,745][root][INFO] - Attempt 8 failed with error: Connection error.
+[2026-08-19 16:07:36,806][root][INFO] - Attempt 8 failed with error: Connection error.
+[2026-08-19 16:07:36,856][root][INFO] - Attempt 8 failed with error: Connection error.
+[2026-08-19 16:07:37,013][root][INFO] - Attempt 8 failed with error: Connection error.
+[2026-08-19 16:07:37,082][root][INFO] - Attempt 8 failed with error: Connection error.
+[2026-08-19 16:07:37,082][root][INFO] - Attempt 8 failed with error: Connection error.
+[2026-08-19 16:07:37,383][openai._base_client][INFO] - Retrying request to /chat/completions in 0.456623 seconds
+[2026-08-19 16:07:37,613][openai._base_client][INFO] - Retrying request to /chat/completions in 0.389428 seconds
+[2026-08-19 16:07:37,672][openai._base_client][INFO] - Retrying request to /chat/completions in 0.376720 seconds
+[2026-08-19 16:07:37,742][openai._base_client][INFO] - Retrying request to /chat/completions in 0.405016 seconds
+[2026-08-19 16:07:37,835][openai._base_client][INFO] - Retrying request to /chat/completions in 0.403651 seconds
+[2026-08-19 16:07:37,894][openai._base_client][INFO] - Retrying request to /chat/completions in 0.474400 seconds
+[2026-08-19 16:07:37,933][openai._base_client][INFO] - Retrying request to /chat/completions in 0.870723 seconds
+[2026-08-19 16:07:37,934][openai._base_client][INFO] - Retrying request to /chat/completions in 0.496507 seconds
+[2026-08-19 16:07:38,094][openai._base_client][INFO] - Retrying request to /chat/completions in 0.438065 seconds
+[2026-08-19 16:07:38,112][openai._base_client][INFO] - Retrying request to /chat/completions in 0.882183 seconds
+[2026-08-19 16:07:38,154][openai._base_client][INFO] - Retrying request to /chat/completions in 0.848009 seconds
+[2026-08-19 16:07:38,154][openai._base_client][INFO] - Retrying request to /chat/completions in 0.478118 seconds
+[2026-08-19 16:07:38,155][openai._base_client][INFO] - Retrying request to /chat/completions in 0.402727 seconds
+[2026-08-19 16:07:38,213][openai._base_client][INFO] - Retrying request to /chat/completions in 0.750507 seconds
+[2026-08-19 16:07:38,302][openai._base_client][INFO] - Retrying request to /chat/completions in 0.970154 seconds
+[2026-08-19 16:07:38,436][openai._base_client][INFO] - Retrying request to /chat/completions in 0.776311 seconds
+[2026-08-19 16:07:38,495][openai._base_client][INFO] - Retrying request to /chat/completions in 0.831405 seconds
+[2026-08-19 16:07:38,596][openai._base_client][INFO] - Retrying request to /chat/completions in 0.903749 seconds
+[2026-08-19 16:07:38,634][openai._base_client][INFO] - Retrying request to /chat/completions in 0.856050 seconds
+[2026-08-19 16:07:38,711][openai._base_client][INFO] - Retrying request to /chat/completions in 0.830909 seconds
+[2026-08-19 16:07:38,874][root][INFO] - Attempt 9 failed with error: Connection error.
+[2026-08-19 16:07:39,027][root][INFO] - Attempt 9 failed with error: Connection error.
+[2026-08-19 16:07:39,055][root][INFO] - Attempt 9 failed with error: Connection error.
+[2026-08-19 16:07:39,063][root][INFO] - Attempt 9 failed with error: Connection error.
+[2026-08-19 16:07:39,291][root][INFO] - Attempt 9 failed with error: Connection error.
+[2026-08-19 16:07:39,331][root][INFO] - Attempt 9 failed with error: Connection error.
+[2026-08-19 16:07:39,421][root][INFO] - Attempt 9 failed with error: Connection error.
+[2026-08-19 16:07:39,562][root][INFO] - Attempt 9 failed with error: Connection error.
+[2026-08-19 16:07:39,581][root][INFO] - Attempt 9 failed with error: Connection error.
+[2026-08-19 16:07:39,633][root][INFO] - Attempt 9 failed with error: Connection error.
+[2026-08-19 16:07:39,961][openai._base_client][INFO] - Retrying request to /chat/completions in 0.448544 seconds
+[2026-08-19 16:07:40,101][openai._base_client][INFO] - Retrying request to /chat/completions in 0.403430 seconds
+[2026-08-19 16:07:40,143][openai._base_client][INFO] - Retrying request to /chat/completions in 0.499357 seconds
+[2026-08-19 16:07:40,143][openai._base_client][INFO] - Retrying request to /chat/completions in 0.452138 seconds
+[2026-08-19 16:07:40,394][openai._base_client][INFO] - Retrying request to /chat/completions in 0.489791 seconds
+[2026-08-19 16:07:40,432][openai._base_client][INFO] - Retrying request to /chat/completions in 0.415438 seconds
+[2026-08-19 16:07:40,502][openai._base_client][INFO] - Retrying request to /chat/completions in 0.493518 seconds
+[2026-08-19 16:07:40,503][openai._base_client][INFO] - Retrying request to /chat/completions in 0.974197 seconds
+[2026-08-19 16:07:40,581][openai._base_client][INFO] - Retrying request to /chat/completions in 0.954074 seconds
+[2026-08-19 16:07:40,642][openai._base_client][INFO] - Retrying request to /chat/completions in 0.455843 seconds
+[2026-08-19 16:07:40,661][openai._base_client][INFO] - Retrying request to /chat/completions in 0.413794 seconds
+[2026-08-19 16:07:40,669][openai._base_client][INFO] - Retrying request to /chat/completions in 0.923568 seconds
+[2026-08-19 16:07:40,711][openai._base_client][INFO] - Retrying request to /chat/completions in 0.456764 seconds
+[2026-08-19 16:07:40,742][openai._base_client][INFO] - Retrying request to /chat/completions in 0.981076 seconds
+[2026-08-19 16:07:40,945][openai._base_client][INFO] - Retrying request to /chat/completions in 0.814815 seconds
+[2026-08-19 16:07:40,972][openai._base_client][INFO] - Retrying request to /chat/completions in 0.765781 seconds
+[2026-08-19 16:07:41,082][openai._base_client][INFO] - Retrying request to /chat/completions in 0.927722 seconds
+[2026-08-19 16:07:41,171][openai._base_client][INFO] - Retrying request to /chat/completions in 0.871680 seconds
+[2026-08-19 16:07:41,223][openai._base_client][INFO] - Retrying request to /chat/completions in 0.806818 seconds
+[2026-08-19 16:07:41,242][openai._base_client][INFO] - Retrying request to /chat/completions in 0.811741 seconds
+[2026-08-19 16:07:41,583][root][INFO] - Attempt 10 failed with error: Connection error.
+[2026-08-19 16:07:41,633][root][INFO] - Attempt 10 failed with error: Connection error.
+[2026-08-19 16:07:41,674][root][INFO] - Attempt 10 failed with error: Connection error.
+[2026-08-19 16:07:41,804][root][INFO] - Attempt 10 failed with error: Connection error.
+[2026-08-19 16:07:41,824][root][INFO] - Attempt 10 failed with error: Connection error.
+[2026-08-19 16:07:41,838][root][INFO] - Attempt 10 failed with error: Connection error.
+[2026-08-19 16:07:42,094][root][INFO] - Attempt 10 failed with error: Connection error.
+[2026-08-19 16:07:42,126][root][INFO] - Attempt 10 failed with error: Connection error.
+[2026-08-19 16:07:42,155][root][INFO] - Attempt 10 failed with error: Connection error.
+[2026-08-19 16:07:42,155][root][INFO] - Attempt 10 failed with error: Connection error.
+[2026-08-19 16:07:42,697][openai._base_client][INFO] - Retrying request to /chat/completions in 0.469570 seconds
+[2026-08-19 16:07:42,726][openai._base_client][INFO] - Retrying request to /chat/completions in 0.449433 seconds
+[2026-08-19 16:07:42,766][openai._base_client][INFO] - Retrying request to /chat/completions in 0.483836 seconds
+[2026-08-19 16:07:42,915][openai._base_client][INFO] - Retrying request to /chat/completions in 0.393908 seconds
+[2026-08-19 16:07:42,915][openai._base_client][INFO] - Retrying request to /chat/completions in 0.415940 seconds
+[2026-08-19 16:07:42,916][openai._base_client][INFO] - Retrying request to /chat/completions in 0.403354 seconds
+[2026-08-19 16:07:43,184][openai._base_client][INFO] - Retrying request to /chat/completions in 0.396698 seconds
+[2026-08-19 16:07:43,224][openai._base_client][INFO] - Retrying request to /chat/completions in 0.454109 seconds
+[2026-08-19 16:07:43,245][openai._base_client][INFO] - Retrying request to /chat/completions in 0.985826 seconds
+[2026-08-19 16:07:43,246][openai._base_client][INFO] - Retrying request to /chat/completions in 0.403391 seconds
+[2026-08-19 16:07:43,246][openai._base_client][INFO] - Retrying request to /chat/completions in 0.463520 seconds
+[2026-08-19 16:07:43,262][openai._base_client][INFO] - Retrying request to /chat/completions in 0.784063 seconds
+[2026-08-19 16:07:43,343][openai._base_client][INFO] - Retrying request to /chat/completions in 0.997330 seconds
+[2026-08-19 16:07:43,406][openai._base_client][INFO] - Retrying request to /chat/completions in 0.889404 seconds
+[2026-08-19 16:07:43,406][openai._base_client][INFO] - Retrying request to /chat/completions in 0.994334 seconds
+[2026-08-19 16:07:43,423][openai._base_client][INFO] - Retrying request to /chat/completions in 0.872949 seconds
+[2026-08-19 16:07:43,674][openai._base_client][INFO] - Retrying request to /chat/completions in 0.850341 seconds
+[2026-08-19 16:07:43,725][openai._base_client][INFO] - Retrying request to /chat/completions in 0.901586 seconds
+[2026-08-19 16:07:43,747][openai._base_client][INFO] - Retrying request to /chat/completions in 0.939610 seconds
+[2026-08-19 16:07:43,792][openai._base_client][INFO] - Retrying request to /chat/completions in 0.885061 seconds
+[2026-08-19 16:07:44,125][root][INFO] - Attempt 11 failed with error: Connection error.
+[2026-08-19 16:07:44,303][root][INFO] - Attempt 11 failed with error: Connection error.
+[2026-08-19 16:07:44,373][root][INFO] - Attempt 11 failed with error: Connection error.
+[2026-08-19 16:07:44,373][root][INFO] - Attempt 11 failed with error: Connection error.
+[2026-08-19 16:07:44,427][root][INFO] - Attempt 11 failed with error: Connection error.
+[2026-08-19 16:07:44,482][root][INFO] - Attempt 11 failed with error: Connection error.
+[2026-08-19 16:07:44,613][root][INFO] - Attempt 11 failed with error: Connection error.
+[2026-08-19 16:07:44,711][root][INFO] - Attempt 11 failed with error: Connection error.
+[2026-08-19 16:07:44,755][root][INFO] - Attempt 11 failed with error: Connection error.
+[2026-08-19 16:07:44,778][root][INFO] - Attempt 11 failed with error: Connection error.
+[2026-08-19 16:07:45,241][openai._base_client][INFO] - Retrying request to /chat/completions in 0.407270 seconds
+[2026-08-19 16:07:45,417][openai._base_client][INFO] - Retrying request to /chat/completions in 0.461350 seconds
+[2026-08-19 16:07:45,500][openai._base_client][INFO] - Retrying request to /chat/completions in 0.483632 seconds
+[2026-08-19 16:07:45,500][openai._base_client][INFO] - Retrying request to /chat/completions in 0.388442 seconds
+[2026-08-19 16:07:45,535][openai._base_client][INFO] - Retrying request to /chat/completions in 0.467373 seconds
+[2026-08-19 16:07:45,607][openai._base_client][INFO] - Retrying request to /chat/completions in 0.482806 seconds
+[2026-08-19 16:07:45,711][openai._base_client][INFO] - Retrying request to /chat/completions in 0.419396 seconds
+[2026-08-19 16:07:45,752][openai._base_client][INFO] - Retrying request to /chat/completions in 0.981282 seconds
+[2026-08-19 16:07:45,792][openai._base_client][INFO] - Retrying request to /chat/completions in 0.470809 seconds
+[2026-08-19 16:07:45,869][openai._base_client][INFO] - Retrying request to /chat/completions in 0.398427 seconds
+[2026-08-19 16:07:45,869][openai._base_client][INFO] - Retrying request to /chat/completions in 0.400233 seconds
+[2026-08-19 16:07:45,969][openai._base_client][INFO] - Retrying request to /chat/completions in 0.865391 seconds
+[2026-08-19 16:07:45,973][openai._base_client][INFO] - Retrying request to /chat/completions in 0.940945 seconds
+[2026-08-19 16:07:46,054][openai._base_client][INFO] - Retrying request to /chat/completions in 0.892993 seconds
+[2026-08-19 16:07:46,096][openai._base_client][INFO] - Retrying request to /chat/completions in 0.888626 seconds
+[2026-08-19 16:07:46,166][openai._base_client][INFO] - Retrying request to /chat/completions in 0.904847 seconds
+[2026-08-19 16:07:46,250][openai._base_client][INFO] - Retrying request to /chat/completions in 0.832002 seconds
+[2026-08-19 16:07:46,346][openai._base_client][INFO] - Retrying request to /chat/completions in 0.868278 seconds
+[2026-08-19 16:07:46,348][openai._base_client][INFO] - Retrying request to /chat/completions in 0.870978 seconds
+[2026-08-19 16:07:46,349][openai._base_client][INFO] - Retrying request to /chat/completions in 0.920889 seconds
+[2026-08-19 16:07:46,808][root][INFO] - Attempt 12 failed with error: Connection error.
+[2026-08-19 16:07:46,936][root][INFO] - Attempt 12 failed with error: Connection error.
+[2026-08-19 16:07:47,094][root][INFO] - Attempt 12 failed with error: Connection error.
+[2026-08-19 16:07:47,094][root][INFO] - Attempt 12 failed with error: Connection error.
+[2026-08-19 16:07:47,148][root][INFO] - Attempt 12 failed with error: Connection error.
+[2026-08-19 16:07:47,169][root][INFO] - Attempt 12 failed with error: Connection error.
+[2026-08-19 16:07:47,169][root][INFO] - Attempt 12 failed with error: Connection error.
+[2026-08-19 16:07:47,318][root][INFO] - Attempt 12 failed with error: Connection error.
+[2026-08-19 16:07:47,318][root][INFO] - Attempt 12 failed with error: Connection error.
+[2026-08-19 16:07:47,378][root][INFO] - Attempt 12 failed with error: Connection error.
+[2026-08-19 16:07:47,897][openai._base_client][INFO] - Retrying request to /chat/completions in 0.492288 seconds
+[2026-08-19 16:07:48,039][openai._base_client][INFO] - Retrying request to /chat/completions in 0.409276 seconds
+[2026-08-19 16:07:48,186][openai._base_client][INFO] - Retrying request to /chat/completions in 0.493726 seconds
+[2026-08-19 16:07:48,187][openai._base_client][INFO] - Retrying request to /chat/completions in 0.477699 seconds
+[2026-08-19 16:07:48,225][openai._base_client][INFO] - Retrying request to /chat/completions in 0.395766 seconds
+[2026-08-19 16:07:48,253][openai._base_client][INFO] - Retrying request to /chat/completions in 0.487769 seconds
+[2026-08-19 16:07:48,254][openai._base_client][INFO] - Retrying request to /chat/completions in 0.416891 seconds
+[2026-08-19 16:07:48,403][openai._base_client][INFO] - Retrying request to /chat/completions in 0.405687 seconds
+[2026-08-19 16:07:48,403][openai._base_client][INFO] - Retrying request to /chat/completions in 0.497256 seconds
+[2026-08-19 16:07:48,471][openai._base_client][INFO] - Retrying request to /chat/completions in 0.418315 seconds
+[2026-08-19 16:07:48,493][openai._base_client][INFO] - Retrying request to /chat/completions in 0.875317 seconds
+[2026-08-19 16:07:48,565][openai._base_client][INFO] - Retrying request to /chat/completions in 0.836775 seconds
+[2026-08-19 16:07:48,701][openai._base_client][INFO] - Retrying request to /chat/completions in 0.832037 seconds
+[2026-08-19 16:07:48,735][openai._base_client][INFO] - Retrying request to /chat/completions in 0.872398 seconds
+[2026-08-19 16:07:48,752][openai._base_client][INFO] - Retrying request to /chat/completions in 0.839246 seconds
+[2026-08-19 16:07:48,771][openai._base_client][INFO] - Retrying request to /chat/completions in 0.827047 seconds
+[2026-08-19 16:07:48,822][openai._base_client][INFO] - Retrying request to /chat/completions in 0.921950 seconds
+[2026-08-19 16:07:48,882][openai._base_client][INFO] - Retrying request to /chat/completions in 0.954124 seconds
+[2026-08-19 16:07:48,962][openai._base_client][INFO] - Retrying request to /chat/completions in 0.971953 seconds
+[2026-08-19 16:07:48,978][openai._base_client][INFO] - Retrying request to /chat/completions in 0.942920 seconds
+[2026-08-19 16:07:49,462][root][INFO] - Attempt 13 failed with error: Connection error.
+[2026-08-19 16:07:49,482][root][INFO] - Attempt 13 failed with error: Connection error.
+[2026-08-19 16:07:49,622][root][INFO] - Attempt 13 failed with error: Connection error.
+[2026-08-19 16:07:49,664][root][INFO] - Attempt 13 failed with error: Connection error.
+[2026-08-19 16:07:49,696][root][INFO] - Attempt 13 failed with error: Connection error.
+[2026-08-19 16:07:49,696][root][INFO] - Attempt 13 failed with error: Connection error.
+[2026-08-19 16:07:49,835][root][INFO] - Attempt 13 failed with error: Connection error.
+[2026-08-19 16:07:49,923][root][INFO] - Attempt 13 failed with error: Connection error.
+[2026-08-19 16:07:50,003][root][INFO] - Attempt 13 failed with error: Connection error.
+[2026-08-19 16:07:50,022][root][INFO] - Attempt 13 failed with error: Connection error.
+[2026-08-19 16:07:50,539][openai._base_client][INFO] - Retrying request to /chat/completions in 0.443274 seconds
+[2026-08-19 16:07:50,582][openai._base_client][INFO] - Retrying request to /chat/completions in 0.474206 seconds
+[2026-08-19 16:07:50,724][openai._base_client][INFO] - Retrying request to /chat/completions in 0.394390 seconds
+[2026-08-19 16:07:50,744][openai._base_client][INFO] - Retrying request to /chat/completions in 0.492770 seconds
+[2026-08-19 16:07:50,785][openai._base_client][INFO] - Retrying request to /chat/completions in 0.451932 seconds
+[2026-08-19 16:07:50,812][openai._base_client][INFO] - Retrying request to /chat/completions in 0.445797 seconds
+[2026-08-19 16:07:50,916][openai._base_client][INFO] - Retrying request to /chat/completions in 0.446336 seconds
+[2026-08-19 16:07:51,013][openai._base_client][INFO] - Retrying request to /chat/completions in 0.381675 seconds
+[2026-08-19 16:07:51,072][openai._base_client][INFO] - Retrying request to /chat/completions in 0.934097 seconds
+[2026-08-19 16:07:51,102][openai._base_client][INFO] - Retrying request to /chat/completions in 0.490578 seconds
+[2026-08-19 16:07:51,102][openai._base_client][INFO] - Retrying request to /chat/completions in 0.426731 seconds
+[2026-08-19 16:07:51,143][openai._base_client][INFO] - Retrying request to /chat/completions in 0.753970 seconds
+[2026-08-19 16:07:51,203][openai._base_client][INFO] - Retrying request to /chat/completions in 0.997479 seconds
+[2026-08-19 16:07:51,326][openai._base_client][INFO] - Retrying request to /chat/completions in 0.750691 seconds
+[2026-08-19 16:07:51,326][openai._base_client][INFO] - Retrying request to /chat/completions in 0.999826 seconds
+[2026-08-19 16:07:51,360][openai._base_client][INFO] - Retrying request to /chat/completions in 0.995568 seconds
+[2026-08-19 16:07:51,441][openai._base_client][INFO] - Retrying request to /chat/completions in 0.930117 seconds
+[2026-08-19 16:07:51,483][openai._base_client][INFO] - Retrying request to /chat/completions in 0.990674 seconds
+[2026-08-19 16:07:51,613][openai._base_client][INFO] - Retrying request to /chat/completions in 0.763487 seconds
+[2026-08-19 16:07:51,669][openai._base_client][INFO] - Retrying request to /chat/completions in 0.865865 seconds
+[2026-08-19 16:07:51,979][root][INFO] - Attempt 14 failed with error: Connection error.
+[2026-08-19 16:07:52,083][root][INFO] - Attempt 14 failed with error: Connection error.
+[2026-08-19 16:07:52,177][root][INFO] - Attempt 14 failed with error: Connection error.
+[2026-08-19 16:07:52,288][root][INFO] - Attempt 14 failed with error: Connection error.
+[2026-08-19 16:07:52,413][root][INFO] - Attempt 14 failed with error: Connection error.
+[2026-08-19 16:07:52,443][root][INFO] - Attempt 14 failed with error: Connection error.
+[2026-08-19 16:07:52,454][root][INFO] - Attempt 14 failed with error: Connection error.
+[2026-08-19 16:07:52,454][root][INFO] - Attempt 14 failed with error: Connection error.
+[2026-08-19 16:07:52,551][root][INFO] - Attempt 14 failed with error: Connection error.
+[2026-08-19 16:07:52,609][root][INFO] - Attempt 14 failed with error: Connection error.
+[2026-08-19 16:07:53,087][openai._base_client][INFO] - Retrying request to /chat/completions in 0.491798 seconds
+[2026-08-19 16:07:53,166][openai._base_client][INFO] - Retrying request to /chat/completions in 0.413428 seconds
+[2026-08-19 16:07:53,263][openai._base_client][INFO] - Retrying request to /chat/completions in 0.375340 seconds
+[2026-08-19 16:07:53,383][openai._base_client][INFO] - Retrying request to /chat/completions in 0.473536 seconds
+[2026-08-19 16:07:53,492][openai._base_client][INFO] - Retrying request to /chat/completions in 0.442701 seconds
+[2026-08-19 16:07:53,534][openai._base_client][INFO] - Retrying request to /chat/completions in 0.484651 seconds
+[2026-08-19 16:07:53,535][openai._base_client][INFO] - Retrying request to /chat/completions in 0.378322 seconds
+[2026-08-19 16:07:53,535][openai._base_client][INFO] - Retrying request to /chat/completions in 0.417804 seconds
+[2026-08-19 16:07:53,634][openai._base_client][INFO] - Retrying request to /chat/completions in 0.462228 seconds
+[2026-08-19 16:07:53,651][openai._base_client][INFO] - Retrying request to /chat/completions in 0.835528 seconds
+[2026-08-19 16:07:53,672][openai._base_client][INFO] - Retrying request to /chat/completions in 0.992870 seconds
+[2026-08-19 16:07:53,693][openai._base_client][INFO] - Retrying request to /chat/completions in 0.391714 seconds
+[2026-08-19 16:07:53,713][openai._base_client][INFO] - Retrying request to /chat/completions in 0.915522 seconds
+[2026-08-19 16:07:53,926][openai._base_client][INFO] - Retrying request to /chat/completions in 0.783475 seconds
+[2026-08-19 16:07:54,004][openai._base_client][INFO] - Retrying request to /chat/completions in 0.980333 seconds
+[2026-08-19 16:07:54,006][openai._base_client][INFO] - Retrying request to /chat/completions in 0.836001 seconds
+[2026-08-19 16:07:54,035][openai._base_client][INFO] - Retrying request to /chat/completions in 0.979382 seconds
+[2026-08-19 16:07:54,085][openai._base_client][INFO] - Retrying request to /chat/completions in 0.904665 seconds
+[2026-08-19 16:07:54,154][openai._base_client][INFO] - Retrying request to /chat/completions in 0.850506 seconds
+[2026-08-19 16:07:54,173][openai._base_client][INFO] - Retrying request to /chat/completions in 0.986998 seconds
+[2026-08-19 16:07:54,573][root][INFO] - Attempt 15 failed with error: Connection error.
+[2026-08-19 16:07:54,712][root][INFO] - Attempt 15 failed with error: Connection error.
+[2026-08-19 16:07:54,743][root][INFO] - Attempt 15 failed with error: Connection error.
+[2026-08-19 16:07:54,810][root][INFO] - Attempt 15 failed with error: Connection error.
+[2026-08-19 16:07:54,933][root][INFO] - Attempt 15 failed with error: Connection error.
+[2026-08-19 16:07:55,062][root][INFO] - Attempt 15 failed with error: Connection error.
+[2026-08-19 16:07:55,093][root][INFO] - Attempt 15 failed with error: Connection error.
+[2026-08-19 16:07:55,093][root][INFO] - Attempt 15 failed with error: Connection error.
+[2026-08-19 16:07:55,096][root][INFO] - Attempt 15 failed with error: Connection error.
+[2026-08-19 16:07:55,251][root][INFO] - Attempt 15 failed with error: Connection error.
+[2026-08-19 16:07:55,672][openai._base_client][INFO] - Retrying request to /chat/completions in 0.490437 seconds
+[2026-08-19 16:07:55,802][openai._base_client][INFO] - Retrying request to /chat/completions in 0.380518 seconds
+[2026-08-19 16:07:55,823][openai._base_client][INFO] - Retrying request to /chat/completions in 0.422062 seconds
+[2026-08-19 16:07:55,886][openai._base_client][INFO] - Retrying request to /chat/completions in 0.419015 seconds
+[2026-08-19 16:07:56,022][openai._base_client][INFO] - Retrying request to /chat/completions in 0.447996 seconds
+[2026-08-19 16:07:56,161][openai._base_client][INFO] - Retrying request to /chat/completions in 0.456206 seconds
+[2026-08-19 16:07:56,173][openai._base_client][INFO] - Retrying request to /chat/completions in 0.398111 seconds
+[2026-08-19 16:07:56,176][openai._base_client][INFO] - Retrying request to /chat/completions in 0.389533 seconds
+[2026-08-19 16:07:56,178][openai._base_client][INFO] - Retrying request to /chat/completions in 0.423747 seconds
+[2026-08-19 16:07:56,221][openai._base_client][INFO] - Retrying request to /chat/completions in 0.943756 seconds
+[2026-08-19 16:07:56,246][openai._base_client][INFO] - Retrying request to /chat/completions in 0.915169 seconds
+[2026-08-19 16:07:56,311][openai._base_client][INFO] - Retrying request to /chat/completions in 0.778665 seconds
+[2026-08-19 16:07:56,314][openai._base_client][INFO] - Retrying request to /chat/completions in 0.382185 seconds
+[2026-08-19 16:07:56,369][openai._base_client][INFO] - Retrying request to /chat/completions in 0.844646 seconds
+[2026-08-19 16:07:56,536][openai._base_client][INFO] - Retrying request to /chat/completions in 0.851394 seconds
+[2026-08-19 16:07:56,635][openai._base_client][INFO] - Retrying request to /chat/completions in 0.938932 seconds
+[2026-08-19 16:07:56,640][openai._base_client][INFO] - Retrying request to /chat/completions in 0.829844 seconds
+[2026-08-19 16:07:56,664][openai._base_client][INFO] - Retrying request to /chat/completions in 0.921141 seconds
+[2026-08-19 16:07:56,694][openai._base_client][INFO] - Retrying request to /chat/completions in 0.986356 seconds
+[2026-08-19 16:07:56,761][openai._base_client][INFO] - Retrying request to /chat/completions in 0.962189 seconds
+[2026-08-19 16:07:57,160][root][INFO] - Attempt 16 failed with error: Connection error.
+[2026-08-19 16:07:57,225][root][INFO] - Attempt 16 failed with error: Connection error.
+[2026-08-19 16:07:57,226][root][INFO] - Attempt 16 failed with error: Connection error.
+[2026-08-19 16:07:57,277][root][INFO] - Attempt 16 failed with error: Connection error.
+[2026-08-19 16:07:57,462][root][INFO] - Attempt 16 failed with error: Connection error.
+[2026-08-19 16:07:57,530][root][INFO] - Attempt 16 failed with error: Connection error.
+[2026-08-19 16:07:57,649][root][INFO] - Attempt 16 failed with error: Connection error.
+[2026-08-19 16:07:57,666][root][INFO] - Attempt 16 failed with error: Connection error.
+[2026-08-19 16:07:57,740][root][INFO] - Attempt 16 failed with error: Connection error.
+[2026-08-19 16:07:57,788][root][INFO] - Attempt 16 failed with error: Connection error.
+[2026-08-19 16:07:58,228][openai._base_client][INFO] - Retrying request to /chat/completions in 0.460967 seconds
+[2026-08-19 16:07:58,287][openai._base_client][INFO] - Retrying request to /chat/completions in 0.409829 seconds
+[2026-08-19 16:07:58,291][openai._base_client][INFO] - Retrying request to /chat/completions in 0.482978 seconds
+[2026-08-19 16:07:58,338][openai._base_client][INFO] - Retrying request to /chat/completions in 0.490616 seconds
+[2026-08-19 16:07:58,528][openai._base_client][INFO] - Retrying request to /chat/completions in 0.494309 seconds
+[2026-08-19 16:07:58,590][openai._base_client][INFO] - Retrying request to /chat/completions in 0.496125 seconds
+[2026-08-19 16:07:58,728][openai._base_client][INFO] - Retrying request to /chat/completions in 0.430681 seconds
+[2026-08-19 16:07:58,736][openai._base_client][INFO] - Retrying request to /chat/completions in 0.393993 seconds
+[2026-08-19 16:07:58,754][openai._base_client][INFO] - Retrying request to /chat/completions in 0.900912 seconds
+[2026-08-19 16:07:58,771][openai._base_client][INFO] - Retrying request to /chat/completions in 0.827690 seconds
+[2026-08-19 16:07:58,801][openai._base_client][INFO] - Retrying request to /chat/completions in 0.487345 seconds
+[2026-08-19 16:07:58,840][openai._base_client][INFO] - Retrying request to /chat/completions in 0.992849 seconds
+[2026-08-19 16:07:58,854][openai._base_client][INFO] - Retrying request to /chat/completions in 0.419703 seconds
+[2026-08-19 16:07:58,893][openai._base_client][INFO] - Retrying request to /chat/completions in 0.870472 seconds
+[2026-08-19 16:07:59,098][openai._base_client][INFO] - Retrying request to /chat/completions in 0.832521 seconds
+[2026-08-19 16:07:59,154][openai._base_client][INFO] - Retrying request to /chat/completions in 0.888203 seconds
+[2026-08-19 16:07:59,202][openai._base_client][INFO] - Retrying request to /chat/completions in 0.849592 seconds
+[2026-08-19 16:07:59,244][openai._base_client][INFO] - Retrying request to /chat/completions in 0.907174 seconds
+[2026-08-19 16:07:59,342][openai._base_client][INFO] - Retrying request to /chat/completions in 0.818471 seconds
+[2026-08-19 16:07:59,356][openai._base_client][INFO] - Retrying request to /chat/completions in 0.859081 seconds
+[2026-08-19 16:07:59,662][root][INFO] - Attempt 17 failed with error: Connection error.
+[2026-08-19 16:07:59,718][root][INFO] - Attempt 17 failed with error: Connection error.
+[2026-08-19 16:07:59,826][root][INFO] - Attempt 17 failed with error: Connection error.
+[2026-08-19 16:07:59,901][root][INFO] - Attempt 17 failed with error: Connection error.
+[2026-08-19 16:07:59,994][root][INFO] - Attempt 17 failed with error: Connection error.
+[2026-08-19 16:08:00,109][root][INFO] - Attempt 17 failed with error: Connection error.
+[2026-08-19 16:08:00,126][root][INFO] - Attempt 17 failed with error: Connection error.
+[2026-08-19 16:08:00,220][root][INFO] - Attempt 17 failed with error: Connection error.
+[2026-08-19 16:08:00,226][root][INFO] - Attempt 17 failed with error: Connection error.
+[2026-08-19 16:08:00,283][root][INFO] - Attempt 17 failed with error: Connection error.
+[2026-08-19 16:08:00,731][openai._base_client][INFO] - Retrying request to /chat/completions in 0.479419 seconds
+[2026-08-19 16:08:00,788][openai._base_client][INFO] - Retrying request to /chat/completions in 0.412302 seconds
+[2026-08-19 16:08:00,895][openai._base_client][INFO] - Retrying request to /chat/completions in 0.446292 seconds
+[2026-08-19 16:08:00,990][openai._base_client][INFO] - Retrying request to /chat/completions in 0.441834 seconds
+[2026-08-19 16:08:01,062][openai._base_client][INFO] - Retrying request to /chat/completions in 0.496374 seconds
+[2026-08-19 16:08:01,179][openai._base_client][INFO] - Retrying request to /chat/completions in 0.462218 seconds
+[2026-08-19 16:08:01,192][openai._base_client][INFO] - Retrying request to /chat/completions in 0.473758 seconds
+[2026-08-19 16:08:01,259][openai._base_client][INFO] - Retrying request to /chat/completions in 0.804393 seconds
+[2026-08-19 16:08:01,273][openai._base_client][INFO] - Retrying request to /chat/completions in 0.828356 seconds
+[2026-08-19 16:08:01,291][openai._base_client][INFO] - Retrying request to /chat/completions in 0.379629 seconds
+[2026-08-19 16:08:01,292][openai._base_client][INFO] - Retrying request to /chat/completions in 0.409329 seconds
+[2026-08-19 16:08:01,371][openai._base_client][INFO] - Retrying request to /chat/completions in 0.382525 seconds
+[2026-08-19 16:08:01,413][openai._base_client][INFO] - Retrying request to /chat/completions in 0.910999 seconds
+[2026-08-19 16:08:01,513][openai._base_client][INFO] - Retrying request to /chat/completions in 0.991522 seconds
+[2026-08-19 16:08:01,623][openai._base_client][INFO] - Retrying request to /chat/completions in 0.844348 seconds
+[2026-08-19 16:08:01,711][openai._base_client][INFO] - Retrying request to /chat/completions in 0.862861 seconds
+[2026-08-19 16:08:01,731][openai._base_client][INFO] - Retrying request to /chat/completions in 0.865093 seconds
+[2026-08-19 16:08:01,737][openai._base_client][INFO] - Retrying request to /chat/completions in 0.866670 seconds
+[2026-08-19 16:08:01,771][openai._base_client][INFO] - Retrying request to /chat/completions in 0.788884 seconds
+[2026-08-19 16:08:01,825][openai._base_client][INFO] - Retrying request to /chat/completions in 0.842457 seconds
+[2026-08-19 16:08:02,131][root][INFO] - Attempt 18 failed with error: Connection error.
+[2026-08-19 16:08:02,171][root][INFO] - Attempt 18 failed with error: Connection error.
+[2026-08-19 16:08:02,389][root][INFO] - Attempt 18 failed with error: Connection error.
+[2026-08-19 16:08:02,547][root][INFO] - Attempt 18 failed with error: Connection error.
+[2026-08-19 16:08:02,577][root][INFO] - Attempt 18 failed with error: Connection error.
+[2026-08-19 16:08:02,638][root][INFO] - Attempt 18 failed with error: Connection error.
+[2026-08-19 16:08:02,638][root][INFO] - Attempt 18 failed with error: Connection error.
+[2026-08-19 16:08:02,663][root][INFO] - Attempt 18 failed with error: Connection error.
+[2026-08-19 16:08:02,669][root][INFO] - Attempt 18 failed with error: Connection error.
+[2026-08-19 16:08:02,737][root][INFO] - Attempt 18 failed with error: Connection error.
+[2026-08-19 16:08:03,205][openai._base_client][INFO] - Retrying request to /chat/completions in 0.494985 seconds
+[2026-08-19 16:08:03,248][openai._base_client][INFO] - Retrying request to /chat/completions in 0.462098 seconds
+[2026-08-19 16:08:03,459][openai._base_client][INFO] - Retrying request to /chat/completions in 0.472686 seconds
+[2026-08-19 16:08:03,611][openai._base_client][INFO] - Retrying request to /chat/completions in 0.426787 seconds
+[2026-08-19 16:08:03,645][openai._base_client][INFO] - Retrying request to /chat/completions in 0.408934 seconds
+[2026-08-19 16:08:03,705][openai._base_client][INFO] - Retrying request to /chat/completions in 0.409396 seconds
+[2026-08-19 16:08:03,707][openai._base_client][INFO] - Retrying request to /chat/completions in 0.439081 seconds
+[2026-08-19 16:08:03,727][openai._base_client][INFO] - Retrying request to /chat/completions in 0.404432 seconds
+[2026-08-19 16:08:03,736][openai._base_client][INFO] - Retrying request to /chat/completions in 0.384950 seconds
+[2026-08-19 16:08:03,766][openai._base_client][INFO] - Retrying request to /chat/completions in 0.908856 seconds
+[2026-08-19 16:08:03,774][openai._base_client][INFO] - Retrying request to /chat/completions in 0.841299 seconds
+[2026-08-19 16:08:03,805][openai._base_client][INFO] - Retrying request to /chat/completions in 0.445677 seconds
+[2026-08-19 16:08:04,000][openai._base_client][INFO] - Retrying request to /chat/completions in 0.958236 seconds
+[2026-08-19 16:08:04,117][openai._base_client][INFO] - Retrying request to /chat/completions in 0.864924 seconds
+[2026-08-19 16:08:04,122][openai._base_client][INFO] - Retrying request to /chat/completions in 0.779979 seconds
+[2026-08-19 16:08:04,188][openai._base_client][INFO] - Retrying request to /chat/completions in 0.843870 seconds
+[2026-08-19 16:08:04,190][openai._base_client][INFO] - Retrying request to /chat/completions in 0.914972 seconds
+[2026-08-19 16:08:04,199][openai._base_client][INFO] - Retrying request to /chat/completions in 0.764269 seconds
+[2026-08-19 16:08:04,214][openai._base_client][INFO] - Retrying request to /chat/completions in 0.976602 seconds
+[2026-08-19 16:08:04,341][openai._base_client][INFO] - Retrying request to /chat/completions in 0.789852 seconds
+[2026-08-19 16:08:04,713][root][INFO] - Attempt 19 failed with error: Connection error.
+[2026-08-19 16:08:04,747][root][INFO] - Attempt 19 failed with error: Connection error.
+[2026-08-19 16:08:04,982][root][INFO] - Attempt 19 failed with error: Connection error.
+[2026-08-19 16:08:05,024][root][INFO] - Attempt 19 failed with error: Connection error.
+[2026-08-19 16:08:05,028][root][INFO] - Attempt 19 failed with error: Connection error.
+[2026-08-19 16:08:05,048][root][INFO] - Attempt 19 failed with error: Connection error.
+[2026-08-19 16:08:05,099][root][INFO] - Attempt 19 failed with error: Connection error.
+[2026-08-19 16:08:05,177][root][INFO] - Attempt 19 failed with error: Connection error.
+[2026-08-19 16:08:05,201][root][INFO] - Attempt 19 failed with error: Connection error.
+[2026-08-19 16:08:05,269][root][INFO] - Attempt 19 failed with error: Connection error.
+[2026-08-19 16:08:05,785][openai._base_client][INFO] - Retrying request to /chat/completions in 0.437451 seconds
+[2026-08-19 16:08:05,820][openai._base_client][INFO] - Retrying request to /chat/completions in 0.434534 seconds
+[2026-08-19 16:08:06,049][openai._base_client][INFO] - Retrying request to /chat/completions in 0.427371 seconds
+[2026-08-19 16:08:06,095][openai._base_client][INFO] - Retrying request to /chat/completions in 0.423598 seconds
+[2026-08-19 16:08:06,096][openai._base_client][INFO] - Retrying request to /chat/completions in 0.398828 seconds
+[2026-08-19 16:08:06,113][openai._base_client][INFO] - Retrying request to /chat/completions in 0.456089 seconds
+[2026-08-19 16:08:06,172][openai._base_client][INFO] - Retrying request to /chat/completions in 0.393394 seconds
+[2026-08-19 16:08:06,245][openai._base_client][INFO] - Retrying request to /chat/completions in 0.443349 seconds
+[2026-08-19 16:08:06,273][openai._base_client][INFO] - Retrying request to /chat/completions in 0.471782 seconds
+[2026-08-19 16:08:06,289][openai._base_client][INFO] - Retrying request to /chat/completions in 0.759383 seconds
+[2026-08-19 16:08:06,318][openai._base_client][INFO] - Retrying request to /chat/completions in 0.928839 seconds
+[2026-08-19 16:08:06,344][openai._base_client][INFO] - Retrying request to /chat/completions in 0.390500 seconds
+[2026-08-19 16:08:06,545][openai._base_client][INFO] - Retrying request to /chat/completions in 0.975180 seconds
+[2026-08-19 16:08:06,563][openai._base_client][INFO] - Retrying request to /chat/completions in 0.769168 seconds
+[2026-08-19 16:08:06,591][openai._base_client][INFO] - Retrying request to /chat/completions in 0.892398 seconds
+[2026-08-19 16:08:06,635][openai._base_client][INFO] - Retrying request to /chat/completions in 0.763653 seconds
+[2026-08-19 16:08:06,647][openai._base_client][INFO] - Retrying request to /chat/completions in 0.761426 seconds
+[2026-08-19 16:08:06,775][openai._base_client][INFO] - Retrying request to /chat/completions in 0.936839 seconds
+[2026-08-19 16:08:06,802][openai._base_client][INFO] - Retrying request to /chat/completions in 0.775318 seconds
+[2026-08-19 16:08:06,807][openai._base_client][INFO] - Retrying request to /chat/completions in 0.791902 seconds
+[2026-08-19 16:08:07,179][root][INFO] - Attempt 20 failed with error: Connection error.
+[2026-08-19 16:08:07,313][root][INFO] - Attempt 20 failed with error: Connection error.
+[2026-08-19 16:08:07,398][root][INFO] - Attempt 20 failed with error: Connection error.
+[2026-08-19 16:08:07,464][root][INFO] - Attempt 20 failed with error: Connection error.
+[2026-08-19 16:08:07,474][root][INFO] - Attempt 20 failed with error: Connection error.
+[2026-08-19 16:08:07,549][root][INFO] - Attempt 20 failed with error: Connection error.
+[2026-08-19 16:08:07,593][root][INFO] - Attempt 20 failed with error: Connection error.
+[2026-08-19 16:08:07,640][root][INFO] - Attempt 20 failed with error: Connection error.
+[2026-08-19 16:08:07,660][root][INFO] - Attempt 20 failed with error: Connection error.
+[2026-08-19 16:08:07,774][root][INFO] - Attempt 20 failed with error: Connection error.
+[2026-08-19 16:08:08,247][openai._base_client][INFO] - Retrying request to /chat/completions in 0.440360 seconds
+[2026-08-19 16:08:08,383][openai._base_client][INFO] - Retrying request to /chat/completions in 0.411284 seconds
+[2026-08-19 16:08:08,464][openai._base_client][INFO] - Retrying request to /chat/completions in 0.498340 seconds
+[2026-08-19 16:08:08,526][openai._base_client][INFO] - Retrying request to /chat/completions in 0.415425 seconds
+[2026-08-19 16:08:08,538][openai._base_client][INFO] - Retrying request to /chat/completions in 0.490534 seconds
+[2026-08-19 16:08:08,611][openai._base_client][INFO] - Retrying request to /chat/completions in 0.388735 seconds
+[2026-08-19 16:08:08,657][openai._base_client][INFO] - Retrying request to /chat/completions in 0.403060 seconds
+[2026-08-19 16:08:08,703][openai._base_client][INFO] - Retrying request to /chat/completions in 0.401473 seconds
+[2026-08-19 16:08:08,722][openai._base_client][INFO] - Retrying request to /chat/completions in 0.411436 seconds
+[2026-08-19 16:08:08,757][openai._base_client][INFO] - Retrying request to /chat/completions in 0.912378 seconds
+[2026-08-19 16:08:08,839][openai._base_client][INFO] - Retrying request to /chat/completions in 0.457072 seconds
+[2026-08-19 16:08:08,863][openai._base_client][INFO] - Retrying request to /chat/completions in 0.871709 seconds
+[2026-08-19 16:08:09,003][openai._base_client][INFO] - Retrying request to /chat/completions in 0.860108 seconds
+[2026-08-19 16:08:09,028][openai._base_client][INFO] - Retrying request to /chat/completions in 0.786697 seconds
+[2026-08-19 16:08:09,063][openai._base_client][INFO] - Retrying request to /chat/completions in 0.811512 seconds
+[2026-08-19 16:08:09,104][openai._base_client][INFO] - Retrying request to /chat/completions in 0.942151 seconds
+[2026-08-19 16:08:09,126][openai._base_client][INFO] - Retrying request to /chat/completions in 0.976965 seconds
+[2026-08-19 16:08:09,173][openai._base_client][INFO] - Retrying request to /chat/completions in 0.865510 seconds
+[2026-08-19 16:08:09,199][openai._base_client][INFO] - Retrying request to /chat/completions in 0.890389 seconds
+[2026-08-19 16:08:09,363][openai._base_client][INFO] - Retrying request to /chat/completions in 0.781017 seconds
+[2026-08-19 16:08:11,707][root][INFO] - Attempt 21 failed with error: Connection error.
+[2026-08-19 16:08:11,769][root][INFO] - Attempt 21 failed with error: Connection error.
+[2026-08-19 16:08:11,848][root][INFO] - Attempt 21 failed with error: Connection error.
+[2026-08-19 16:08:11,895][root][INFO] - Attempt 21 failed with error: Connection error.
+[2026-08-19 16:08:11,910][root][INFO] - Attempt 21 failed with error: Connection error.
+[2026-08-19 16:08:12,049][root][INFO] - Attempt 21 failed with error: Connection error.
+[2026-08-19 16:08:12,065][root][INFO] - Attempt 21 failed with error: Connection error.
+[2026-08-19 16:08:12,127][root][INFO] - Attempt 21 failed with error: Connection error.
+[2026-08-19 16:08:12,128][root][INFO] - Attempt 21 failed with error: Connection error.
+[2026-08-19 16:08:12,176][root][INFO] - Attempt 21 failed with error: Connection error.
+[2026-08-19 16:08:14,752][openai._base_client][INFO] - Retrying request to /chat/completions in 0.492177 seconds
+[2026-08-19 16:08:14,811][openai._base_client][INFO] - Retrying request to /chat/completions in 0.480561 seconds
+[2026-08-19 16:08:14,890][openai._base_client][INFO] - Retrying request to /chat/completions in 0.388942 seconds
+[2026-08-19 16:08:14,937][openai._base_client][INFO] - Retrying request to /chat/completions in 0.434842 seconds
+[2026-08-19 16:08:14,953][openai._base_client][INFO] - Retrying request to /chat/completions in 0.394800 seconds
+[2026-08-19 16:08:15,112][openai._base_client][INFO] - Retrying request to /chat/completions in 0.495649 seconds
+[2026-08-19 16:08:15,113][openai._base_client][INFO] - Retrying request to /chat/completions in 0.488827 seconds
+[2026-08-19 16:08:15,159][openai._base_client][INFO] - Retrying request to /chat/completions in 0.404103 seconds
+[2026-08-19 16:08:15,160][openai._base_client][INFO] - Retrying request to /chat/completions in 0.391377 seconds
+[2026-08-19 16:08:15,206][openai._base_client][INFO] - Retrying request to /chat/completions in 0.429790 seconds
+[2026-08-19 16:08:17,266][openai._base_client][INFO] - Retrying request to /chat/completions in 0.757276 seconds
+[2026-08-19 16:08:17,297][openai._base_client][INFO] - Retrying request to /chat/completions in 0.850160 seconds
+[2026-08-19 16:08:17,312][openai._base_client][INFO] - Retrying request to /chat/completions in 0.773030 seconds
+[2026-08-19 16:08:17,376][openai._base_client][INFO] - Retrying request to /chat/completions in 0.825560 seconds
+[2026-08-19 16:08:17,392][openai._base_client][INFO] - Retrying request to /chat/completions in 0.929796 seconds
+[2026-08-19 16:08:17,579][openai._base_client][INFO] - Retrying request to /chat/completions in 0.847499 seconds
+[2026-08-19 16:08:17,580][openai._base_client][INFO] - Retrying request to /chat/completions in 0.974340 seconds
+[2026-08-19 16:08:17,627][openai._base_client][INFO] - Retrying request to /chat/completions in 0.994888 seconds
+[2026-08-19 16:08:17,627][openai._base_client][INFO] - Retrying request to /chat/completions in 0.987669 seconds
+[2026-08-19 16:08:17,659][openai._base_client][INFO] - Retrying request to /chat/completions in 0.944988 seconds
+[2026-08-19 16:08:20,063][root][INFO] - Attempt 22 failed with error: Connection error.
+[2026-08-19 16:08:20,112][root][INFO] - Attempt 22 failed with error: Connection error.
+[2026-08-19 16:08:20,190][root][INFO] - Attempt 22 failed with error: Connection error.
+[2026-08-19 16:08:20,235][root][INFO] - Attempt 22 failed with error: Connection error.
+[2026-08-19 16:08:20,347][root][INFO] - Attempt 22 failed with error: Connection error.
+[2026-08-19 16:08:20,472][root][INFO] - Attempt 22 failed with error: Connection error.
+[2026-08-19 16:08:20,597][root][INFO] - Attempt 22 failed with error: Connection error.
+[2026-08-19 16:08:20,644][root][INFO] - Attempt 22 failed with error: Connection error.
+[2026-08-19 16:08:20,644][root][INFO] - Attempt 22 failed with error: Connection error.
+[2026-08-19 16:08:20,675][root][INFO] - Attempt 22 failed with error: Connection error.
+[2026-08-19 16:08:23,097][openai._base_client][INFO] - Retrying request to /chat/completions in 0.408095 seconds
+[2026-08-19 16:08:23,159][openai._base_client][INFO] - Retrying request to /chat/completions in 0.478535 seconds
+[2026-08-19 16:08:23,222][openai._base_client][INFO] - Retrying request to /chat/completions in 0.453238 seconds
+[2026-08-19 16:08:23,268][openai._base_client][INFO] - Retrying request to /chat/completions in 0.467745 seconds
+[2026-08-19 16:08:23,394][openai._base_client][INFO] - Retrying request to /chat/completions in 0.486349 seconds
+[2026-08-19 16:08:23,516][openai._base_client][INFO] - Retrying request to /chat/completions in 0.427320 seconds
+[2026-08-19 16:08:23,643][openai._base_client][INFO] - Retrying request to /chat/completions in 0.491207 seconds
+[2026-08-19 16:08:23,703][openai._base_client][INFO] - Retrying request to /chat/completions in 0.482314 seconds
+[2026-08-19 16:08:23,703][openai._base_client][INFO] - Retrying request to /chat/completions in 0.384445 seconds
+[2026-08-19 16:08:23,718][openai._base_client][INFO] - Retrying request to /chat/completions in 0.407814 seconds
+[2026-08-19 16:08:25,564][openai._base_client][INFO] - Retrying request to /chat/completions in 0.887639 seconds
+[2026-08-19 16:08:25,673][openai._base_client][INFO] - Retrying request to /chat/completions in 0.830545 seconds
+[2026-08-19 16:08:25,733][openai._base_client][INFO] - Retrying request to /chat/completions in 0.960742 seconds
+[2026-08-19 16:08:25,780][openai._base_client][INFO] - Retrying request to /chat/completions in 0.829623 seconds
+[2026-08-19 16:08:25,921][openai._base_client][INFO] - Retrying request to /chat/completions in 0.866224 seconds
+[2026-08-19 16:08:26,001][openai._base_client][INFO] - Retrying request to /chat/completions in 0.930795 seconds
+[2026-08-19 16:08:26,111][openai._base_client][INFO] - Retrying request to /chat/completions in 0.887211 seconds
+[2026-08-19 16:08:26,157][openai._base_client][INFO] - Retrying request to /chat/completions in 0.751730 seconds
+[2026-08-19 16:08:26,158][openai._base_client][INFO] - Retrying request to /chat/completions in 0.955466 seconds
+[2026-08-19 16:08:26,204][openai._base_client][INFO] - Retrying request to /chat/completions in 0.901843 seconds
+[2026-08-19 16:08:28,689][root][INFO] - Attempt 23 failed with error: Connection error.
+[2026-08-19 16:08:28,706][root][INFO] - Attempt 23 failed with error: Connection error.
+[2026-08-19 16:08:28,753][root][INFO] - Attempt 23 failed with error: Connection error.
+[2026-08-19 16:08:28,815][root][INFO] - Attempt 23 failed with error: Connection error.
+[2026-08-19 16:08:28,831][root][INFO] - Attempt 23 failed with error: Connection error.
+[2026-08-19 16:08:28,956][root][INFO] - Attempt 23 failed with error: Connection error.
+[2026-08-19 16:08:28,972][root][INFO] - Attempt 23 failed with error: Connection error.
+[2026-08-19 16:08:29,020][root][INFO] - Attempt 23 failed with error: Connection error.
+[2026-08-19 16:08:29,127][root][INFO] - Attempt 23 failed with error: Connection error.
+[2026-08-19 16:08:29,148][root][INFO] - Attempt 23 failed with error: Connection error.
+[2026-08-19 16:09:31,252][openai._base_client][INFO] - Retrying request to /chat/completions in 0.375122 seconds
+[2026-08-19 16:09:31,252][openai._base_client][INFO] - Retrying request to /chat/completions in 0.476988 seconds
+[2026-08-19 16:09:31,252][openai._base_client][INFO] - Retrying request to /chat/completions in 0.434842 seconds
+[2026-08-19 16:09:31,252][openai._base_client][INFO] - Retrying request to /chat/completions in 0.469125 seconds
+[2026-08-19 16:09:31,253][openai._base_client][INFO] - Retrying request to /chat/completions in 0.453331 seconds
+[2026-08-19 16:09:31,253][openai._base_client][INFO] - Retrying request to /chat/completions in 0.490869 seconds
+[2026-08-19 16:09:31,267][openai._base_client][INFO] - Retrying request to /chat/completions in 0.387982 seconds
+[2026-08-19 16:09:31,267][openai._base_client][INFO] - Retrying request to /chat/completions in 0.478127 seconds
+[2026-08-19 16:09:31,282][openai._base_client][INFO] - Retrying request to /chat/completions in 0.487084 seconds
+[2026-08-19 16:09:31,282][openai._base_client][INFO] - Retrying request to /chat/completions in 0.478752 seconds
+[2026-08-19 16:09:33,658][openai._base_client][INFO] - Retrying request to /chat/completions in 0.943853 seconds
+[2026-08-19 16:09:33,705][openai._base_client][INFO] - Retrying request to /chat/completions in 0.905752 seconds
+[2026-08-19 16:09:33,721][openai._base_client][INFO] - Retrying request to /chat/completions in 0.884129 seconds
+[2026-08-19 16:09:33,752][openai._base_client][INFO] - Retrying request to /chat/completions in 0.785261 seconds
+[2026-08-19 16:09:33,767][openai._base_client][INFO] - Retrying request to /chat/completions in 0.955923 seconds
+[2026-08-19 16:09:33,767][openai._base_client][INFO] - Retrying request to /chat/completions in 0.908052 seconds
+[2026-08-19 16:09:33,783][openai._base_client][INFO] - Retrying request to /chat/completions in 0.906871 seconds
+[2026-08-19 16:09:33,799][openai._base_client][INFO] - Retrying request to /chat/completions in 0.783433 seconds
+[2026-08-19 16:09:33,800][openai._base_client][INFO] - Retrying request to /chat/completions in 0.864064 seconds
+[2026-08-19 16:09:33,816][openai._base_client][INFO] - Retrying request to /chat/completions in 0.936864 seconds
+[2026-08-19 16:09:36,565][root][INFO] - Attempt 24 failed with error: Connection error.
+[2026-08-19 16:09:36,612][root][INFO] - Attempt 24 failed with error: Connection error.
+[2026-08-19 16:09:36,643][root][INFO] - Attempt 24 failed with error: Connection error.
+[2026-08-19 16:09:36,643][root][INFO] - Attempt 24 failed with error: Connection error.
+[2026-08-19 16:09:36,644][root][INFO] - Attempt 24 failed with error: Connection error.
+[2026-08-19 16:09:36,704][root][INFO] - Attempt 24 failed with error: Connection error.
+[2026-08-19 16:09:36,720][root][INFO] - Attempt 24 failed with error: Connection error.
+[2026-08-19 16:09:36,736][root][INFO] - Attempt 24 failed with error: Connection error.
+[2026-08-19 16:09:36,768][root][INFO] - Attempt 24 failed with error: Connection error.
+[2026-08-19 16:09:36,798][root][INFO] - Attempt 24 failed with error: Connection error.
+[2026-08-19 16:10:08,071][root][INFO] - Experiment protocol=single training_scenarios=['SL'] test_scenarios=['SL', 'ML', 'LL']
+[2026-08-19 16:10:09,183][root][INFO] - Problem: cews_task_constructive
+[2026-08-19 16:10:09,183][root][INFO] - Problem description: Dynamic deadline-aware cloud-edge workflow scheduling. Workflows are represented as DAGs. At each decision point, the heuristic ranks all currently ready tasks. After one task is selected, a deterministic resource-selection policy assigns it to a feasible cloud or edge VM. The objective is to minimize risk-adjusted fuzzy total energy subject to hard workflow deadline constraints.
+
+[2026-08-19 16:10:09,183][root][INFO] - Function name: get_task_priority
+[2026-08-19 16:10:09,187][root][INFO] - Train mode: Evaluating seed function...
+[2026-08-19 16:10:09,189][root][INFO] - Seed function code: 
+import numpy as np
+
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """为当前 ready tasks 生成优先级分数；分数越小越先调度。
+
+    这是 SeEvo 的可执行种子，而不是最终固定策略。后续个体可以改变特征组合，
+    但必须继续满足相同的输入/输出、安全性和数值稳定性契约。
+    fuzzy 模式下 min_incremental_energy 已是风险调整模糊边际能耗，slack 已由
+    eta 风险完成时刻构造；DDL 仍是硬约束，不能与模糊总能耗加权求和。
+    """
+    # 防止归一化分母在所有元素均为 0 时变成 0。
+    eps = 1e-8
+
+    # 使用 np.asarray 做非原地类型转换。这里不修改调用方提供的输入数组。
+    # 八个数组的第 i 项必须始终描述同一个 ready task。
+    min_exec_time = np.asarray(min_exec_time, dtype=float)
+    min_comm_time = np.asarray(min_comm_time, dtype=float)
+    min_incremental_energy = np.asarray(
+        min_incremental_energy, dtype=float
+    )
+    slack = np.asarray(slack, dtype=float)
+    upward_rank = np.asarray(upward_rank, dtype=float)
+    remaining_work = np.asarray(remaining_work, dtype=float)
+    ready_wait_time = np.asarray(ready_wait_time, dtype=float)
+    uncertainty = np.asarray(uncertainty, dtype=float)
+
+    def normalize(x):
+        """按平均绝对值缩放，使秒、风险调整焦耳和无量纲特征具有可比数量级。"""
+        return x / (np.mean(np.abs(x)) + eps)
+
+    # 只截取负 slack 的绝对风险：slack>=0 时风险为 0，slack<0 时风险为 -slack。
+    deadline_risk = np.maximum(-slack, 0.0)
+
+
+    # slack 越小，urgency 越接近 1；slack 充足时 urgency 自动下降。
+    slack_scale = np.mean(np.abs(slack)) + eps
+
+    urgency = 1.0 / (
+        1.0
+        + np.maximum(slack, 0.0) / slack_scale
+    )
+
+    # 只对紧迫的高不确定任务给予提前量，
+    # 避免高不确定但 slack 充足的任务无条件抢占资源。
+    uncertainty_priority = (
+        normalize(uncertainty) * urgency
+    )
+
+    # 约定分数越小越优先：正系数会增大分数，负系数让高风险/关键/久候任务靠前。
+    # deadline_risk 使用绝对值较大的负权重，保证负 slack 任务获得紧急优先级，
+    # 这服务于 DDL 可行性约束，而不是把延期加入能耗目标。
+    score = (
+        0.25 * normalize(min_exec_time)
+        + 0.15 * normalize(min_comm_time)
+        + 0.25 * normalize(min_incremental_energy)
+        - 2.00 * normalize(deadline_risk)
+        + 0.10 * normalize(remaining_work)
+        - 0.10 * uncertainty_priority
+        - 0.15 * normalize(upward_rank)
+        - 0.05 * normalize(ready_wait_time)
+    )
+
+    # 最后一层数值保险；用有限大数替代意外出现的 NaN/无穷。
+    return np.nan_to_num(
+        score,
+        nan=1e12,
+        posinf=1e12,
+        neginf=-1e12
+    )
+[2026-08-19 16:10:09,193][root][INFO] - Iteration 0: Running Code 0
+[2026-08-19 16:10:09,567][root][INFO] - Iteration 0: Code Run 0 successful!
+[2026-08-19 16:11:59,496][root][INFO] - Iteration 0, response_id 0: Objective value: 377831.9036765513
+[2026-08-19 16:11:59,496][root][INFO] - Iteration 0: Improvement = 0.0000
+[2026-08-19 16:11:59,496][root][INFO] - Iteration 0: New Elitist: 377831.9036765513
+[2026-08-19 16:11:59,496][root][INFO] - Iteration 0 finished...
+[2026-08-19 16:11:59,496][root][INFO] - Best obj: 377831.9036765513, Constraint key: (0.0, 0.0, 0.0, 37783190.0, 9814.396361719722, 0, 0, 305, 377831.9036765513), Best Code Path: E:\读博生活\0.科研\1.论文\3. 第三个任务\2. 论文实验材料\sec_job\out\main_single\SL\generated\candidate_iter0_ind0.py
+[2026-08-19 16:11:59,496][root][INFO] - Function Evals: 0
+[2026-08-19 16:11:59,497][root][INFO] - Initial Population Prompt: 
+System Prompt: 
+You are an expert in optimization heuristics and algorithm design.
+
+Your task is to design effective heuristic functions for solving optimization problems.
+
+IMPORTANT REQUIREMENTS:
+1. Output ONLY Python code - no explanations, no comments outside the code
+2. Always enclose your code in a Python code block: ```python ... ```
+3. Ensure the code is syntactically correct and runnable
+4. Follow the exact function signature provided
+5. Use meaningful variable names and include inline comments for clarity
+
+User Prompt: 
+Write a get_task_priority function for Dynamic deadline-aware cloud-edge workflow scheduling. Workflows are represented as DAGs. At each decision point, the heuristic ranks all currently ready tasks. After one task is selected, a deterministic resource-selection policy assigns it to a feasible cloud or edge VM. The objective is to minimize risk-adjusted fuzzy total energy subject to hard workflow deadline constraints.
+
+Design a deterministic NumPy function that assigns one priority score to each
+currently ready workflow task.
+
+请设计一个确定性的 NumPy 函数，为当前每个就绪工作流任务计算一个优先级分数。
+该函数是“任务排序器”，不是资源分配器；环境只会选择分数最小的任务。
+
+Interface contract:
+
+接口契约（以下要求必须同时满足）：
+
+1. The function only ranks ready tasks. It must not select a Host or VM.
+2. Every input is a one-dimensional NumPy array of length N, where N is the
+   number of currently ready tasks. Equal indices always describe the same task.
+3. Return a one-dimensional finite numeric array with shape (N,).
+4. A smaller score means higher scheduling priority.
+5. Do not perform file operations, network access, subprocess creation, or
+   modification of global state.
+6. Do not use unbounded or infinite loops.
+7. Protect divisions and all other operations against zero, NaN, and infinity.
+8. NumPy and ordinary Python standard operations may be used.
+9. The environment enforces resource and precedence feasibility. The function
+   must not create, remove, or mutate tasks.
+10. Do not modify any input array in place.
+11. A single ready task must still produce an array with shape (1,).
+12. The returned values must be deterministic for identical inputs.
+
+中文说明：
+
+1. 函数只对 ready tasks 排序，绝不能选择 Host 或 VM。
+2. 所有输入都是长度为 N 的一维 NumPy 数组，数组同一下标描述同一任务。
+3. 返回值必须是形状严格等于 (N,) 的有限数值数组，不能返回标量或二维列向量。
+4. 分数越小表示越优先；环境使用 np.argmin 选择任务。
+5. 禁止文件、网络、子进程操作，也禁止修改全局状态。
+6. 禁止无界循环或任何可能无限执行的逻辑。
+7. 除法及其他数值运算必须防止除零、NaN 和正负无穷。
+8. 可使用 NumPy 和普通 Python 标准运算。
+9. 前驱约束和 VM 可行性由环境负责，函数不得创建、删除或修改任务。
+10. 禁止原地修改任一输入数组；如需转换类型，应创建新的数组视图或副本。
+11. N=1 时也必须返回形状为 (1,) 的数组。
+12. 相同输入必须产生相同输出，不能依赖随机数、时间或隐藏状态。
+
+Inputs:
+
+输入含义与单位：
+
+- `min_exec_time`: minimum estimated execution time over feasible VMs, seconds.
+- `min_comm_time`: minimum estimated task-data communication time over feasible
+  VMs, seconds.
+- `min_incremental_energy`: minimum risk-adjusted fuzzy marginal energy score
+  over feasible VMs, computed as fuzzy mean plus uncertainty weight times fuzzy
+  standard deviation; its scale remains joules.
+- `slack`: task sub-deadline (or workflow deadline) minus its earliest predicted
+  risk completion time. In fuzzy mode the risk time uses eta=0.95 by default.
+  Negative values indicate lateness risk.
+- `upward_rank`: HEFT upward rank / remaining critical-path importance.
+- `remaining_work`: estimated computation work from this task through all of its
+  descendants.
+- `ready_wait_time`: elapsed time since the task entered the ready set, seconds.
+- `uncertainty`: execution/bandwidth uncertainty risk aggregated consistently
+  over feasible VMs.
+
+逐项中文解释：
+
+- `min_exec_time`：该任务在所有可行 VM 上的最小预计纯计算时间，单位秒；
+  不包含排队与通信。
+- `min_comm_time`：该任务在所有可行 VM 上的最小预计输入/输出通信时间，单位秒。
+- `min_incremental_energy`：该任务加入某个可行 VM 后，三场景边际 Host 能耗
+  ``mean + uncertainty_weight * std`` 在所有可行 VM 中的最小值；量纲仍可解释为
+  风险调整后的焦耳，不是整个 episode 的累计能耗。
+- `slack`：任务子截止期（缺失时为工作流截止期）减去当前最早风险完成时刻。
+  fuzzy 模式默认使用 eta=0.95 的上侧概率测度；单位秒，负值表示延期风险。
+- `upward_rank`：HEFT upward rank，反映从当前节点到出口节点的关键路径重要性。
+- `remaining_work`：当前任务及其全部后继任务的去重计算工作量，单位 MI。
+- `ready_wait_time`：从任务首次进入 ready 集到当前仿真时刻的等待时间，单位秒。
+- `uncertainty`：可行 VM 上模糊计算与通信总时长标准差的统一聚合风险量。
+
+The function must contain only the task-priority rule. VM feasibility, VM
+selection, assignment, and event advancement are handled by the evaluator.
+
+Parameterized structure contract for offline co-evolution:
+- The LLM designs feature selection, normalization, interactions, nonlinear or
+  piecewise forms, and bounded conditional gates.
+- Put one literal `PARAMETER_SCHEMA` mapping in the same Python code block. It
+  must contain `schema_version` and a `parameters` list. Every parameter item
+  must define `name`, `initial_value`, `lower_bound`, `upper_bound`, and
+  `semantic_description`; optional `parameter_type` is `float` and optional
+  `transform` is `identity`, `log`, or `logit`.
+- Reference every continuous parameter only as `PARAMS["declared_name"]` inside
+  `get_task_priority_v2`. Do not define PARAMS and do not hide tunable numeric
+  constants. Structural constants are limited to -2, -1, 0, 1, and 2.
+- Keep 5-12 parameters, at most 6 conditional branches, bounded AST depth, and
+  at most 8 feature interaction terms. Loops, recursion, external I/O, random
+  state, and Host/VM selection are forbidden.
+- CMA-ES optimizes only the declared continuous parameters offline. The final
+  admitted rule has those values frozen into an ordinary deterministic
+  `get_task_priority_v2` with the unchanged eight-array signature.
+
+函数体只能包含任务优先级计算。VM 可行性检查、确定性 VM 选择、任务分配和
+离散事件推进均由评价器及环境处理。不要在规则内部猜测或构造 VM 编号。
+优化问题采用“DDL 硬约束下最小化风险调整模糊总能耗”。最终能耗目标为三个
+固定影子场景总能耗构造出的 ``mean(fuzzy energy) + uncertainty_weight *
+std(fuzzy energy)``。DDL 延期和违反率始终是独立约束，绝不能与能耗加权求和。
+规则应优先帮助调度满足模糊截止期约束；在可行个体之间降低模糊能耗目标。
+
+
+For a parameterized problem, output the literal PARAMETER_SCHEMA assignment and
+the function together in one Python code block. Design the discrete rule
+structure; expose all tunable continuous values through declared PARAMS entries.
+Before answering, verify that every PARAMS reference is declared exactly once,
+every declared parameter is used, and get_task_priority_v2 contains no numeric
+literals other than -2, -1, 0, 1, and 2. Use np.finfo for immutable machine
+precision safeguards instead of a literal epsilon.
+
+## Reference Implementation (Baseline)
+
+```python
+import numpy as np
+
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 0.001,
+            "lower_bound": 0.000001,
+            "upper_bound": 0.1,
+            "semantic_description": "Positive numerical scale guard used by normalization.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "slack_weight",
+            "initial_value": 3.0,
+            "lower_bound": 0.1,
+            "upper_bound": 8.0,
+            "semantic_description": "Priority strength assigned to deadline slack.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_weight",
+            "initial_value": 1.0,
+            "lower_bound": 0.01,
+            "upper_bound": 4.0,
+            "semantic_description": "Secondary weight for risk-adjusted marginal fuzzy energy.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "duration_weight",
+            "initial_value": 0.5,
+            "lower_bound": 0.0,
+            "upper_bound": 3.0,
+            "semantic_description": "Weight for normalized execution and communication duration.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "rank_weight",
+            "initial_value": 0.8,
+            "lower_bound": 0.0,
+            "upper_bound": 4.0,
+            "semantic_description": "Priority strength assigned to HEFT upward rank.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "work_weight",
+            "initial_value": 0.3,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Priority strength assigned to remaining workflow work.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "wait_weight",
+            "initial_value": 0.2,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Anti-starvation priority strength for ready waiting time.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "uncertainty_weight",
+            "initial_value": 0.4,
+            "lower_bound": 0.0,
+            "upper_bound": 3.0,
+            "semantic_description": "Strength of the uncertainty and deadline-pressure interaction.",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Parameterized structural example; smaller scores have higher priority."""
+    epsilon = PARAMS["epsilon"]
+
+    def normalize(values):
+        values = np.asarray(values, dtype=float)
+        return values / (np.mean(np.abs(values)) + epsilon)
+
+    duration = normalize(min_exec_time + min_comm_time)
+    slack_pressure = normalize(slack)
+    uncertainty_gate = normalize(uncertainty) * np.maximum(-slack_pressure, 0)
+    score = (
+        PARAMS["slack_weight"] * slack_pressure
+        + PARAMS["energy_weight"] * normalize(min_incremental_energy)
+        + PARAMS["duration_weight"] * duration
+        - PARAMS["rank_weight"] * normalize(upward_rank)
+        - PARAMS["work_weight"] * normalize(remaining_work)
+        - PARAMS["wait_weight"] * normalize(ready_wait_time)
+        - PARAMS["uncertainty_weight"] * uncertainty_gate
+    )
+    return np.nan_to_num(score)
+```
+
+
+---
+
+For a parameterized problem, treat the reference above as a contract-compliant
+structural example. Its parameter values are examples only: CMA-ES, not the
+LLM, chooses continuous values. Do not add undeclared PARAMS names or hidden
+numeric literals. Legacy non-parameterized problems keep their original rules.
+
+**Your Task:**
+Create a novel `get_task_priority_v2` function that improves upon the reference implementation.
+
+**Guidelines:**
+1. Use the reference implementation as a starting point for understanding the structure
+2. Be creative - explore significantly different approaches
+3. Consider combining multiple strategies or introducing new heuristic components
+4. Aim for diversity - avoid simply tweaking coefficients
+
+**Requirements:**
+- Output ONLY Python code in a code block: ```python ... ```
+- Follow the same function signature format as the reference
+- Ensure code is syntactically correct and executable
+- Include brief inline comments explaining your approach
+
+**Generate your creative design below:**
+
+- Give stronger priority to tasks with small or negative deadline slack; negative
+  slack should receive a substantial risk penalty.
+- Use HEFT upward rank to identify tasks on important remaining DAG paths.
+- Consider computation time, communication time, and incremental energy together.
+- Include ready-set waiting time so that long-waiting tasks do not starve.
+- Under uncertain processing capacity and bandwidth, use the provided
+  risk-adjusted fuzzy marginal-energy, slack, and duration-uncertainty signals.
+- Do not directly add seconds, joules, and dimensionless features. Normalize or
+  otherwise make their scales comparable first.
+- Do not unconditionally favor only short tasks or only critical tasks.
+- Avoid unstable exponentials, logarithms near invalid domains, and overly
+  complicated trigonometric combinations.
+
+中文调度知识：
+
+- 优化目标是满足全部工作流 DDL 约束后的总能耗最小化。延期量和违反率用于
+  判断可行性及引导不可行个体改进，不与焦耳能耗组成加权目标。
+
+- 当前总能耗由 optimistic/modal/pessimistic 三个固定影子场景的 SPECpower
+  积分构成三角模糊数，评价目标是其均值加不确定性权重乘标准差。该风险调整仍
+  属于总能耗目标，不是货币执行成本，也不能再叠加 lateness/violation 惩罚。
+
+- slack 越小，任务越接近子截止期；fuzzy 模式下它使用默认 eta=0.95 的风险
+  完成时刻。slack 为负表示即使采用当前最有利的可行 VM 风险估计也存在延期
+  风险，因此通常应给予更高优先级。
+- upward rank 反映从当前任务到出口的关键路径长度，可用于识别阻塞大量后继
+  任务的关键节点，但不应无条件压倒能耗和截止期因素。
+- min_incremental_energy 已是风险调整后的模糊边际能耗。执行时间、通信时间、
+  风险调整能耗的物理量纲不同，组合前必须做稳健归一化，
+  不能直接把秒、焦耳和无量纲风险相加。
+- ready_wait_time 可作为抗饥饿项：等待越久，适度提高优先级，避免短任务或
+  关键任务长期占据调度机会。
+- uncertainty 来自模糊处理能力与带宽导致的时长离散程度。高风险任务可获得
+  适度提前量，但风险项不应造成数值爆炸，也不应无条件压倒能耗和 slack。
+- 对负 slack 使用较强惩罚时，要牢记最终选择的是最小分数；可把风险作为负向
+  优先项，或用其他与符号约定一致的稳定表达式。
+- 避免只偏向最短任务或只偏向关键路径任务，否则可能造成能耗恶化或任务饥饿。
+- 优先使用均值绝对值、范围、标准差等带 epsilon 的稳定缩放，谨慎使用指数、
+  对数和复杂三角函数，避免溢出、非法定义域和极端敏感性。
+
+Structure-parameter feedback rules:
+- CMA-ES values are evidence about a fixed structure, not the final structural
+  design. The next LLM step should normally change a feature, interaction,
+  normalization, gate, or linear/nonlinear/piecewise form, then re-optimize.
+- Boundary contact may indicate an inadequate bound or functional form. Low
+  variance and weak perturbation effects may indicate redundancy or a feature
+  that should be conditionally enabled. Fragile DDL feasibility calls for a
+  smoother bounded gate or simpler normalization.
+- Parameter correlation is not causation. Use it only as a structural hint,
+  and make strong changes only when evidence persists across generations,
+  seeds, or scenarios. Never add complexity merely to fit one diagnostic.
+- DDL violations, tardiness, fuzzy energy, robustness, and complexity remain
+  lexicographic criteria; they must never be collapsed into a weighted sum.
+Counterfactual mechanism feedback rules:
+- Parameter diagnostics expose limitations of a fixed parameter space;
+  counterfactual diagnostics explain which concrete ready-task choice failed
+  under the same state and deterministic VM model. Use both kinds of evidence.
+- A local one-step comparison is mechanism evidence, not a strict causal proof.
+  Strong structural changes require repetition across decisions, seeds, or
+  scenarios; preserve reported counts and conflicts.
+- Convert repeated evidence only into feature, interaction, normalization,
+  conditional gate, nonlinear/piecewise, or smooth-risk changes. Do not hand
+  tune final continuous weights; every new structure must return to CMA-ES and
+  full feasibility-first evaluation.
+- Do not add complexity for an isolated case. DDL evidence has priority,
+  uncertainty modifies DDL risk, and energy is considered only when DDL risk
+  is comparable.
+
+[2026-08-19 16:11:59,974][openai._base_client][INFO] - Retrying request to /chat/completions in 0.413238 seconds
+[2026-08-19 16:11:59,975][openai._base_client][INFO] - Retrying request to /chat/completions in 0.375029 seconds
+[2026-08-19 16:11:59,976][openai._base_client][INFO] - Retrying request to /chat/completions in 0.405996 seconds
+[2026-08-19 16:11:59,979][openai._base_client][INFO] - Retrying request to /chat/completions in 0.420785 seconds
+[2026-08-19 16:11:59,981][openai._base_client][INFO] - Retrying request to /chat/completions in 0.471086 seconds
+[2026-08-19 16:11:59,981][openai._base_client][INFO] - Retrying request to /chat/completions in 0.408420 seconds
+[2026-08-19 16:11:59,983][openai._base_client][INFO] - Retrying request to /chat/completions in 0.448593 seconds
+[2026-08-19 16:11:59,987][openai._base_client][INFO] - Retrying request to /chat/completions in 0.439792 seconds
+[2026-08-19 16:11:59,988][openai._base_client][INFO] - Retrying request to /chat/completions in 0.494930 seconds
+[2026-08-19 16:11:59,989][openai._base_client][INFO] - Retrying request to /chat/completions in 0.495968 seconds
+[2026-08-19 16:12:00,422][openai._base_client][INFO] - Retrying request to /chat/completions in 0.966894 seconds
+[2026-08-19 16:12:00,453][openai._base_client][INFO] - Retrying request to /chat/completions in 0.777612 seconds
+[2026-08-19 16:12:00,454][openai._base_client][INFO] - Retrying request to /chat/completions in 0.966109 seconds
+[2026-08-19 16:12:00,461][openai._base_client][INFO] - Retrying request to /chat/completions in 0.904259 seconds
+[2026-08-19 16:12:00,479][openai._base_client][INFO] - Retrying request to /chat/completions in 0.780616 seconds
+[2026-08-19 16:12:00,492][openai._base_client][INFO] - Retrying request to /chat/completions in 0.882046 seconds
+[2026-08-19 16:12:00,497][openai._base_client][INFO] - Retrying request to /chat/completions in 0.822733 seconds
+[2026-08-19 16:12:00,530][openai._base_client][INFO] - Retrying request to /chat/completions in 0.954206 seconds
+[2026-08-19 16:12:00,556][openai._base_client][INFO] - Retrying request to /chat/completions in 0.966845 seconds
+[2026-08-19 16:12:00,557][openai._base_client][INFO] - Retrying request to /chat/completions in 0.941561 seconds
+[2026-08-19 16:12:01,301][root][INFO] - Attempt 1 failed with error: Connection error.
+[2026-08-19 16:12:01,340][root][INFO] - Attempt 1 failed with error: Connection error.
+[2026-08-19 16:12:01,385][root][INFO] - Attempt 1 failed with error: Connection error.
+[2026-08-19 16:12:01,427][root][INFO] - Attempt 1 failed with error: Connection error.
+[2026-08-19 16:12:01,438][root][INFO] - Attempt 1 failed with error: Connection error.
+[2026-08-19 16:12:01,492][root][INFO] - Attempt 1 failed with error: Connection error.
+[2026-08-19 16:12:01,514][root][INFO] - Attempt 1 failed with error: Connection error.
+[2026-08-19 16:12:01,548][root][INFO] - Attempt 1 failed with error: Connection error.
+[2026-08-19 16:12:01,566][root][INFO] - Attempt 1 failed with error: Connection error.
+[2026-08-19 16:12:01,586][root][INFO] - Attempt 1 failed with error: Connection error.
+[2026-08-19 16:12:02,370][openai._base_client][INFO] - Retrying request to /chat/completions in 0.399419 seconds
+[2026-08-19 16:12:02,416][openai._base_client][INFO] - Retrying request to /chat/completions in 0.429493 seconds
+[2026-08-19 16:12:02,461][openai._base_client][INFO] - Retrying request to /chat/completions in 0.449800 seconds
+[2026-08-19 16:12:02,495][openai._base_client][INFO] - Retrying request to /chat/completions in 0.419006 seconds
+[2026-08-19 16:12:02,511][openai._base_client][INFO] - Retrying request to /chat/completions in 0.468997 seconds
+[2026-08-19 16:12:02,551][openai._base_client][INFO] - Retrying request to /chat/completions in 0.458849 seconds
+[2026-08-19 16:12:02,575][openai._base_client][INFO] - Retrying request to /chat/completions in 0.473149 seconds
+[2026-08-19 16:12:02,612][openai._base_client][INFO] - Retrying request to /chat/completions in 0.482354 seconds
+[2026-08-19 16:12:02,636][openai._base_client][INFO] - Retrying request to /chat/completions in 0.445474 seconds
+[2026-08-19 16:12:02,653][openai._base_client][INFO] - Retrying request to /chat/completions in 0.424056 seconds
+[2026-08-19 16:12:02,838][openai._base_client][INFO] - Retrying request to /chat/completions in 0.793600 seconds
+[2026-08-19 16:12:02,924][openai._base_client][INFO] - Retrying request to /chat/completions in 0.983991 seconds
+[2026-08-19 16:12:02,977][openai._base_client][INFO] - Retrying request to /chat/completions in 0.819126 seconds
+[2026-08-19 16:12:02,989][openai._base_client][INFO] - Retrying request to /chat/completions in 0.980412 seconds
+[2026-08-19 16:12:03,046][openai._base_client][INFO] - Retrying request to /chat/completions in 0.913997 seconds
+[2026-08-19 16:12:03,076][openai._base_client][INFO] - Retrying request to /chat/completions in 0.957722 seconds
+[2026-08-19 16:12:03,118][openai._base_client][INFO] - Retrying request to /chat/completions in 0.920731 seconds
+[2026-08-19 16:12:03,142][openai._base_client][INFO] - Retrying request to /chat/completions in 0.886502 seconds
+[2026-08-19 16:12:03,146][openai._base_client][INFO] - Retrying request to /chat/completions in 0.981824 seconds
+[2026-08-19 16:12:03,158][openai._base_client][INFO] - Retrying request to /chat/completions in 0.916509 seconds

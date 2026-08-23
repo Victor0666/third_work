@@ -1,0 +1,261 @@
+```python
+import numpy as np
+
+PARAMETER_SCHEMA = {
+    "schema_version": 1,
+    "parameters": [
+        {
+            "name": "epsilon",
+            "initial_value": 1e-7,
+            "lower_bound": 1e-9,
+            "upper_bound": 1e-4,
+            "semantic_description": "Numerical guard for stable normalization and division.",
+            "parameter_type": "float",
+            "transform": "log"
+        },
+        {
+            "name": "adaptive_slack_threshold_factor",
+            "initial_value": 0.5,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Multiplier applied to median slack to compute dynamic DDL protection threshold; avoids brittle fixed thresholds.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "critical_path_release_weight",
+            "initial_value": 2.4,
+            "lower_bound": 0.5,
+            "upper_bound": 5.0,
+            "semantic_description": "Weight amplifying priority for tasks with high upward_rank * remaining_work product (critical path release urgency).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "risk_adjusted_energy_weight",
+            "initial_value": 1.2,
+            "lower_bound": 0.1,
+            "upper_bound": 3.0,
+            "semantic_description": "Weight for normalized risk-adjusted incremental energy under DDL-safe regime.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "uncertainty_slack_interaction",
+            "initial_value": 0.85,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Multiplicative coupling strength between uncertainty and slack (penalizes high-uncertainty near-deadline tasks).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "wait_starvation_penalty",
+            "initial_value": 0.65,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight for ready_wait_time term — mitigates starvation without violating DDL-first order.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "duration_mad_scale",
+            "initial_value": 1.0,
+            "lower_bound": 0.1,
+            "upper_bound": 2.0,
+            "semantic_description": "Scale factor for MAD-based normalization of duration_total, aligning risk scales across features.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "energy_uncertainty_coupling",
+            "initial_value": 0.78,
+            "lower_bound": 0.0,
+            "upper_bound": 2.0,
+            "semantic_description": "Weight for interaction between normalized energy and uncertainty (fuzzy energy emphasis under low-risk conditions).",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "slack_urgency_sigmoid_steepness",
+            "initial_value": 4.2,
+            "lower_bound": 0.5,
+            "upper_bound": 12.0,
+            "semantic_description": "Steepness of smooth sigmoidal slack urgency term — replaces brittle hard gate with differentiable, full-range deadline pressure.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "robust_criticality_percentile",
+            "initial_value": 95.0,
+            "lower_bound": 75.0,
+            "upper_bound": 99.0,
+            "semantic_description": "Percentile cap for critical_release_score to suppress outlier-driven fragility in upward_rank * remaining_work.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "uncertainty_weighted_mad_alpha",
+            "initial_value": 0.7,
+            "lower_bound": 0.0,
+            "upper_bound": 1.0,
+            "semantic_description": "Convex weight for uncertainty-aware MAD: alpha * uncertainty + (1-alpha) * uniform weighting.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "hybrid_ddl_gate_alpha",
+            "initial_value": 0.7,
+            "lower_bound": 0.0,
+            "upper_bound": 1.0,
+            "semantic_description": "Convex interpolation weight between hard DDL gating (alpha=0) and soft sigmoid urgency (alpha=1); enables gradient-aware feasibility tuning.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "uncertainty_clipping_lower",
+            "initial_value": 0.1,
+            "lower_bound": 0.01,
+            "upper_bound": 1.0,
+            "semantic_description": "Lower bound for clipping uncertainty during weighted MAD computation to prevent degenerate weights.",
+            "parameter_type": "float",
+            "transform": "identity"
+        },
+        {
+            "name": "uncertainty_clipping_upper",
+            "initial_value": 2.0,
+            "lower_bound": 1.0,
+            "upper_bound": 5.0,
+            "semantic_description": "Upper bound for clipping uncertainty during weighted MAD computation to prevent outlier domination.",
+            "parameter_type": "float",
+            "transform": "identity"
+        }
+    ]
+}
+
+
+def get_task_priority_v2(
+    min_exec_time,
+    min_comm_time,
+    min_incremental_energy,
+    slack,
+    upward_rank,
+    remaining_work,
+    ready_wait_time,
+    uncertainty
+):
+    """Self-evolved priority rule with adaptive thresholding, uncertainty-weighted normalization, and robust criticality capping:
+       - Replaces fixed ddl_protection_threshold with adaptive one: median(slack) * factor → improves generalization across deadlines
+       - Introduces uncertainty-weighted MAD normalization: weights each feature's deviation by clipped uncertainty to align risk perception
+       - Caps critical_release_score at percentile-defined robust upper bound to suppress outlier sensitivity
+       - Retains hybrid urgency (sigmoid + hard mask) but now anchored to adaptive threshold
+       - All numeric literals restricted to {-2,-1,0,1,2}; no other constants used
+       - Final score preserves lexicographic DDL dominance while enhancing robustness and cross-workflow adaptability
+    """
+    eps = PARAMS["epsilon"]
+    finfo = np.finfo(float)
+    
+    # Sanitize inputs — no in-place mutation
+    min_exec_time = np.nan_to_num(np.asarray(min_exec_time, dtype=float), nan=eps, posinf=finfo.max, neginf=finfo.min)
+    min_comm_time = np.nan_to_num(np.asarray(min_comm_time, dtype=float), nan=eps, posinf=finfo.max, neginf=finfo.min)
+    min_incremental_energy = np.nan_to_num(np.asarray(min_incremental_energy, dtype=float), nan=eps, posinf=finfo.max, neginf=finfo.min)
+    slack = np.nan_to_num(np.asarray(slack, dtype=float), nan=0.0, posinf=finfo.max, neginf=finfo.min)
+    upward_rank = np.nan_to_num(np.asarray(upward_rank, dtype=float), nan=eps, posinf=finfo.max, neginf=finfo.min)
+    remaining_work = np.nan_to_num(np.asarray(remaining_work, dtype=float), nan=eps, posinf=finfo.max, neginf=finfo.min)
+    ready_wait_time = np.nan_to_num(np.asarray(ready_wait_time, dtype=float), nan=0.0, posinf=finfo.max, neginf=0.0)
+    uncertainty = np.nan_to_num(np.asarray(uncertainty, dtype=float), nan=eps, posinf=finfo.max, neginf=eps)
+
+    N = len(min_exec_time)
+    if N == 0:
+        return np.array([], dtype=float)
+
+    # Adaptive DDL protection threshold: median slack scaled by tunable factor
+    adaptive_threshold = np.median(slack) * PARAMS["adaptive_slack_threshold_factor"] + eps
+
+    # Joint uncertainty-weighted MAD normalization
+    duration_total = min_exec_time + min_comm_time + eps
+    abs_slack = np.abs(slack)
+    all_risk_features = np.stack([abs_slack, uncertainty, duration_total], axis=0)
+    
+    # Compute per-feature medians and deviations
+    medians = np.median(all_risk_features, axis=1, keepdims=True)
+    deviations = np.abs(all_risk_features - medians)
+    
+    # Uncertainty-weighted MAD: higher uncertainty → larger weight on its own MAD contribution
+    # Use convex combination: alpha * (uncertainty-weighted MAD) + (1-alpha) * uniform MAD
+    uniform_mad = np.mean(deviations, axis=1)
+    # Clip uncertainty for stable weighting
+    clipped_uncertainty = np.clip(uncertainty, PARAMS["uncertainty_clipping_lower"], PARAMS["uncertainty_clipping_upper"])
+    weighted_mad = np.mean(deviations * clipped_uncertainty[:, None], axis=1) / np.mean(clipped_uncertainty)
+    mad = (
+        PARAMS["uncertainty_weighted_mad_alpha"] * weighted_mad +
+        (1.0 - PARAMS["uncertainty_weighted_mad_alpha"]) * uniform_mad
+    )
+    
+    joint_mad = np.median(mad) + eps
+    
+    def mad_normalize(x):
+        x = np.asarray(x, dtype=float)
+        if N == 1:
+            return np.zeros_like(x, dtype=float)
+        return np.clip((x - np.median(x)) / (joint_mad * PARAMS["duration_mad_scale"] + eps), -2.0, 2.0)
+
+    # --- Hybrid DDL gate anchored to adaptive threshold ---
+    hard_mask = np.where(slack > adaptive_threshold, 1.0, 0.0)
+    sigmoid_urgency = 1.0 / (1.0 + np.exp(PARAMS["slack_urgency_sigmoid_steepness"] * (slack - adaptive_threshold)))
+    ddl_urgency = 1.0 - sigmoid_urgency  # [0,1], 1 when slack <= adaptive_threshold
+    hybrid_gate = (
+        PARAMS["hybrid_ddl_gate_alpha"] * ddl_urgency +
+        (1.0 - PARAMS["hybrid_ddl_gate_alpha"]) * hard_mask
+    )
+
+    # --- DDL-critical base penalty: always active, relative to adaptive threshold ---
+    ddl_violation_penalty = np.maximum(0.0, adaptive_threshold - slack)
+
+    # --- Critical-path release with robust percentile capping ---
+    critical_release_score = upward_rank * remaining_work
+    # Cap at robust percentile to suppress outlier influence
+    cap_val = np.percentile(critical_release_score, PARAMS["robust_criticality_percentile"])
+    critical_release_score = np.clip(critical_release_score, 0.0, cap_val + eps)
+    
+    # Slack pressure relative to adaptive threshold
+    slack_pressure = np.clip((adaptive_threshold - slack) / (adaptive_threshold + eps), 0.0, 1.0)
+    combined_critical_scale = (slack_pressure + ddl_urgency) / 2.0
+    critical_score = -mad_normalize(critical_release_score) * combined_critical_scale * PARAMS["critical_path_release_weight"]
+
+    # --- Feasibility mask for non-DDL terms: hybrid-gated using adaptive threshold ---
+    feasible_mask = hybrid_gate
+
+    # --- Risk-adjusted energy term: only active in feasible region ---
+    energy_norm = mad_normalize(min_incremental_energy)
+    energy_term = feasible_mask * PARAMS["risk_adjusted_energy_weight"] * energy_norm
+
+    # --- Uncertainty-slack interaction: penalizes high uncertainty near adaptive deadline ---
+    unc_slack_interaction = uncertainty * (adaptive_threshold - slack) * PARAMS["uncertainty_slack_interaction"]
+    unc_slack_norm = mad_normalize(unc_slack_interaction)
+
+    # --- Starvation mitigation: wait time normalized by duration (faster tasks get higher boost) ---
+    wait_efficiency = np.where(duration_total > eps, ready_wait_time / duration_total, 0.0)
+    wait_norm = mad_normalize(wait_efficiency)
+    wait_term = feasible_mask * PARAMS["wait_starvation_penalty"] * wait_norm
+
+    # --- Energy-uncertainty coupling: only active when feasible and uncertainty is moderate ---
+    unc_sigmoid = 1.0 / (1.0 + np.exp(-2.0 * (1.0 - uncertainty)))  # bounded sigmoid centered at 1.0
+    energy_uncertainty_term = feasible_mask * PARAMS["energy_uncertainty_coupling"] * energy_norm * unc_sigmoid
+
+    # --- Assemble final score: smaller = higher priority ---
+    # DDL violation penalty dominates lexicographically
+    score = (
+        mad_normalize(ddl_violation_penalty) +
+        critical_score +
+        unc_slack_norm
+    )
+    
+    # Add feasible-only terms multiplicatively gated
+    score += energy_term + wait_term + energy_uncertainty_term
+
+    # Final safeguard: ensure finite output with shape (N,)
+    score = np.nan_to_num(score, nan=0.0, posinf=finfo.max, neginf=finfo.min)
+    
+    return score
+```

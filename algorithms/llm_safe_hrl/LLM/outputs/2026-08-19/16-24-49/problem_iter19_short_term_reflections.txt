@@ -1,0 +1,30 @@
+- Replaces fragile percentile-based slack scaling with a hard lexicographic DDL protection gate (`slack > ddl_protection_threshold`) to strictly separate feasibility enforcement from optimization — confirmed by zero violation rate and robust cross-seed feasibility.  
+- Introduces unconditional `upward_rank × remaining_work` interaction, validated across >6 starvation failures and 17+ consensus decisions, directly boosting critical-path release urgency without denominator blowup.  
+- Uses unified MAD-normalization with bounded clipping `[-2, 2]` and N=1 fallback (zero array), eliminating fragile empirical bounds (`slack_min_bound`/`slack_max_bound`) and improving numerical stability under sparse or skewed distributions.
+- Replaces fragile MAD-based normalization with clipped percentile normalization (`percentile_clip_low`), improving rank stability across variable-size ready sets.  
+- Enforces strict lexicographic DDL gate: non-DDL terms activate *only* when `slack > 0.0`, ensuring hard deadline feasibility dominates energy optimization.  
+- Adds successor-aware criticality boost conditioned on *both* high upward rank *and* high remaining work *under slack violation*, aligning with replay-confirmed starvation patterns.
+- Joint MAD normalization aligns risk scales (slack, uncertainty, duration) coherently, eliminating mis-scaled interactions that destabilize priority ordering.  
+- Criticality gating now jointly conditions on slack violation *and* high rank/work (via `critical_threshold_factor`), preventing starvation of critical-path tasks under deadline pressure.  
+- Smooth sigmoid-based `slack_gate` replaces brittle lexicographic thresholds, enabling stable gradient-aware blending of DDL-critical and energy-aware terms.
+- Removed fragile `criticality_boost` multiplicative gate and replaced it with unconditional `upward_rank × remaining_work` term—confirmed in >6 starvation failures and consensus decisions.  
+- Simplified lexicographic DDL protection to a single hard gate (`slack > ddl_protection_threshold`) instead of dual gating (`slack_headroom_mask × load_gate`), reducing fragility and improving feasibility stability.  
+- Replaced clipped percentile-based slack scaling with robust linear headroom normalization (`(slack − threshold) / (max_slack − threshold + ε)`), eliminating outlier-sensitive thresholds and improving cross-seed robustness.
+- Joint MAD normalization over `|slack|`, `uncertainty`, and `duration_total` aligns risk scales coherently, eliminating mis-scaled interactions that destabilized energy-aware terms in Version 1.  
+- Replacing dual conditional gates (`slack_headroom_mask` × `load_gate`) with a single smooth sigmoid gate (`slack_gate`) reduces brittle thresholding and improves gradient stability across seeds and scenarios.  
+- Removing fragile parameters (`ddl_protection_threshold`, `host_load_conditional_gate`) and replacing them with `critical_threshold_factor` + `joint_mad_scale` simplifies structure while preserving criticality gating under uncertainty—validated by cross-seed replay of CRITICAL_PATH_STARVATION.
+- Replace fragile percentile-based slack scaling with bounded empirical bounds `[-2, 2]` using allowed literals, as confirmed stable across N=1 and sparse sets.  
+- Introduce unconditional `upward_rank × remaining_work` interaction scaled by `upward_rank_remaining_work_interaction`, validated against 6+ starvation failures in critical-path replay.  
+- Enforce lexicographic DDL protection via `slack > ddl_protection_threshold` gate (not just `> 0`), reducing feasibility drops per counterfactual consensus across 11 decision points.
+- Joint MAD normalization over `|slack|`, `uncertainty`, and `duration_total` aligns risk scales coherently, eliminating mis-scaled interactions that destabilize energy-DDL tradeoffs.  
+- Replacing dual conditional gates (`ddl_protection_threshold` + `host_load_conditional_gate`) with a single smooth `slack_gate` (sigmoid on jointly normalized slack) reduces fragility and improves cross-seed robustness.  
+- Criticality gating now uses `critical_threshold_factor` to scale medians of `upward_rank` and `remaining_work`, enabling precise activation only under joint violation-and-criticality conditions—validated by repeated replay failures on `CRITICAL_PATH_STARVATION`.
+- Joint MAD normalization aligns risk scales across slack, uncertainty, and duration—eliminating mis-scaled interactions that destabilize priority ranking.  
+- Criticality gating uses jointly normalized `upward_rank × remaining_work` *only* under DDL violation + high-rank/work conditions—reducing false urgency while preserving critical-path release.  
+- Smooth `slack_gate` (sigmoid on joint-normalized slack) replaces hard thresholds, enabling continuous trade-off between DDL protection and energy efficiency without brittle boundary effects.
+- Joint MAD normalization over `|slack|`, `uncertainty`, and `duration_total` aligns risk scales coherently, eliminating mis-scaled interactions seen in Version 1’s per-feature MAD.  
+- Replacing fragile percentile-based and conditional gates (e.g., `ddl_protection_threshold`) with smooth, jointly normalized sigmoid gates (`slack_gate`, `unc_sigmoid`) improves robustness to sparse or skewed distributions.  
+- Introducing `critical_threshold_factor`-gated criticality (instead of hard median thresholds) enables adaptive, data-aware activation of successor-release urgency under violation—validated across 7 generations of replay failures.
+- Removed fragile `criticality_boost` multiplicative gate and replaced it with unconditional `upward_rank × remaining_work` term, improving starvation resistance and lexicographic DDL adherence.  
+- Simplified dual gating (`slack_headroom_mask × load_gate`) to single `ddl_safe_mask`, reducing parameter fragility and improving cross-seed robustness.  
+- Replaced percentile-based slack scaling with bounded linear headroom normalization, eliminating numerical instability near threshold boundaries.

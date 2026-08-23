@@ -1,0 +1,5 @@
+- Prioritize negative slack via bounded exponential urgency, not piecewise rules, to sharpen deadline-risk differentiation.  
+- Gate criticality boosting strictly to `slack ≥ 0` and high uncertainty to avoid wasting priority on infeasible tasks.  
+- Replace IQR normalization with robust mean-absolute scaling to resist outliers and improve cross-seed stability.  
+- Use smooth, saturating anti-starvation wait boost (`1 − exp(−rate × norm_wait)`) instead of linear clipping.  
+- Introduce decoupled, clipped uncertainty interactions: one for slack-pressure coupling, another for duration-risk coupling.

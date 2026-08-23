@@ -1,0 +1,6 @@
+- Prioritize deadline risk via smooth, MAD-normalized slack-pressure gating—no percentile or piecewise discontinuities.  
+- Boost critical-path tasks only when slack ≥ 0 *and* uncertainty ≤ median—avoiding premature bottleneck focus.  
+- Use saturating exponential wait boost (`1 − exp(−gain·norm_wait)`) for robust, bounded fairness.  
+- Gate energy terms by fairness headroom (`wait_time / (|slack|+ε)`), not raw slack, to enable savings only where deadlines permit.  
+- Add successor-release interaction (`upward_rank × remaining_work`) gated by slack feasibility to unblock critical paths early.  
+- Replace fragile DDL-protection mode with unified, smooth slack-pressure gating—no hard switches or duplication.

@@ -438,6 +438,51 @@ def test_safe_hrl_episode_kwargs_preserve_explicit_deadline_cache():
     assert Path(values["deadline_cache_path"]) == cache_path
 
 
+def test_train_config_uses_scenario_cache_mapping_as_active_source():
+    cache_root = (
+        PROJECT_ROOT
+        / "data"
+        / "deadlines"
+        / "fcfs"
+        / "diagnostic"
+    ).resolve()
+    cache_paths = {
+        scenario: (
+            cache_root
+            / f"fcfs_fixed_{scenario}_exactmix_formal38.json"
+        )
+        for scenario in ("SS", "MS", "LS")
+    }
+    with patch("hrl_mix.train_config.os.makedirs"):
+        config = build_train_config(
+            protocol="single",
+            source_scenario="SS",
+            deadline_cache_paths={
+                scenario: str(path)
+                for scenario, path in cache_paths.items()
+            },
+        )
+
+    assert Path(config.deadline_cache_path) == cache_paths["SS"]
+    assert {
+        scenario: Path(path)
+        for scenario, path in config.deadline_cache_paths.items()
+    } == cache_paths
+
+
+def test_train_config_reports_missing_explicit_cache_by_scenario():
+    missing_cache = PROJECT_ROOT / ".missing_new_cache_SS.json"
+    assert not missing_cache.exists()
+    with pytest.raises(
+        FileNotFoundError,
+        match=r"explicit deadline cache file\(s\) not found: SS=",
+    ):
+        build_train_config(
+            "SS",
+            deadline_cache_paths={"SS": str(missing_cache)},
+        )
+
+
 def test_seevo_eval_uses_diagnostic_or_explicit_deadline_cache(monkeypatch):
     captured = {}
 
