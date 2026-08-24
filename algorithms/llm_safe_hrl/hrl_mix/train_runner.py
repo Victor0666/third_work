@@ -239,6 +239,11 @@ def _checkpoint_runtime_metadata(
                 ),
             )
         ),
+        "experiment_protocol": (
+            None
+            if cfg.experiment_protocol is None
+            else dict(cfg.experiment_protocol)
+        ),
         "config_snapshot": build_config_snapshot(cfg),
     }
 

@@ -432,27 +432,20 @@ def protocol_identity_from_config_snapshot(
         raise ValueError("config_snapshot config must be a mapping")
     nested = config.get("experiment_protocol")
     present = [field for field in _PROTOCOL_IDENTITY_FIELDS if field in config]
-    if nested is None and str(config.get("protocol", "")).strip().lower() == "legacy":
-        return None
-    if nested is None and "protocol" not in config:
-        return None
+    # A canonical nested identity takes precedence over legacy flat fields.
+    # TrainConfig snapshots intentionally keep runtime fields such as
+    # protocol/source_scenario/training_scenarios at the top level, so those
+    # partial overlaps are not themselves a second protocol identity.
     if nested is not None:
-        normalized = validate_protocol_identity(
+        return validate_protocol_identity(
             nested,
             nested,
             artifact_name="config snapshot protocol",
         )
-        if present:
-            if len(present) != len(_PROTOCOL_IDENTITY_FIELDS):
-                raise ValueError(
-                    "config snapshot has incomplete protocol identity"
-                )
-            validate_protocol_identity(
-                normalized,
-                {field: config[field] for field in _PROTOCOL_IDENTITY_FIELDS},
-                artifact_name="config snapshot protocol",
-            )
-        return normalized
+    if nested is None and str(config.get("protocol", "")).strip().lower() == "legacy":
+        return None
+    if nested is None and "protocol" not in config:
+        return None
     if len(present) != len(_PROTOCOL_IDENTITY_FIELDS):
         raise ValueError("config snapshot has incomplete protocol identity")
     identity = {field: config[field] for field in _PROTOCOL_IDENTITY_FIELDS}
@@ -581,7 +574,6 @@ def save_best_checkpoint_bundle(
 ) -> str:
     """Atomically bind three Agent files to one feasibility-first manifest."""
     target_dir = Path(directory).resolve()
-    target_dir.mkdir(parents=True, exist_ok=True)
     expected_layers = {"manager", "host", "vm"}
     if set(agents) != expected_layers:
         raise ValueError(
@@ -604,19 +596,6 @@ def save_best_checkpoint_bundle(
         if lagrange_controller is not None
         else None
     )
-    checkpoint_files = {}
-    for layer in sorted(expected_layers):
-        filename = (
-            "best_manager.pth"
-            if layer == "manager"
-            else f"best_{layer}.pth"
-        )
-        agents[layer].save(
-            str(target_dir / filename),
-            lagrange_controller_state=lagrange_state,
-        )
-        checkpoint_files[layer] = filename
-
     protocol_identity = _resolve_checkpoint_protocol_identity(
         config_snapshot,
         experiment_protocol,
@@ -631,17 +610,31 @@ def save_best_checkpoint_bundle(
             library_protocol,
             artifact_name="checkpoint heuristic library",
         )
+    config = config_snapshot["config"]
+    optimizer_seed = int(config["optimizer_seed"])
+    deadline_cache_paths = dict(config.get("deadline_cache_paths", {}))
+
+    target_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint_files = {}
+    for layer in sorted(expected_layers):
+        filename = (
+            "best_manager.pth"
+            if layer == "manager"
+            else f"best_{layer}.pth"
+        )
+        agents[layer].save(
+            str(target_dir / filename),
+            lagrange_controller_state=lagrange_state,
+        )
+        checkpoint_files[layer] = filename
+
     payload = {
         "checkpoint_manifest_schema_version": (
             BEST_CHECKPOINT_MANIFEST_SCHEMA_VERSION
         ),
         "selection_policy": "feasibility_first_lexicographic",
-        "optimizer_seed": int(
-            config_snapshot["config"]["optimizer_seed"]
-        ),
-        "deadline_cache_paths": dict(
-            config_snapshot["config"].get("deadline_cache_paths", {})
-        ),
+        "optimizer_seed": optimizer_seed,
+        "deadline_cache_paths": deadline_cache_paths,
         "model_selection_metrics": model_metrics.to_dict(),
         "agent_checkpoints": checkpoint_files,
         "agent_checkpoint_contents": {

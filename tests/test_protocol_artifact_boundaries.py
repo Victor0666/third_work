@@ -17,6 +17,7 @@ from base.manager_heuristics import (
 )
 from hrl_mix.model_selection import (
     FeasibilityFirstModelMetrics,
+    protocol_identity_from_config_snapshot,
     read_best_checkpoint_manifest,
     save_best_checkpoint_bundle,
 )
@@ -49,6 +50,29 @@ def _identity_config(context):
         "sha256": "unused-in-boundary-test",
         "config": {
             **context.identity(),
+            "optimizer_seed": 0,
+        },
+    }
+
+
+def _runtime_identity_config(context):
+    """Mirror TrainConfig: nested identity plus partial flat runtime fields."""
+    identity = context.identity()
+    return {
+        "config_snapshot_schema_version": 1,
+        "sha256": "unused-in-boundary-test",
+        "config": {
+            "experiment_protocol": copy.deepcopy(identity),
+            "protocol": identity["protocol"],
+            "source_scenario": identity["source_scenario"],
+            "resource_scale": context.resource_scale,
+            "training_scenarios": tuple(identity["training_scenarios"]),
+            "test_scenarios": tuple(identity["test_scenarios"]),
+            "train_seeds": tuple(identity["safe_hrl_train_seeds"]),
+            "validation_seeds": tuple(
+                identity["safe_hrl_validation_seeds"]
+            ),
+            "final_test_seeds": tuple(identity["final_test_seeds"]),
             "optimizer_seed": 0,
         },
     }
@@ -164,6 +188,76 @@ class ProtocolArtifactBoundaryTests(unittest.TestCase):
         self.multi = resolve_experiment_protocol(
             "multi", source_scenario=None, resource_scale="S"
         )
+
+    def test_runtime_config_snapshot_prefers_nested_protocol_identity(self):
+        snapshot = _runtime_identity_config(self.single)
+        self.assertEqual(
+            protocol_identity_from_config_snapshot(snapshot),
+            self.single.identity(),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            agents = {
+                name: _Agent()
+                for name in ("manager", "host", "vm")
+            }
+            manifest = save_best_checkpoint_bundle(
+                directory,
+                agents=agents,
+                lagrange_controller=_Lagrange(),
+                model_metrics=_metrics(),
+                curriculum_state={},
+                replay_metadata={name: {} for name in agents},
+                heuristic_library_version={
+                    "manifest_version": "v1",
+                    "experiment_protocol": self.single.identity(),
+                },
+                config_snapshot=snapshot,
+                experiment_protocol=self.single.identity(),
+            )
+            payload = read_best_checkpoint_manifest(
+                manifest,
+                expected_protocol_identity=self.single,
+            )
+            self.assertEqual(
+                payload["experiment_protocol"],
+                self.single.identity(),
+            )
+
+    def test_flat_partial_protocol_identity_remains_invalid(self):
+        snapshot = _runtime_identity_config(self.single)
+        snapshot["config"].pop("experiment_protocol")
+        with self.assertRaisesRegex(
+            ValueError,
+            "incomplete protocol identity",
+        ):
+            protocol_identity_from_config_snapshot(snapshot)
+
+    def test_protocol_failure_precedes_agent_checkpoint_writes(self):
+        snapshot = _runtime_identity_config(self.single)
+        snapshot["config"]["experiment_protocol"].pop(
+            "llm_validation_seeds"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "invalid_bundle"
+            agents = {
+                name: _Agent()
+                for name in ("manager", "host", "vm")
+            }
+            with self.assertRaises(ValueError):
+                save_best_checkpoint_bundle(
+                    target,
+                    agents=agents,
+                    lagrange_controller=_Lagrange(),
+                    model_metrics=_metrics(),
+                    curriculum_state={},
+                    replay_metadata={name: {} for name in agents},
+                    heuristic_library_version={
+                        "manifest_version": "v1",
+                    },
+                    config_snapshot=snapshot,
+                    experiment_protocol=self.single.identity(),
+                )
+            self.assertFalse(target.exists())
 
     def test_best_checkpoint_rejects_cross_protocol_load(self):
         with tempfile.TemporaryDirectory() as directory:
