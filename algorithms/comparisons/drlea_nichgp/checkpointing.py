@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import os
 from pathlib import Path
 from typing import Iterable
 
@@ -45,7 +46,8 @@ def portable_path(path: str | Path) -> str:
 def write_json(path: str | Path, payload) -> Path:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as stream:
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    with temporary.open("w", encoding="utf-8") as stream:
         json.dump(
             payload,
             stream,
@@ -53,6 +55,9 @@ def write_json(path: str | Path, payload) -> Path:
             indent=2,
             sort_keys=True,
         )
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(temporary, path)
     return path
 
 
@@ -79,12 +84,26 @@ def write_csv(
                 if not isinstance(value, (dict, list, tuple))
             }
         )
-    with path.open("w", encoding="utf-8", newline="") as stream:
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    with temporary.open("w", encoding="utf-8", newline="") as stream:
         writer = csv.DictWriter(stream, fieldnames=fields)
         writer.writeheader()
         for row in rows:
             writer.writerow({name: row.get(name) for name in fields})
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(temporary, path)
     return path
+
+
+def file_sha256(path: str | Path) -> str:
+    """Hash a file without loading it all into memory."""
+
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def source_hash() -> str:

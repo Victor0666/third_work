@@ -82,7 +82,7 @@ def routing_state(
     legal_mask = adapter.legal_vm_mask(task_id)
     legal_ids = set(adapter.legal_vm_ids(task_id))
     uncertainty_values = [
-        env.calculate_uncertainty(task_id, vm_id)
+        adapter.uncertainty(task_id, vm_id)
         for vm_id in adapter.vm_ids
     ]
     task_uncertainty = min(uncertainty_values, default=0.0)
@@ -144,7 +144,7 @@ def routing_state(
                 adapter.host_utilization(int(vm.host_id)),
                 1.0 if str(host.server_type).lower() == "cloud" else 0.0,
                 _positive(
-                    env.calculate_uncertainty(task_id, vm_id),
+                    adapter.uncertainty(task_id, vm_id),
                     normalization.time_seconds,
                 ),
             ]
@@ -169,7 +169,7 @@ def sequencing_state(
         {adapter.task_workflow_id(task_id) for task_id in ready}
     )
     for task_id in ready:
-        feasible = adapter.env.get_feasible_vms(task_id)
+        feasible = adapter.feasible_vms(task_id)
         values = [
             adapter.env.estimate_exec_time(task_id, vm_id)
             for vm_id in feasible

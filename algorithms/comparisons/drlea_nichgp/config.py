@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import asdict, dataclass, field, fields, replace
+import json
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -181,6 +182,68 @@ class ComparisonConfig:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+_TUPLE_CONFIG_FIELDS = {
+    "train_seeds",
+    "validation_seeds",
+    "test_seeds",
+    "training_scenarios",
+    "test_scenarios",
+    "dax_paths",
+    "cloud_vms_per_host",
+    "edge_vms_per_host",
+    "cloud_pc_tiers",
+    "edge_pc_tiers",
+    "cloud_bw_tiers",
+    "edge_bw_tiers",
+}
+
+
+def config_from_dict(payload: Mapping[str, Any]) -> ComparisonConfig:
+    """Restore the exact configuration persisted beside an RA checkpoint."""
+
+    if not isinstance(payload, Mapping):
+        raise ValueError("DRL-EA config payload must be a mapping")
+    expected = {item.name for item in fields(ComparisonConfig)}
+    missing = sorted(expected.difference(payload))
+    unknown = sorted(set(payload).difference(expected))
+    if missing or unknown:
+        raise ValueError(
+            "incompatible DRL-EA config fields: "
+            f"missing={missing}, unknown={unknown}"
+        )
+    values = dict(payload)
+    for name in _TUPLE_CONFIG_FIELDS:
+        values[name] = tuple(values[name])
+    values["deadline_cache_paths"] = dict(values["deadline_cache_paths"])
+    routing = dict(values["routing"])
+    routing["hidden_dims"] = tuple(routing["hidden_dims"])
+    sequencing = dict(values["sequencing"])
+    sequencing["hidden_dims"] = tuple(sequencing["hidden_dims"])
+    values["routing"] = AgentConfig(**routing)
+    values["sequencing"] = AgentConfig(**sequencing)
+    values["gp"] = GPConfig(**dict(values["gp"]))
+    values["reward"] = RewardConfig(**dict(values["reward"]))
+    values["normalization"] = NormalizationConfig(
+        **dict(values["normalization"])
+    )
+    config = ComparisonConfig(**values)
+    if config.method_id != METHOD_ID or config.schema_version != SCHEMA_VERSION:
+        raise ValueError("incompatible DRL-EA config identity")
+    ensure_disjoint_seeds(
+        config.train_seeds,
+        config.validation_seeds,
+        config.test_seeds,
+    )
+    return config
+
+
+def load_config(path: str | Path) -> ComparisonConfig:
+    """Load an exact config written beside a trained RA checkpoint."""
+
+    with Path(path).open("r", encoding="utf-8") as stream:
+        return config_from_dict(json.load(stream))
 
 
 PROTOCOL_ARTIFACT_FIELDS = (

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 from typing import Iterable
 
@@ -76,6 +77,9 @@ class CEWSEnvAdapter:
         self.no_legal_vm_advances = 0
         self.assignment_count = 0
         self._prediction_cache: dict[tuple[int, int], dict] = {}
+        self._feasible_vms_cache: dict[int, tuple[int, ...]] = {}
+        self._modal_components_cache: dict[tuple[int, int], dict] = {}
+        self._uncertainty_cache: dict[tuple[int, int], float] = {}
         if self.vm_ids != tuple(range(self.num_vms)):
             raise ValueError(
                 "RA action indices require contiguous global_vm_id values"
@@ -102,6 +106,59 @@ class CEWSEnvAdapter:
         self.no_legal_vm_advances = 0
         self.assignment_count = 0
         self._prediction_cache.clear()
+        self._feasible_vms_cache.clear()
+        self._modal_components_cache.clear()
+        self._uncertainty_cache.clear()
+
+    @staticmethod
+    def _cache_audit_enabled() -> bool:
+        return os.environ.get("DRLEA_CACHE_AUDIT", "0") == "1"
+
+    def feasible_vms(self, task_id: int) -> list[int]:
+        task_id = int(task_id)
+        cached = self._feasible_vms_cache.get(task_id)
+        if cached is None:
+            cached = tuple(
+                int(vm_id)
+                for vm_id in self.env.get_feasible_vms(task_id)
+            )
+            self._feasible_vms_cache[task_id] = cached
+        elif self._cache_audit_enabled():
+            actual = tuple(
+                int(vm_id)
+                for vm_id in self.env.get_feasible_vms(task_id)
+            )
+            if actual != cached:
+                raise AssertionError("feasible-VM cache changed")
+        return list(cached)
+
+    def modal_components(self, task_id: int, vm_id: int) -> dict:
+        key = (int(task_id), int(vm_id))
+        cached = self._modal_components_cache.get(key)
+        if cached is None:
+            cached = self.env.estimate_task_duration_components_scenario(
+                key[0], key[1], "modal"
+            )
+            self._modal_components_cache[key] = dict(cached)
+        elif self._cache_audit_enabled():
+            actual = self.env.estimate_task_duration_components_scenario(
+                key[0], key[1], "modal"
+            )
+            if actual != cached:
+                raise AssertionError("modal-components cache changed")
+        return dict(cached)
+
+    def uncertainty(self, task_id: int, vm_id: int) -> float:
+        key = (int(task_id), int(vm_id))
+        cached = self._uncertainty_cache.get(key)
+        if cached is None:
+            cached = float(self.env.calculate_uncertainty(*key))
+            self._uncertainty_cache[key] = cached
+        elif self._cache_audit_enabled():
+            actual = float(self.env.calculate_uncertainty(*key))
+            if actual != cached:
+                raise AssertionError("uncertainty cache changed")
+        return float(cached)
 
     def ready_tasks(self) -> list[int]:
         return sorted(
@@ -125,7 +182,7 @@ class CEWSEnvAdapter:
         return int(ready[0])
 
     def legal_vm_ids(self, task_id: int) -> list[int]:
-        feasible = set(self.env.get_feasible_vms(int(task_id)))
+        feasible = set(self.feasible_vms(int(task_id)))
         legal = []
         for index, vm_id in enumerate(self.env.vm_ids):
             if int(vm_id) not in feasible:
@@ -197,9 +254,7 @@ class CEWSEnvAdapter:
             int(task_id), int(vm_id)
         )
         risk = self.env.fuzzy_deadline_measure(finish)
-        components = self.env.estimate_task_duration_components_scenario(
-            int(task_id), int(vm_id), "modal"
-        )
+        components = self.modal_components(int(task_id), int(vm_id))
         prediction = {
             "task_id": int(task_id),
             "vm_id": int(vm_id),
@@ -244,7 +299,7 @@ class CEWSEnvAdapter:
         )
 
     def task_fuzzy_slack(self, task_id: int) -> float:
-        feasible = self.env.get_feasible_vms(int(task_id))
+        feasible = self.feasible_vms(int(task_id))
         if not feasible:
             raise ValueError("fuzzy slack requires a feasible VM")
         earliest_risk = min(

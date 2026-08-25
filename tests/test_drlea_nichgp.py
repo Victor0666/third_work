@@ -17,6 +17,7 @@ from algorithms.comparisons.drlea_nichgp.checkpointing import experiment_manifes
 from algorithms.comparisons.drlea_nichgp.config import (
     AgentConfig,
     build_config,
+    config_from_dict,
     config_for_scenario,
     ensure_disjoint_seeds,
     protocol_artifact_identity,
@@ -35,13 +36,22 @@ from algorithms.comparisons.drlea_nichgp.gp_primitives import (
     GPProgram,
     protected_division,
 )
+from algorithms.comparisons.drlea_nichgp.gp_fitness_cache import (
+    GPFitnessCache,
+    evaluation_identity,
+)
 from algorithms.comparisons.drlea_nichgp.metrics import comparison_key
 from algorithms.comparisons.drlea_nichgp.niching_gp import (
     behavior_characterization,
     load_rules,
 )
 from algorithms.comparisons.drlea_nichgp.replay_buffer import ReplayBatch
+from algorithms.comparisons.drlea_nichgp.parallel import GPEvaluationPool
+from algorithms.comparisons.drlea_nichgp.routing_agent import RoutingAgent
 from algorithms.comparisons.drlea_nichgp.run_pipeline import run_pipeline
+from algorithms.comparisons.drlea_nichgp.run_gp_matrix import (
+    _completed_artifacts_are_valid,
+)
 from algorithms.llm_safe_hrl.scenario_registry import (
     WORKLOAD_CATEGORY_REGISTRY,
     workload_category_counts,
@@ -77,6 +87,13 @@ def test_deadline_cache_and_optimizer_seed_are_manifested():
     )
     assert manifest["optimizer_seed"] == 37
     assert manifest["deadline_cache_paths"] == config.deadline_cache_paths
+
+
+def test_persisted_config_round_trip_is_exact(smoke_config):
+    restored = config_from_dict(smoke_config.to_dict())
+    assert restored == smoke_config
+    assert isinstance(restored.routing.hidden_dims, tuple)
+    assert isinstance(restored.training_scenarios, tuple)
 
 
 def test_cross_scenario_cache_mapping_reaches_adapter():
@@ -144,6 +161,24 @@ def test_instance_seed_and_fingerprint_reproducible(smoke_config):
     assert first.instance_descriptor() == second.instance_descriptor()
     assert first.instance_fingerprint() == second.instance_fingerprint()
     assert len(first.instance_descriptor()["workflows"]) == 3
+
+
+def test_adapter_static_caches_are_exact_under_audit(
+    smoke_config, monkeypatch
+):
+    monkeypatch.setenv("DRLEA_CACHE_AUDIT", "1")
+    value = CEWSEnvAdapter(smoke_config, 1)
+    value.reset()
+    task_id = value.advance_until_actionable()
+    assert task_id is not None
+    vm_id = value.feasible_vms(task_id)[0]
+    assert value.feasible_vms(task_id) == value.feasible_vms(task_id)
+    assert value.modal_components(task_id, vm_id) == (
+        value.modal_components(task_id, vm_id)
+    )
+    assert value.uncertainty(task_id, vm_id) == (
+        value.uncertainty(task_id, vm_id)
+    )
 
 
 def test_ra_sa_gp_dimensions_and_finiteness(adapter, smoke_config):
@@ -362,6 +397,56 @@ def test_checkpoint_round_trip(tmp_path):
         assert torch.equal(left, right)
 
 
+def _cpu_routing_for_config(config, seed=17):
+    num_vms = sum(config.cloud_vms_per_host) + sum(
+        config.edge_vms_per_host
+    )
+    return RoutingAgent(
+        8 + 10 * num_vms,
+        num_vms,
+        replace(config.routing, replay_capacity=1),
+        seed,
+        device="cpu",
+        role="routing",
+    )
+
+
+def test_gp_episode_pool_parallel_matches_serial(smoke_config):
+    config = replace(
+        smoke_config,
+        workflows_per_episode=1,
+        train_seeds=(1,),
+        training_scenarios=("SS",),
+    )
+    routing = _cpu_routing_for_config(config)
+    program = GPProgram(("READY_COUNT",), GP_TERMINALS)
+    with GPEvaluationPool(config, routing, workers=1) as pool:
+        serial = pool.evaluate([program], config.train_seeds)
+    with GPEvaluationPool(config, routing, workers=2) as pool:
+        parallel = pool.evaluate([program], config.train_seeds)
+    assert serial.failures == parallel.failures == [[]]
+    assert serial.results == parallel.results
+
+
+def test_gp_fitness_cache_round_trip_and_identity_guard(
+    smoke_config, tmp_path
+):
+    routing = _cpu_routing_for_config(smoke_config)
+    identity = evaluation_identity(smoke_config, routing, "cpu")
+    path = tmp_path / "fitness.json"
+    cache = GPFitnessCache(path, identity)
+    cache.save({("READY_COUNT",): (0.0, 0.0, 0.0, 1.0)})
+    restored = GPFitnessCache(path, identity)
+    assert restored.status == "loaded"
+    assert restored.entries[("READY_COUNT",)] == (0.0, 0.0, 0.0, 1.0)
+    stale = GPFitnessCache(
+        path,
+        {"sha256": "different", "payload": {}},
+    )
+    assert stale.status == "stale"
+    assert stale.entries == {}
+
+
 def test_seed_partitions_are_strict():
     with pytest.raises(ValueError, match="strictly disjoint"):
         ensure_disjoint_seeds((1,), (2,), (1,))
@@ -395,7 +480,7 @@ def test_comparison_does_not_import_primary_private_agents():
 
 def test_small_complete_three_stage_pipeline():
     config = build_config("SS", "T", 41, smoke=True, protocol="legacy")
-    result = run_pipeline(config)
+    result = run_pipeline(config, gp_workers=2)
     output = Path(result["output_dir"])
     assert Path(result["ra_checkpoint"]).is_file()
     assert Path(result["rules_file"]).is_file()
@@ -407,6 +492,18 @@ def test_small_complete_three_stage_pipeline():
         (output / "rules.json").read_text(encoding="utf-8")
     )
     assert payload["rule_count"] == 4
+    gp_manifest = json.loads(
+        (output / "gp_manifest.json").read_text(encoding="utf-8")
+    )
+    sa_manifest = json.loads(
+        (output / "sa_manifest.json").read_text(encoding="utf-8")
+    )
+    assert gp_manifest["worker_count"] == 2
+    assert sa_manifest["ra_online_sha256"] == payload["ra_online_sha256"]
+    assert len(sa_manifest["rules_file_sha256"]) == 64
+    assert _completed_artifacts_are_valid(
+        config, Path(result["ra_checkpoint"]), "cpu"
+    )
     assert len(result["evaluation"]["comparison_key"]) == 4
 
 

@@ -53,7 +53,7 @@ def task_gp_terminals(
     ready = adapter.ready_tasks() if ready_tasks is None else list(ready_tasks)
     workflow_id = adapter.task_workflow_id(task_id)
     workflow = adapter.workflow(workflow_id)
-    feasible = env.get_feasible_vms(task_id)
+    feasible = adapter.feasible_vms(task_id)
     if not feasible:
         raise ValueError("GP task has no feasible VM")
     input_comm = []
@@ -62,16 +62,16 @@ def task_gp_terminals(
     energy = []
     uncertainty = []
     for vm_id in feasible:
-        components = env.estimate_task_duration_components_scenario(
-            task_id, vm_id, "modal"
-        )
+        components = adapter.modal_components(task_id, vm_id)
         input_comm.append(components["input_communication_time"])
         output_comm.append(components["output_communication_time"])
         computation.append(components["execution_time"])
         energy.append(
-            env.estimate_incremental_energy_score(task_id, vm_id)
+            adapter.task_vm_prediction(task_id, vm_id)[
+                "incremental_fuzzy_energy"
+            ]
         )
-        uncertainty.append(env.calculate_uncertainty(task_id, vm_id))
+        uncertainty.append(adapter.uncertainty(task_id, vm_id))
     workflow_task_ids = adapter.workflow_task_ids(workflow_id)
     remaining_task_ids = [
         value

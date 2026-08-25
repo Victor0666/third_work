@@ -5,120 +5,37 @@ from __future__ import annotations
 import argparse
 import time
 
-from .checkpointing import (
-    experiment_manifest,
-    portable_path,
-    prepare_output,
-    read_json,
-    write_json,
-)
-from .config import build_config, config_for_scenario, protocol_artifact_identity
+from .config import build_config
 from algorithms.llm_safe_hrl.hrl_mix.train_config import (
     parse_deadline_cache_overrides,
     validate_single_deadline_cache_paths,
 )
-from .decision_situations import collect_decision_situations
-from .evaluate import evaluate_frozen
-from .niching_gp import evolve_niching_gp, load_rules
+from .post_ra_pipeline import run_after_ra
 from .routing_agent import train_routing
-from .sequencing_agent import train_sequencing
 
 
-def run_pipeline(config) -> dict:
+def run_pipeline(
+    config,
+    *,
+    gp_workers: int = 1,
+    gp_device: str = "cpu",
+    threads_per_worker: int = 1,
+    fitness_cache_path=None,
+) -> dict:
     started = time.perf_counter()
     started_cpu = time.process_time()
-    output = prepare_output(config)
-    routing, ra_path, _ra_history = train_routing(config)
-    situations = collect_decision_situations(
+    _routing, ra_path, _ra_history = train_routing(config)
+    return run_after_ra(
         config,
-        routing,
-        seeds=config.train_seeds,
-    )
-    rules, rules_path, _gp_history = evolve_niching_gp(
-        config, routing, situations
-    )
-    sequencing, sa_path, _sa_history = train_sequencing(
-        config, routing, rules
-    )
-    identity = protocol_artifact_identity(config)
-    routing = type(routing).load(
         ra_path,
-        expected_protocol_identity=identity,
+        gp_workers=gp_workers,
+        gp_device=gp_device,
+        threads_per_worker=threads_per_worker,
+        fitness_cache_path=fitness_cache_path,
+        started=started,
+        started_cpu=started_cpu,
+        manifest_stage="complete_pipeline",
     )
-    sequencing = type(sequencing).load(
-        sa_path,
-        expected_protocol_identity=identity,
-    )
-    rules = load_rules(
-        rules_path,
-        expected_protocol_identity=identity,
-    )
-    scenario_evaluations = {}
-    for scenario in config.test_scenarios:
-        evaluation_config = config_for_scenario(config, scenario)
-        scenario_evaluations[scenario] = evaluate_frozen(
-            evaluation_config,
-            routing,
-            sequencing,
-            rules,
-            config.test_seeds,
-            output_path=(
-                output / "eval.json"
-                if (
-                    config.protocol == "legacy"
-                    and len(config.test_scenarios) == 1
-                )
-                else output / f"eval_{scenario}.json"
-            ),
-        )
-    evaluation = scenario_evaluations[config.test_scenarios[0]]
-    write_json(
-        output / "generalization_metrics.json",
-        {
-            "protocol": config.protocol,
-            "source_scenario": config.source_scenario,
-            "training_scenarios": list(config.training_scenarios),
-            "test_scenarios": list(config.test_scenarios),
-            "training_during_generalization_test": False,
-            "checkpoint_reselection_during_generalization_test": False,
-            "scenario_results": scenario_evaluations,
-        },
-    )
-    gp_manifest = read_json(output / "gp_manifest.json")
-    manifest = experiment_manifest(
-        config,
-        stage="complete_pipeline",
-        elapsed_seconds=time.perf_counter() - started,
-        failures=int(gp_manifest["failure_count"]),
-        invalid_individuals=int(
-            gp_manifest["invalid_individual_count"]
-        ),
-        extra={
-            "ra_checkpoint": portable_path(ra_path),
-            "sa_checkpoint": portable_path(sa_path),
-            "rules_file": portable_path(rules_path),
-            "instance_fingerprints": [
-                row["instance_fingerprint"]
-                for row in evaluation["seed_metrics"]
-            ],
-            "comparison_key": evaluation["comparison_key"],
-            "generalization_scenarios": list(config.test_scenarios),
-            "generalization_metrics": "generalization_metrics.json",
-            "compute_device": str(sequencing.device),
-            "process_cpu_seconds": float(
-                time.process_time() - started_cpu
-            ),
-        },
-    )
-    write_json(output / "manifest.json", manifest)
-    return {
-        "output_dir": portable_path(output),
-        "ra_checkpoint": portable_path(ra_path),
-        "rules_file": portable_path(rules_path),
-        "sa_checkpoint": portable_path(sa_path),
-        "evaluation": evaluation,
-        "scenario_evaluations": scenario_evaluations,
-    }
 
 
 def parser() -> argparse.ArgumentParser:
@@ -132,6 +49,12 @@ def parser() -> argparse.ArgumentParser:
     )
     result.add_argument("--smoke", action="store_true")
     result.add_argument("--deadline-cache", action="append")
+    result.add_argument("--workers", type=int, default=1)
+    result.add_argument(
+        "--device", choices=("cpu", "cuda"), default="cpu"
+    )
+    result.add_argument("--threads-per-worker", type=int, default=1)
+    result.add_argument("--fitness-cache")
     return result
 
 
@@ -147,6 +70,12 @@ def main(argv=None):
             deadline_cache_paths,
             source_scenario=(args.scenario if args.protocol == "single" else None),
         )
+    if args.workers < 1:
+        parser().error("--workers must be at least 1")
+    if args.threads_per_worker < 1:
+        parser().error("--threads-per-worker must be at least 1")
+    if args.workers > 1 and args.device != "cpu":
+        parser().error("parallel GP evaluation requires --device cpu")
     result = run_pipeline(
         build_config(
             args.scenario,
@@ -157,7 +86,11 @@ def main(argv=None):
             protocol=args.protocol,
             source_scenario=(args.scenario if args.protocol == "single" else None),
             resource_scale=args.resource_scale,
-        )
+        ),
+        gp_workers=args.workers,
+        gp_device=args.device,
+        threads_per_worker=args.threads_per_worker,
+        fitness_cache_path=args.fitness_cache,
     )
     print(result["output_dir"])
     print(tuple(result["evaluation"]["comparison_key"]))

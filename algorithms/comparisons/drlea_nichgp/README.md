@@ -67,10 +67,49 @@ mean_lateness, fuzzy_energy_score)`.
 
 The four stage commands in the task specification are supported verbatim.
 `python -m algorithms.comparisons.drlea_nichgp.run_pipeline` runs all stages;
-add `--smoke` for the fixed 2/8/2/3 debug profile. Short artifacts are written
-under `out/comparisons/drlea_nichgp/<scenario>_<ddl>_s<seed>/`: config/source
-hashes, `ra.pt`, `rules.json`, `sa.pt`, histories, manifests, `eval.json`,
-`eval.csv`, and `workflows.csv`.
+add `--smoke` for the fixed 2/8/2/3 debug profile. Formal single-source
+artifacts are written under
+`out/comparisons/drlea_nichgp/main_single/<scenario>/<ddl>_a<seed>/`;
+legacy smoke artifacts use
+`out/comparisons/drlea_nichgp/<scenario>_<ddl>_a<seed>/`. Each directory
+contains config/source hashes, `ra.pt`, `rules.json`, `sa.pt`, histories,
+manifests, evaluation JSON/CSV, and workflow metrics.
+
+Stage-2 fitness episodes can use a spawn-safe CPU process pool. The unit of
+parallel work is one independent `(program, scenario, seed)` episode; program
+generation, clearing, archive updates, validation selection and all SA
+training remain in their original deterministic order. The default
+`--workers 1` is the serial reference path. For example, a complete run with
+eight GP workers is:
+
+```powershell
+python -m algorithms.comparisons.drlea_nichgp.run_pipeline --scenario SS --ddl T --algorithm-seed 0 --workers 8 --device cpu --threads-per-worker 1
+```
+
+When the validation-best RA already exists, the dedicated continuation entry
+loads the exact persisted `config.json` and starts at decision-situation
+collection, then runs GP, SA and frozen final evaluation:
+
+```powershell
+python -m algorithms.comparisons.drlea_nichgp.run_from_ra --ra-checkpoint out/comparisons/drlea_nichgp/main_single/SS/T_a0/ra.pt --workers 8 --device cpu --threads-per-worker 1
+```
+
+The formal nine-configuration continuation runner expects the existing
+`main_single/{SS,SM,SL}/{T,M,L}_a0/config.json` and `ra.pt` artifacts. It
+records per-configuration completion or failure in `gp_matrix_status.json`
+and skips only outputs whose model/protocol/fingerprint checks still pass:
+
+```powershell
+python -m algorithms.comparisons.drlea_nichgp.run_gp_matrix --workers 8 --device cpu --threads-per-worker 1
+```
+
+GP fitness is checkpointed atomically after each generation in
+`gp_fitness_cache.json`. A cache entry is reused only when the complete
+configuration, RA online weights, DAX/deadline inputs, GP terminal schema,
+relevant source hashes, runtime versions and evaluation device match. A stale
+or corrupt cache is ignored and recomputed. Set `DRLEA_CACHE_AUDIT=1` to
+recompute and assert the exactness of static environment-feature cache hits
+during a diagnostic run.
 
 Formal train, validation and test seeds are strictly disjoint. Explicit test
 seeds overlapping train or validation are rejected.
