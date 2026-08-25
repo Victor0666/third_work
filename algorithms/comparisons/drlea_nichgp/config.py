@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field, fields, replace
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Mapping
 
 from algorithms.llm_safe_hrl.scenario_registry import (
@@ -200,6 +200,35 @@ _TUPLE_CONFIG_FIELDS = {
 }
 
 
+def _project_data_relative_path(
+    value: str | Path,
+    *,
+    field_name: str,
+) -> str:
+    """Persist project data inputs without a machine-specific root."""
+
+    text = str(value).strip().replace(chr(92), "/")
+    while text.startswith("./"):
+        text = text[2:]
+    if text.startswith("data/"):
+        relative = text
+    elif "/data/" in text:
+        relative = "data/" + text.split("/data/", 1)[1]
+    else:
+        raise ValueError(
+            f"{field_name} must be located under the project data directory: "
+            f"{value}"
+        )
+    parts = PurePosixPath(relative).parts
+    if (
+        not parts
+        or parts[0] != "data"
+        or any(part in {"", ".", ".."} for part in parts)
+    ):
+        raise ValueError(f"invalid project data path for {field_name}: {value}")
+    return PurePosixPath(*parts).as_posix()
+
+
 def config_from_dict(payload: Mapping[str, Any]) -> ComparisonConfig:
     """Restore the exact configuration persisted beside an RA checkpoint."""
 
@@ -216,7 +245,19 @@ def config_from_dict(payload: Mapping[str, Any]) -> ComparisonConfig:
     values = dict(payload)
     for name in _TUPLE_CONFIG_FIELDS:
         values[name] = tuple(values[name])
-    values["deadline_cache_paths"] = dict(values["deadline_cache_paths"])
+    values["deadline_cache_path"] = _project_data_relative_path(
+        values["deadline_cache_path"],
+        field_name="deadline_cache_path",
+    )
+    values["deadline_cache_paths"] = {
+        str(scenario): _project_data_relative_path(
+            path,
+            field_name=f"deadline_cache_paths[{scenario}]",
+        )
+        for scenario, path in dict(
+            values["deadline_cache_paths"]
+        ).items()
+    }
     routing = dict(values["routing"])
     routing["hidden_dims"] = tuple(routing["hidden_dims"])
     sequencing = dict(values["sequencing"])
@@ -336,9 +377,20 @@ def build_config(
         )
         scenario = protocol_context.training_scenarios[0]
     scenario = normalize_scenario(scenario)
-    cache_overrides = parse_deadline_cache_overrides(deadline_cache_paths)
+    cache_overrides = {
+        str(cache_scenario): _project_data_relative_path(
+            path,
+            field_name=f"deadline_cache_paths[{cache_scenario}]",
+        )
+        for cache_scenario, path in parse_deadline_cache_overrides(
+            deadline_cache_paths
+        ).items()
+    }
     if deadline_cache_path is not None:
-        cache_overrides[scenario] = str(deadline_cache_path)
+        cache_overrides[scenario] = _project_data_relative_path(
+            deadline_cache_path,
+            field_name="deadline_cache_path",
+        )
     ddl_name = normalize_ddl(ddl)
     spec = SCENARIO_REGISTRY[scenario]
     dax_paths = tuple(

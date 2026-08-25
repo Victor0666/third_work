@@ -96,6 +96,39 @@ def test_persisted_config_round_trip_is_exact(smoke_config):
     assert isinstance(restored.training_scenarios, tuple)
 
 
+def test_legacy_absolute_deadline_paths_are_relocated(smoke_config):
+    payload = smoke_config.to_dict()
+    filename = "fcfs_fixed_SS_exactmix_formal38.json"
+    old_path = (
+        "/T20050013/lyz/third_work/data/deadlines/fcfs/diagnostic/"
+        + filename
+    )
+    payload["deadline_cache_path"] = old_path
+    payload["deadline_cache_paths"] = {"SS": old_path}
+    restored = config_from_dict(payload)
+    expected = f"data/deadlines/fcfs/diagnostic/{filename}"
+    assert restored.deadline_cache_path == expected
+    assert restored.deadline_cache_paths == {"SS": expected}
+
+
+def test_absolute_deadline_override_is_persisted_relative():
+    relative = Path(
+        "data/deadlines/fcfs/diagnostic/"
+        "fcfs_fixed_SS_exactmix_formal38.json"
+    )
+    config = build_config(
+        "SS",
+        "T",
+        0,
+        protocol="legacy",
+        deadline_cache_path=str(Path.cwd() / relative),
+    )
+    assert config.deadline_cache_path == relative.as_posix()
+    assert config.deadline_cache_paths == {
+        "SS": relative.as_posix()
+    }
+
+
 def test_cross_scenario_cache_mapping_reaches_adapter():
     cache_root = Path("data/deadlines/fcfs/diagnostic")
     config = build_config(

@@ -111,6 +111,12 @@ or corrupt cache is ignored and recomputed. Set `DRLEA_CACHE_AUDIT=1` to
 recompute and assert the exactness of static environment-feature cache hits
 during a diagnostic run.
 
+Deadline-cache locations are persisted only as project-relative
+`data/deadlines/...` paths. Loading a historical config automatically strips
+an old machine root such as `/T20050013/.../` while retaining the same
+`data/...` suffix, so RA continuation artifacts remain portable between
+machines.
+
 Formal train, validation and test seeds are strictly disjoint. Explicit test
 seeds overlapping train or validation are rejected.
 
