@@ -21,6 +21,7 @@
 """
 from __future__ import annotations
 
+import json
 import os
 import math
 from dataclasses import dataclass, field
@@ -36,6 +37,10 @@ from algorithms.llm_safe_hrl.scenario_registry import (
     SCENARIO_REGISTRY,
     TASK_DAX_FILES as SHARED_TASK_DAX_FILES,
     resolve_experiment_protocol,
+    validate_protocol_identity,
+)
+from algorithms.llm_safe_hrl.run_context import (
+    resolve_deadline_setting,
 )
 from base.heuristic_admission import (
     workflow_families_from_dax_files,
@@ -63,12 +68,8 @@ SIZE_FULL = {
 # deadline 输入允许短写和完整写法，最终统一归一化成完整英文名称。
 # 例如用户传入 T 或 Tight，都会得到 Tight。
 DDL_FULL = {
-    "T": "Tight",
-    "M": "Medium",
-    "L": "Loose",
-    "TIGHT": "Tight",
-    "MEDIUM": "Medium",
-    "LOOSE": "Loose",
+    alias: resolve_deadline_setting(alias).name
+    for alias in ("T", "M", "L", "TIGHT", "MEDIUM", "LOOSE")
 }
 
 # 不同任务规模对应的 DAX 工作流 XML 文件集合。
@@ -561,10 +562,7 @@ def validate_single_deadline_cache_paths(
 
 def normalize_ddl(ddl: str) -> str:
     """将 deadline 参数统一转换成 Tight/Medium/Loose。"""
-    key = str(ddl).strip().upper()
-    if key not in DDL_FULL:
-        raise ValueError("ddl must be one of T, M, L, Tight, Medium, Loose")
-    return DDL_FULL[key]
+    return resolve_deadline_setting(ddl).name
 
 
 def environment_scenario_values(
@@ -612,15 +610,61 @@ def resolve_manager_heuristic_manifest(
     override: str | None = None,
     *,
     protocol_context: ExperimentProtocolContext | None = None,
+    llm_run_manifest: str | None = None,
+    ddl: str | None = None,
 ) -> str:
-    """Resolve an explicit, protocol-scoped, or legacy manifest path."""
+    """Resolve an explicit library or one completed, matching LLM run."""
     code = str(resource_code).strip().upper()
     if code not in SIZE_FULL:
         raise ValueError("resource_code must be S, M, or L")
-    if override:
+    if override and llm_run_manifest:
+        raise ValueError(
+            "manager_heuristic_manifest and llm_run_manifest are mutually exclusive"
+        )
+    if llm_run_manifest:
+        if protocol_context is None or ddl is None:
+            raise ValueError(
+                "llm_run_manifest requires protocol_context and ddl"
+            )
+        run_manifest_path = Path(llm_run_manifest).expanduser().resolve()
+        if not run_manifest_path.is_file():
+            raise FileNotFoundError(
+                f"LLM run manifest not found: {run_manifest_path}"
+            )
+        run_manifest = json.loads(
+            run_manifest_path.read_text(encoding="utf-8")
+        )
+        if str(run_manifest.get("status", "")).upper() != "COMPLETED":
+            raise ValueError(
+                "LLM run manifest must have status=COMPLETED"
+            )
+        validate_protocol_identity(
+            protocol_context,
+            run_manifest.get("experiment_protocol", {}),
+            artifact_name="LLM run manifest",
+        )
+        expected_deadline = resolve_deadline_setting(ddl).identity()
+        if run_manifest.get("deadline_setting") != expected_deadline:
+            raise ValueError(
+                "LLM run manifest deadline setting does not match Safe-HRL ddl"
+            )
+        library_value = str(run_manifest.get("heuristic_library", "")).strip()
+        if not library_value:
+            raise ValueError(
+                "LLM run manifest does not declare heuristic_library"
+            )
+        path = Path(library_value).expanduser()
+        if not path.is_absolute():
+            path = run_manifest_path.parent / path
+        path = path.resolve()
+    elif override:
         path = Path(override).resolve()
     elif protocol_context is not None:
-        path = protocol_context.library_path.resolve()
+        raise FileNotFoundError(
+            "formal Safe-HRL heuristic Manager requires --llm-run-manifest "
+            "or --manager-heuristic-manifest; automatic latest-run selection "
+            "is intentionally disabled"
+        )
     else:
         path = (
             LLM_ROOT
@@ -645,6 +689,7 @@ def build_train_config(
     safe_rl_dynamic_lambda_enabled: bool = False,
     safe_rl_heuristic_manager_enabled: bool = False,
     manager_heuristic_manifest: str | None = None,
+    llm_run_manifest: str | None = None,
     safe_rl_offline_pretrain_manifest: str | None = None,
     safe_rl_offline_pretrain_epochs: int = 5,
     safe_rl_offline_pretrain_behavior_cloning: bool = False,
@@ -702,7 +747,11 @@ def build_train_config(
                 "safe_rl_heuristic_manager_enabled=True requires "
                 "safe_rl_state_enabled=True"
             )
-    elif manager_heuristic_manifest:
+    if llm_run_manifest and not safe_rl_heuristic_manager_enabled:
+        raise ValueError(
+            "llm_run_manifest requires safe_rl_heuristic_manager_enabled=True"
+        )
+    if manager_heuristic_manifest and not safe_rl_heuristic_manager_enabled:
         raise ValueError(
             "manager_heuristic_manifest requires "
             "safe_rl_heuristic_manager_enabled=True"
@@ -841,7 +890,8 @@ def build_train_config(
             else protocol_context.training_scenarios[0]
         )
 
-    ddl_name = normalize_ddl(ddl)
+    deadline_setting = resolve_deadline_setting(ddl)
+    ddl_name = deadline_setting.name
     environment_values = environment_scenario_values(scenario)
     normalized_cache_paths = {}
     for cache_scenario, cache_value in parse_deadline_cache_overrides(
@@ -902,6 +952,8 @@ def build_train_config(
                 res_code,
                 manager_heuristic_manifest,
                 protocol_context=protocol_context,
+                llm_run_manifest=llm_run_manifest,
+                ddl=ddl_name,
             )
         )
 
@@ -1043,9 +1095,11 @@ def build_train_config(
         alpha_delay_vm=0.75,
         manager_alpha_delay=0.75,
         manager_delay_mode="tardiness",
-        deadline_alpha_small=2.0,
-        deadline_alpha_large=3.0,
-        deadline_alpha_small_prob=0.8,
+        deadline_alpha_small=deadline_setting.alpha_small,
+        deadline_alpha_large=deadline_setting.alpha_large,
+        deadline_alpha_small_prob=(
+            deadline_setting.alpha_small_probability
+        ),
         max_episodes=int(max_episodes) if max_episodes is not None else 600,
         validation_interval=25,
         curriculum_enabled=bool(safe_rl_curriculum_enabled),

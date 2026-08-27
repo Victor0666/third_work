@@ -1,6 +1,0 @@
-- Prioritize smooth sigmoid slack mapping over linear urgency for stable deadline sensitivity and reduced clipping.  
-- Gate DDL protection strictly by joint condition: tight slack ∧ high uncertainty, validated across ≥2 seeds/scenarios.  
-- Couple successor bottleneck via `(duration × upward_rank × (1 + sigmoid(slack)))` to amplify critical-path pressure under deadline stress.  
-- Replace IQR-only normalization with adaptive IQR (25th/75th percentiles) for outlier-resilient, interpretable scaling—no fallback needed.  
-- Unify risk coupling into multiplicative `urgency × uncertainty`, activated only under joint deadline pressure and high uncertainty.  
-- Remove all inactive parameters (`slack_sigmoid_offset`, `slack_sigmoid_steepness`, `sigmoid_clip_bound`, `wait_saturation_time`, `critical_rank_percentile`, `wait_ramp_saturation_factor`) per cross-generation inactivity evidence.

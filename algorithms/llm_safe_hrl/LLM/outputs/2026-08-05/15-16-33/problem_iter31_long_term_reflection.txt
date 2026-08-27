@@ -1,6 +1,0 @@
-- Enforce hard deadline dominance via pre-normalized `neg_slack` as sole dominant additive term—no amplification, no normalization distortion.  
-- Activate critical-path pressure (`upward_rank × remaining_work`) unconditionally—verified to resolve starvation without quantile estimation.  
-- Gate all risk-coupled terms (uncertainty, bottleneck, successor release) behind *conditional DDL protection*: `slack ≤ median_slack ∧ uncertainty_normalized > threshold`.  
-- Replace power-law wait decay with bounded sigmoid saturation for robust anti-starvation without priority inversion.  
-- Use DDL-aware min-max normalization (clipped range) for small-N ready sets—preserves `neg_slack` dominance under low variance or singleton conditions.  
-- Remove all inactive parameters (e.g., `ddl_violation_penalty_weight`, `urgency_cap_exponent`, `wait_saturation_scale`)—reduces overfitting and improves CMA-ES convergence.

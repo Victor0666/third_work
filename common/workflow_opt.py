@@ -12,6 +12,8 @@ workflow_opt.py
 """
 
 import networkx as nx
+from bisect import insort
+from collections import defaultdict
 from dataclasses import dataclass
 
 BITS_PER_MB = 1024.0 * 1024.0 * 8.0
@@ -134,8 +136,12 @@ def exec_time_components(
     return tau_in, tau_comp, tau_out, tau_exec
 
 
-def energy_from_records(records, hosts, total_pc_component="modal"):
-    """按主机时间分片积分能量（W·s）。
+def energy_from_records_with_breakdown(
+    records,
+    hosts,
+    total_pc_component="modal",
+):
+    """单趟积分，同时返回总能量与分主机能量（W·s）。
 
     ``total_pc_component`` 指定计算 Host 负载率时使用总处理能力三角模糊数的
     ``lower``、``modal`` 或 ``upper`` 分量。LoadRecord.vm_pc 已经是当前影子
@@ -143,9 +149,18 @@ def energy_from_records(records, hosts, total_pc_component="modal"):
 
     默认值 ``modal`` 与旧调用完全一致；SPECpower 功率函数本身仍是确定性的，
     能耗差异只来自三场景资源性能、任务时长及其并发负载时间线。
-    """
-    from collections import defaultdict
 
+    两个返回值都与历史实现逐位相同，而非仅数学等价：
+
+    * ``total_energy`` 从 0.0 起按 ``srv_records`` 的插入序逐主机、逐区间累加，
+      与旧的一次全量 :func:`energy_from_records` 调用是同一串浮点加法。
+    * ``energy_by_server[srv]`` 各自从 0.0 起只累加该主机的区间项，与旧的
+      ``energy_from_records(该主机记录, {srv: host})`` 单主机调用是同一串加法。
+
+    因此调用方可以用一趟积分同时取代"一次全量 + 每主机一次"的多趟调用。
+    没有任何记录的主机不会出现在字典里，调用方应按 0.0 处理——这与旧实现对空
+    记录列表直接返回 0.0 的行为一致。
+    """
     if total_pc_component not in {"lower", "modal", "upper"}:
         raise ValueError(
             "total_pc_component must be 'lower', 'modal', or 'upper'."
@@ -156,27 +171,76 @@ def energy_from_records(records, hosts, total_pc_component="modal"):
         srv_records[r.server_id].append(r)
 
     total_energy = 0.0
+    energy_by_server = {}
     very_small = 1e-9
 
     for srv_id, recs in srv_records.items():
         host = hosts[srv_id]
+
+        # 端点即事件点：记录在 [t0, t1) 上活跃 <=> start <= t0 且 end >= t1。
+        # 由于 end 本身也是时间线上的点，且 t1 是 t0 之后紧邻的点，
+        # ``end >= t1`` 与 ``end > t0`` 完全等价，于是"区间过滤"可以退化成
+        # 在每个事件点上增删的活跃集扫描——省掉每个区间对全部记录的重扫。
         times = set()
-        for r in recs:
+        starts_at = defaultdict(list)
+        ends_at = defaultdict(list)
+        for index, r in enumerate(recs):
             times.add(r.start_time)
             times.add(r.end_time)
+            starts_at[r.start_time].append(index)
+            ends_at[r.end_time].append(index)
         timeline = sorted(times)
 
-        for t0, t1 in zip(timeline, timeline[1:]):
+        # 循环不变量提前求值：component 与 max 的结果在整台主机上恒定，
+        # 提出去只是少算几十万次，取值逐位不变。
+        total_pc = host.total_pc.component(total_pc_component)
+        total_pc_guarded = max(total_pc, very_small)
+        power_of = host.power
+
+        active = []
+        server_energy = 0.0
+        for position in range(len(timeline) - 1):
+            t0 = timeline[position]
+            t1 = timeline[position + 1]
+
+            # 先加后删：零长记录（start == end）在同一点被加入又立刻移除，
+            # 与旧实现里 ``end >= t1`` 判否、从不计入的行为一致。
+            # 这两步必须在 very_small 跳过判断之前完成，否则被跳过的极短区间
+            # 会让活跃集与时间线脱节。
+            for index in starts_at.get(t0, ()):
+                insort(active, index)
+            for index in ends_at.get(t0, ()):
+                active.remove(index)
+
             if (t1 - t0) < very_small:
                 continue
+
+            # active 按 recs 下标升序，因此累加顺序与旧的 ``for r in recs``
+            # 顺序过滤逐位相同——浮点加法不满足结合律，顺序不能变。
             vm_pc_sum = 0.0
-            for r in recs:
-                if r.start_time <= t0 and r.end_time >= t1:
-                    vm_pc_sum += r.vm_pc
+            for index in active:
+                vm_pc_sum += recs[index].vm_pc
 
-            total_pc = host.total_pc.component(total_pc_component)
-            load_ratio = vm_pc_sum / max(total_pc, very_small)
-            power = host.power(load_ratio)
-            total_energy += power * (t1 - t0)
+            load_ratio = vm_pc_sum / total_pc_guarded
+            power = power_of(load_ratio)
+            interval_energy = power * (t1 - t0)
+            total_energy += interval_energy
+            server_energy += interval_energy
 
+        energy_by_server[srv_id] = server_energy
+
+    return total_energy, energy_by_server
+
+
+def energy_from_records(records, hosts, total_pc_component="modal"):
+    """按主机时间分片积分能量（W·s）。
+
+    保留原有签名与返回值语义；实际积分委托给
+    :func:`energy_from_records_with_breakdown`，两者的总能量逐位相同。
+    """
+    total_energy, _ = energy_from_records_with_breakdown(
+        records,
+        hosts,
+        total_pc_component,
+    )
     return total_energy

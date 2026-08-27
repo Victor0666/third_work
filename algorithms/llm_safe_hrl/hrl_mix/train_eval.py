@@ -104,33 +104,12 @@ def _completed_fuzzy_lateness_summary(eval_env):
     }
 
 
-def evaluate_hrl_three_layer_multi_seed(
-    env_cls,
-    env_kwargs,
-    vm_agent,
-    host_agent,
-    manager_agent,
-    seeds,
-    *,
-    return_safety_metrics=False,
-):
-    """在多个随机种子上评估当前三层 HRL 策略。
+def evaluation_ctor_kwargs(env_kwargs):
+    """去掉需要在环境建好后手动同步的尺度参数，得到构造函数入参。
 
-    参数：
-    - env_cls：环境类，一般为 CloudWorkflowEnv_VMAgents。
-    - env_kwargs：创建环境所需参数，同时包含部分需要手动同步的尺度参数。
-    - vm_agent、host_agent、manager_agent：当前训练中的三个智能体。
-    - seeds：评估使用的随机种子列表。
-
-    返回：
-    - eval_vm：各评估 seed 上 VM 层平均 reward 的均值。
-    - eval_host：各评估 seed 上 Host 层平均 reward 的均值。
-    - eval_mgr：各评估 seed 上 Manager 层平均 reward 的均值。
-    - eval_energy：各评估 seed 上总能耗的均值。
-    - return_safety_metrics=True 时额外返回安全字典；其中合格线固定为
-      deadline violation rate == 0，不继承训练 cost_budget。
+    这些键不是环境构造函数的形参，必须由 :func:`sync_env_scales` 事后写入。
+    并行 worker 也要按同一口径拆分，因此单独提出来共用。
     """
-    # 这些尺度参数不是环境构造函数的入参，需要环境创建后手动同步。
     ctor_block = {
         "energy_reward_scale",
         "task_baseline_norm",
@@ -138,162 +117,183 @@ def evaluate_hrl_three_layer_multi_seed(
         "alpha_delay_host",
         "alpha_delay_vm",
     }
-    base_ctor_kwargs = {k: v for k, v in env_kwargs.items() if k not in ctor_block}
+    return {k: v for k, v in env_kwargs.items() if k not in ctor_block}
 
-    vm_list, host_list, mgr_list, energy_list = [], [], [], []
-    seed_metric_records = []
 
-    seeds = tuple(seeds)
-    if not seeds:
-        raise ValueError(
-            "multi-seed evaluation requires at least one seed"
-        )
+def evaluate_one_seed(
+    env_cls,
+    env_kwargs,
+    vm_agent,
+    host_agent,
+    manager_agent,
+    seed,
+    *,
+    return_safety_metrics=False,
+):
+    """在单个随机种子上跑完一个确定性评估 episode。
 
-    for sd in seeds:
-        seed_started_at = time.perf_counter()
-        phase_metric_records = []
-        # 每个 seed 创建一个独立评估环境，避免评估过程互相污染状态。
-        ctor_kwargs = dict(base_ctor_kwargs)
-        ctor_kwargs["random_seed"] = int(sd)
+    这是多 seed 评估的最小工作单元，也是进程级并行的作业体。返回
+    ``(avg_vm, avg_host, avg_mgr, total_energy, record)``，其中 ``record``
+    只在 ``return_safety_metrics`` 为真时非空。
 
-        eval_env = env_cls(**ctor_kwargs)
-        sync_env_scales(eval_env, env_kwargs)
+    该函数对三个 agent 只做只读推理：``deterministic=True`` 关掉了 epsilon
+    分支，``count_step=False`` 关掉了步数计数，因此它不修改任何 agent 状态，
+    多个 seed 之间也没有共享可变状态——并行执行与串行执行逐位一致。
+    """
+    base_ctor_kwargs = evaluation_ctor_kwargs(env_kwargs)
+    sd = seed
+    seed_started_at = time.perf_counter()
+    phase_metric_records = []
+    # 每个 seed 创建一个独立评估环境，避免评估过程互相污染状态。
+    ctor_kwargs = dict(base_ctor_kwargs)
+    ctor_kwargs["random_seed"] = int(sd)
 
-        eval_env.reset()
+    eval_env = env_cls(**ctor_kwargs)
+    sync_env_scales(eval_env, env_kwargs)
 
-        # 评估时 manager 先选择一个阶段动作，后续进入任务分配循环。
+    eval_env.reset()
+
+    # 评估时 manager 先选择一个阶段动作，后续进入任务分配循环。
+    sH = eval_env.get_manager_state()
+    m_mask = eval_env.get_manager_action_mask()
+    m_act = manager_agent.select_action(sH, m_mask, deterministic=True, count_step=False)
+    manager_apply_action(eval_env, m_act)
+
+    done = bool(getattr(eval_env, "done_flag", False))
+    phases = 0
+    ret_mgr = 0.0
+    ret_vm_phase_mean = 0.0
+    ret_host_phase_mean = 0.0
+
+    while not done:
+        vm_rewards = []
+        host_rewards = []
+
+        # 一个 phase 内不断让 HostAgent 选 host，再让 VMAgent 选 VM 槽位。
+        while True:
+            st_host, has_next = eval_env.get_host_state_for_next_assignment()
+            if not has_next:
+                break
+
+            a_host, _, _ = select_layer_action(
+                host_agent,
+                st_host,
+                safe_rl_enabled=bool(
+                    getattr(
+                        eval_env,
+                        "safe_rl_enabled",
+                        False,
+                    )
+                ),
+                deterministic=True,
+                count_step=False,
+            )
+            eval_env.host_select(int(a_host))
+
+            st_vm, ok_vm = eval_env.get_vm_state_for_current_task()
+            if not ok_vm:
+                break
+
+            a_vm, _, _ = select_layer_action(
+                vm_agent,
+                st_vm,
+                safe_rl_enabled=bool(
+                    getattr(
+                        eval_env,
+                        "safe_rl_enabled",
+                        False,
+                    )
+                ),
+                deterministic=True,
+                count_step=False,
+            )
+            r_host, r_vm, info_task = eval_env.vm_assign(int(a_vm))
+
+            if getattr(eval_env, "safe_rl_enabled", False):
+                host_rewards.append(
+                    float(
+                        info_task.get(
+                            "total_performance_reward",
+                            info_task.get(
+                                "performance_reward_host",
+                                r_host,
+                            ),
+                        )
+                    )
+                )
+                vm_rewards.append(
+                    float(
+                        info_task.get(
+                            "total_performance_reward",
+                            info_task.get(
+                                "performance_reward_vm",
+                                r_vm,
+                            ),
+                        )
+                    )
+                )
+            else:
+                host_rewards.append(float(r_host))
+                vm_rewards.append(float(r_vm))
+
+        # phase 结束后由环境推进时间，并得到 manager 层 reward。
+        r_manager_raw, pinfo = eval_env.finish_phase_and_advance()
+        if return_safety_metrics:
+            phase_metric_records.append(dict(pinfo))
+        if getattr(eval_env, "safe_rl_enabled", False):
+            ret_mgr += float(
+                pinfo.get(
+                    "total_performance_reward",
+                    pinfo.get(
+                        "performance_reward",
+                        r_manager_raw,
+                    ),
+                )
+            )
+        else:
+            ret_mgr += float(r_manager_raw)
+        ret_vm_phase_mean += float(np.mean(vm_rewards)) if len(vm_rewards) > 0 else 0.0
+        ret_host_phase_mean += float(np.mean(host_rewards)) if len(host_rewards) > 0 else 0.0
+        phases += 1
+
+        done = bool(getattr(eval_env, "done_flag", False))
+        if done:
+            break
+
+        # 如果 episode 未结束，manager 为下一 phase 选择新动作。
         sH = eval_env.get_manager_state()
         m_mask = eval_env.get_manager_action_mask()
         m_act = manager_agent.select_action(sH, m_mask, deterministic=True, count_step=False)
         manager_apply_action(eval_env, m_act)
 
-        done = bool(getattr(eval_env, "done_flag", False))
-        phases = 0
-        ret_mgr = 0.0
-        ret_vm_phase_mean = 0.0
-        ret_host_phase_mean = 0.0
+    avg_vm = ret_vm_phase_mean / max(phases, 1)
+    avg_host = ret_host_phase_mean / max(phases, 1)
+    avg_mgr = ret_mgr / max(phases, 1)
+    total_energy = float(eval_env.total_energy)
 
-        while not done:
-            vm_rewards = []
-            host_rewards = []
+    record = None
+    if return_safety_metrics:
+        record = build_episode_metric_record(
+            eval_env,
+            seed=int(sd),
+            scheduling_time_seconds=(
+                time.perf_counter() - seed_started_at
+            ),
+            phase_records=phase_metric_records,
+        )
+    return (avg_vm, avg_host, avg_mgr, total_energy, record)
 
-            # 一个 phase 内不断让 HostAgent 选 host，再让 VMAgent 选 VM 槽位。
-            while True:
-                st_host, has_next = eval_env.get_host_state_for_next_assignment()
-                if not has_next:
-                    break
 
-                a_host, _, _ = select_layer_action(
-                    host_agent,
-                    st_host,
-                    safe_rl_enabled=bool(
-                        getattr(
-                            eval_env,
-                            "safe_rl_enabled",
-                            False,
-                        )
-                    ),
-                    deterministic=True,
-                    count_step=False,
-                )
-                eval_env.host_select(int(a_host))
+def aggregate_seed_results(seed_results, *, return_safety_metrics):
+    """把按 seed 顺序排好的单 seed 结果汇总成对外返回值。
 
-                st_vm, ok_vm = eval_env.get_vm_state_for_current_task()
-                if not ok_vm:
-                    break
-
-                a_vm, _, _ = select_layer_action(
-                    vm_agent,
-                    st_vm,
-                    safe_rl_enabled=bool(
-                        getattr(
-                            eval_env,
-                            "safe_rl_enabled",
-                            False,
-                        )
-                    ),
-                    deterministic=True,
-                    count_step=False,
-                )
-                r_host, r_vm, info_task = eval_env.vm_assign(int(a_vm))
-
-                if getattr(eval_env, "safe_rl_enabled", False):
-                    host_rewards.append(
-                        float(
-                            info_task.get(
-                                "total_performance_reward",
-                                info_task.get(
-                                    "performance_reward_host",
-                                    r_host,
-                                ),
-                            )
-                        )
-                    )
-                    vm_rewards.append(
-                        float(
-                            info_task.get(
-                                "total_performance_reward",
-                                info_task.get(
-                                    "performance_reward_vm",
-                                    r_vm,
-                                ),
-                            )
-                        )
-                    )
-                else:
-                    host_rewards.append(float(r_host))
-                    vm_rewards.append(float(r_vm))
-
-            # phase 结束后由环境推进时间，并得到 manager 层 reward。
-            r_manager_raw, pinfo = eval_env.finish_phase_and_advance()
-            if return_safety_metrics:
-                phase_metric_records.append(dict(pinfo))
-            if getattr(eval_env, "safe_rl_enabled", False):
-                ret_mgr += float(
-                    pinfo.get(
-                        "total_performance_reward",
-                        pinfo.get(
-                            "performance_reward",
-                            r_manager_raw,
-                        ),
-                    )
-                )
-            else:
-                ret_mgr += float(r_manager_raw)
-            ret_vm_phase_mean += float(np.mean(vm_rewards)) if len(vm_rewards) > 0 else 0.0
-            ret_host_phase_mean += float(np.mean(host_rewards)) if len(host_rewards) > 0 else 0.0
-            phases += 1
-
-            done = bool(getattr(eval_env, "done_flag", False))
-            if done:
-                break
-
-            # 如果 episode 未结束，manager 为下一 phase 选择新动作。
-            sH = eval_env.get_manager_state()
-            m_mask = eval_env.get_manager_action_mask()
-            m_act = manager_agent.select_action(sH, m_mask, deterministic=True, count_step=False)
-            manager_apply_action(eval_env, m_act)
-
-        avg_vm = ret_vm_phase_mean / max(phases, 1)
-        avg_host = ret_host_phase_mean / max(phases, 1)
-        avg_mgr = ret_mgr / max(phases, 1)
-        total_energy = float(eval_env.total_energy)
-
-        vm_list.append(avg_vm)
-        host_list.append(avg_host)
-        mgr_list.append(avg_mgr)
-        energy_list.append(total_energy)
-        if return_safety_metrics:
-            seed_metric_records.append(
-                build_episode_metric_record(
-                    eval_env,
-                    seed=int(sd),
-                    scheduling_time_seconds=(
-                        time.perf_counter() - seed_started_at
-                    ),
-                    phase_records=phase_metric_records,
-                )
-            )
+    串行与并行两条路径都只经过这里，聚合顺序完全由入参顺序决定，所以两者
+    逐位一致——浮点加法不满足结合律，``np.mean`` 的入参顺序不能变。
+    """
+    vm_list = [row[0] for row in seed_results]
+    host_list = [row[1] for row in seed_results]
+    mgr_list = [row[2] for row in seed_results]
+    energy_list = [row[3] for row in seed_results]
 
     base_result = (
         float(np.mean(vm_list)),
@@ -305,7 +305,7 @@ def evaluate_hrl_three_layer_multi_seed(
         return base_result
 
     safety_metrics = aggregate_safe_metric_records(
-        seed_metric_records
+        [row[4] for row in seed_results]
     )
     safety_metrics.update(
         {
@@ -319,6 +319,111 @@ def evaluate_hrl_three_layer_multi_seed(
         }
     )
     return (*base_result, safety_metrics)
+
+
+def evaluate_hrl_three_layer_multi_seed(
+    env_cls,
+    env_kwargs,
+    vm_agent,
+    host_agent,
+    manager_agent,
+    seeds,
+    *,
+    return_safety_metrics=False,
+    evaluation_pool=None,
+):
+    """在多个随机种子上评估当前三层 HRL 策略。
+
+    参数：
+    - env_cls：环境类，一般为 CloudWorkflowEnv_VMAgents。
+    - env_kwargs：创建环境所需参数，同时包含部分需要手动同步的尺度参数。
+    - vm_agent、host_agent、manager_agent：当前训练中的三个智能体。
+    - seeds：评估使用的随机种子列表。
+    - evaluation_pool：可选的
+      :class:`hrl_mix.validation_parallel.ValidationEvaluationPool`。给了就把
+      各 seed 的 episode 分发到常驻工作进程，返回值仍按 seed 顺序聚合。
+
+    返回：
+    - eval_vm：各评估 seed 上 VM 层平均 reward 的均值。
+    - eval_host：各评估 seed 上 Host 层平均 reward 的均值。
+    - eval_mgr：各评估 seed 上 Manager 层平均 reward 的均值。
+    - eval_energy：各评估 seed 上总能耗的均值。
+    - return_safety_metrics=True 时额外返回安全字典；其中合格线固定为
+      deadline violation rate == 0，不继承训练 cost_budget。
+    """
+    seeds = tuple(seeds)
+    if not seeds:
+        raise ValueError(
+            "multi-seed evaluation requires at least one seed"
+        )
+
+    if evaluation_pool is None:
+        seed_results = [
+            evaluate_one_seed(
+                env_cls,
+                env_kwargs,
+                vm_agent,
+                host_agent,
+                manager_agent,
+                sd,
+                return_safety_metrics=return_safety_metrics,
+            )
+            for sd in seeds
+        ]
+    else:
+        # 逐位审计由池内部负责，两个调用点共用同一份实现。
+        seed_results = evaluation_pool.evaluate_seeds(
+            env_kwargs,
+            seeds,
+            return_safety_metrics=return_safety_metrics,
+        )
+
+    return aggregate_seed_results(
+        seed_results,
+        return_safety_metrics=return_safety_metrics,
+    )
+
+
+#: 墙钟类字段在串行/并行之间本就不可比，审计时按名字剔除。
+_WALL_CLOCK_METRIC_FIELDS = ("scheduling_time_seconds",)
+
+
+def assert_seed_results_identical(parallel_results, serial_results):
+    """逐位比对并行与串行的单 seed 结果，供审计开关使用。"""
+    if len(parallel_results) != len(serial_results):
+        raise AssertionError(
+            "validation parallel audit: seed count mismatch "
+            f"{len(parallel_results)} != {len(serial_results)}"
+        )
+    for index, (got, want) in enumerate(
+        zip(parallel_results, serial_results)
+    ):
+        for field, left, right in zip(
+            ("avg_vm", "avg_host", "avg_mgr", "total_energy"),
+            got[:4],
+            want[:4],
+        ):
+            if float(left) != float(right):
+                raise AssertionError(
+                    "validation parallel audit: seed index "
+                    f"{index} field {field} differs: {left!r} != {right!r}"
+                )
+        got_record, want_record = got[4], want[4]
+        if (got_record is None) != (want_record is None):
+            raise AssertionError(
+                "validation parallel audit: seed index "
+                f"{index} record presence differs"
+            )
+        if got_record is None:
+            continue
+        keys = set(got_record) | set(want_record)
+        for key in sorted(keys - set(_WALL_CLOCK_METRIC_FIELDS)):
+            if got_record.get(key) != want_record.get(key):
+                raise AssertionError(
+                    "validation parallel audit: seed index "
+                    f"{index} metric {key} differs: "
+                    f"{got_record.get(key)!r} != {want_record.get(key)!r}"
+                )
 
 
 def evaluate_and_save_safe_hrl_final_test(

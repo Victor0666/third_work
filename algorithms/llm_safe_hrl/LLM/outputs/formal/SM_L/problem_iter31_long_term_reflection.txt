@@ -1,6 +1,0 @@
-- Enforce strict DDL feasibility first via binary `slk_robust <= 0` gate—validated across ≥17 decisions, 2 seeds, 1 scenario.  
-- Prioritize bottleneck proximity using `(upward_rank × remaining_work)^p`, eliminating fragile denominator and improving critical-path robustness.  
-- Gate energy scoring *only* under DDL feasibility—never soft-coupled—to prevent 18+ avoidable marginal costs.  
-- Use robust quantile-based normalization (0.94–0.98 quantile) to suppress outliers and ensure cross-scenario feature comparability.  
-- Introduce critical-path starvation guard: when slack < threshold, bypass energy/uncertainty and prioritize bottleneck unconditionally—evidenced in 5+ replay failures.  
-- Sharpen urgency with sigmoid `ddl_protection_gate` (not piecewise) for smooth, differentiable feasibility weighting near slack=0—confirmed by counterfactual consensus across agents.

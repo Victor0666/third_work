@@ -65,7 +65,12 @@ except Exception:
     import gym
     from gym import spaces
 
-from common.workflow_opt import LoadRecord, energy_from_records, Workflow
+from common.workflow_opt import (
+    LoadRecord,
+    energy_from_records,
+    energy_from_records_with_breakdown,
+    Workflow,
+)
 from common.read_xml_opt_Tsize import load_workflow_from_dax, poisson_arrival_times
 from common.resource_opt import TriangularFuzzyNumber, create_cluster
 from base.safety_fallback import (
@@ -112,6 +117,36 @@ def _clip01(x: float) -> float:
     if x > 1.0:
         return 1.0
     return float(x)
+
+
+def _clip01_numpy_exact(x: float) -> float:
+    """标量版 ``float(np.clip(x, 0.0, 1.0))``，逐位等价。
+
+    与 :func:`_clip01` 的唯一区别是负零：numpy 的 clip 等价于
+    ``minimum(maximum(x, 0.0), 1.0)``，``maximum(-0.0, 0.0)`` 给出 **正零**，
+    而朴素的 ``if x < 0.0`` 判断对 ``-0.0`` 不成立，会把 ``-0.0`` 原样返回。
+    多出来的 ``x == 0.0`` 分支就是为了消掉这个符号差异。
+
+    NaN 与 ±inf 也与 numpy 一致：NaN 两个比较都为假因而原样返回，``-inf``
+    截到 0.0，``+inf`` 截到 1.0。
+    """
+    if x < 0.0 or x == 0.0:
+        return 0.0
+    if x > 1.0:
+        return 1.0
+    return float(x)
+
+
+def _simulator_cache_audit_enabled() -> bool:
+    """``SIM_EXACTNESS_AUDIT=1`` 时，缓存命中也重算一遍并断言精确相等。
+
+    仿真器缓存的正确性依据是"被缓存的量在 episode 内恒定"，这是一个必须能被
+    验证而不是只能被论证的前提：MARL / PD3QN / IRWS 的训练奖励里含有
+    ``max(0.0, after - before)`` 这样的大数相减，任何舍入偏差都会被放大，而这
+    三个基线的权重已经冻结。开启本开关跑一遍完整 episode，是"逐位一致"这个
+    声明的直接证据。
+    """
+    return os.environ.get("SIM_EXACTNESS_AUDIT", "") == "1"
 
 
 class NoFeasibleVMError(RuntimeError):
@@ -573,6 +608,11 @@ class HrlHeftEnv(gym.Env):
         )
         self.host_ids = sorted(self.hosts.keys())
         self.vm_ids = sorted(self.vms.keys())
+        # 三场景时长只依赖 (task_id, vm_id, scenario)：vm.pc/vm.bw 在 create_cluster
+        # 之后不再改写，task_mi/in_bits/out_bits 只在 reset 时重建并在工作流到达时
+        # 追加（既有条目从不被修改）。因此缓存在 episode 内恒定，reset 时清空即可。
+        self._scenario_duration_cache = {}
+        self._scenario_duration_cache_audit = _simulator_cache_audit_enabled()
         self.num_hosts = len(self.hosts)
         self.num_vms = len(self.vm_ids)
         self.vm_host = np.array([self.vms[vid].host_id for vid in self.vm_ids], dtype=np.int32)
@@ -1600,9 +1640,51 @@ class HrlHeftEnv(gym.Env):
         当前 HRL 运行时无论父任务位于何处，都会通过目标 VM 带宽计入全部输入
         与输出。本接口严格复用该口径，不单独启用尚未接入运行时的 locality
         近似，避免安全预测比真实调度更乐观。
+
+        结果按 ``(task_id, vm_id, scenario)`` 记忆化。返回值只由这三者决定，
+        缓存命中返回的是同一函数在同一状态下算出的同一批浮点数，因此与不加
+        缓存时逐位相同。``SIM_EXACTNESS_AUDIT=1`` 会在每次命中时重算并断言
+        精确相等。每次返回副本，避免调用方就地修改污染缓存。
         """
         task_id = self._task_id(task_id)
         vm_id, _ = self._vm_id_and_index(vm_id)
+        cache_key = (task_id, vm_id, str(scenario))
+        # 缓存字典懒建：测试会用 object.__new__(HrlHeftEnv) 造只填了几个字段的
+        # 替身，不走 __init__。这里绝不能用类属性做默认值，否则多个环境实例会
+        # 共用同一份缓存，把别的集群的时长读回来。
+        cache = getattr(self, "_scenario_duration_cache", None)
+        if cache is None:
+            cache = {}
+            self._scenario_duration_cache = cache
+        cached = cache.get(cache_key)
+        if cached is None:
+            cached = self._compute_task_duration_components_scenario(
+                task_id,
+                vm_id,
+                scenario,
+            )
+            cache[cache_key] = cached
+        elif getattr(self, "_scenario_duration_cache_audit", False):
+            actual = self._compute_task_duration_components_scenario(
+                task_id,
+                vm_id,
+                scenario,
+            )
+            if actual != cached:
+                raise AssertionError(
+                    "scenario duration cache changed for "
+                    f"task_id={task_id}, vm_id={vm_id}, "
+                    f"scenario={scenario}: {cached} -> {actual}"
+                )
+        return dict(cached)
+
+    def _compute_task_duration_components_scenario(
+        self,
+        task_id,
+        vm_id,
+        scenario,
+    ) -> dict:
+        """在已归一化的 ``(task_id, vm_id)`` 上做实际计算，不查缓存。"""
         vm = self.vms[vm_id]
         pc = self._resource_component_for_scenario(vm.pc, scenario)
         bw = self._resource_component_for_scenario(vm.bw, scenario)
@@ -5126,6 +5208,9 @@ class HrlHeftEnv(gym.Env):
         self.assignment_history = []
         # remaining_work 只依赖本 episode 的 DAG，加载新工作流集合后缓存失效。
         self._remaining_work_cache = {}
+        # 三场景时长缓存同理：task_mi/in_bits/out_bits 在此重建，旧的 task_id
+        # 不再对应同一任务，必须一并清空。
+        self._scenario_duration_cache = {}
 
         self.ready_task_ids = []
         self.event_heap = []
@@ -5371,7 +5456,6 @@ class HrlHeftEnv(gym.Env):
 
         t = self.current_time
         clipped_all = []
-        clipped_by_host = {int(h): [] for h in self.host_ids}
 
         for r in self._records:
             if r.end_time <= 0.0:
@@ -5381,23 +5465,27 @@ class HrlHeftEnv(gym.Env):
             end = min(r.end_time, t)
             if end <= r.start_time:
                 continue
-            rr = LoadRecord(r.start_time, end, r.server_id, r.vm_pc)
-            clipped_all.append(rr)
-            clipped_by_host[int(r.server_id)].append(rr)
+            clipped_all.append(
+                LoadRecord(r.start_time, end, r.server_id, r.vm_pc)
+            )
 
-        E_total = energy_from_records(clipped_all, self.hosts)
+        # 单趟积分同时得到总能耗与分主机能耗。两者都与旧的"一次全量 +
+        # 每主机一次"多趟调用逐位相同，因为分主机记录原本就是按同一顺序
+        # 追加的，函数内部也按同样顺序累加。
+        E_total, E_by_server = energy_from_records_with_breakdown(
+            clipped_all,
+            self.hosts,
+        )
         dE_total = max(0.0, E_total - self._energy_cache)
         self._energy_cache = float(E_total)
 
         dE_by_host = {}
         for h in self.host_ids:
-            if len(clipped_by_host[int(h)]) == 0:
-                E_h = 0.0
-            else:
-                E_h = energy_from_records(clipped_by_host[int(h)], {int(h): self.hosts[int(h)]})
+            # 没有可计入记录的主机不会出现在字典里，与旧实现返回 0.0 一致。
+            E_h = float(E_by_server.get(int(h), 0.0))
             prev_h = float(self._energy_cache_by_host.get(int(h), 0.0))
-            dE_h = max(0.0, float(E_h) - prev_h)
-            self._energy_cache_by_host[int(h)] = float(E_h)
+            dE_h = max(0.0, E_h - prev_h)
+            self._energy_cache_by_host[int(h)] = E_h
             dE_by_host[int(h)] = float(dE_h)
 
         self.total_energy += float(dE_total)
@@ -6053,8 +6141,10 @@ class HrlHeftEnv(gym.Env):
         load_before = _safe_div(active_pc_before, total_pc)
         load_after = _safe_div(active_pc_before + float(added_pc), total_pc)
 
-        load_before = float(np.clip(load_before, 0.0, 1.0))
-        load_after = float(np.clip(load_after, 0.0, 1.0))
+        # _safe_div 已保证是 Python 标量 float，标量截断与 np.clip 逐位等价。
+        # 这两行是全评估中调用最频繁的 np.clip 点位（约 120 万次）。
+        load_before = _clip01_numpy_exact(load_before)
+        load_after = _clip01_numpy_exact(load_after)
 
         P_before = float(host.power(load_before))
         P_after = float(host.power(load_after))

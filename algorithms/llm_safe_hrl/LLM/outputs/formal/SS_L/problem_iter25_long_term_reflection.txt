@@ -1,6 +1,0 @@
-- Prioritize hard DDL feasibility via binary `slack <= 0` gating—validated across ≥18 decisions, 2 seeds, 1 scenario.  
-- Enforce critical-path awareness *only* under deadline pressure using `upward_rank × remaining_work × (slack ≤ 0)`—removes redundancy and improves violation rate (0.593 vs 0.620).  
-- Use sign-preserving MAD-normalized slack to sharpen urgency near `slack ≈ 0`, confirmed in ≥16 `higher_ddl_risk_choice` failures.  
-- Introduce successor-release interaction: `min_exec_time × clipped_upward_rank × (slack ≤ 0)`—targets fast-executing blockers of critical descendants, validated in 5+ cross-agent consensus failures.  
-- Apply joint congestion gating requiring *both* high `ready_wait_time` and high `uncertainty`—eliminates spurious load penalties while preserving anti-starvation.  
-- Enable energy/uncertainty penalties *only* when `slack ≥ 0` (DDL-feasible), aligning risk aversion with feasibility-first ranking—supported by ≥24 high-confidence structural actions.

@@ -1,5 +1,0 @@
-- Enforce strict lexicographic DDL gating: hard `slack > 0` mask disables *all* non-DDL terms (energy, uncertainty, wait), validated across ≥17 decisions, 2 seeds, 1 scenario, zero violations.  
-- Prioritize critical-path release unconditionally via `upward_rank × remaining_work`, confirmed in ≥4 starvation recoveries and 17+ cross-agent consensus decisions.  
-- Use task-wise MAD normalization per risk dimension (`|slack|`, `uncertainty`, `duration_total`) to preserve granularity and avoid heterogeneity-induced distortion.  
-- Gate energy-aware terms only under dual feasibility: `slack > 0` *and* host capacity sufficient—reducing regret in 19+ counterfactuals.  
-- Introduce power-law anti-starvation (`ready_wait_time ** wait_time_decay_exponent`) gated by slack headroom, improving responsiveness near deadlines.

@@ -8,6 +8,7 @@ import json
 import math
 import hashlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 from time import time
 from omegaconf import OmegaConf
 
@@ -406,7 +407,22 @@ class SeEvo:
     这是一种基于大语言模型的进化算法，结合种群间进化、个体自进化和反思机制，
     用于为优化问题演化启发式规则。
     """
-    
+
+    # 一代里每个个体各跑一次 CMA-ES，而单次 CMA-ES 批只有
+    # population_size × scenarios × stage_seeds 个上下文（quick 阶段仅 6 个），
+    # 远填不满 max_parallel_evaluations 个槽位。因此：个体级并发用一个临时的
+    # structure-prepare 池，评价子进程全部投递到共享的 _evaluation_executor，
+    # 由它统一限流。两个池必须相互独立，否则等待批结果的个体线程会占满评价
+    # 线程而死锁。
+    _evaluation_executor = None
+    # 锁定义在类上而不是 __init__ 里：测试用 object.__new__(SeEvo) 构造替身、
+    # 不走 __init__，这些属性仍必须可用。一次运行只有一个 SeEvo 实例，
+    # 类级共享不会造成额外串行。
+    _evaluation_lock = threading.Lock()
+    # 结构哈希在同一代内唯一，所以受这把锁保护的字典键天然不冲突；
+    # 加锁只是为了让计数与 setdefault/append 序列在多线程下仍然确定。
+    _shared_state_lock = threading.Lock()
+
     def __init__(self, cfg, root_dir, case_num) -> None:
         """Initialize SeEvo algorithm.
         初始化 SeEvo 算法。
@@ -471,6 +487,7 @@ class SeEvo:
         self.parameter_warm_starts = {}
         self.parameter_diagnostic_history = {}
         self.parameter_evaluation_count = 0
+        self._evaluation_executor = None
         raw_counterfactual_config = getattr(
             cfg,
             "counterfactual_feedback",
@@ -571,6 +588,32 @@ class SeEvo:
             "generated",
         )
         os.makedirs(self.generated_dir, exist_ok=True)
+        self.runtime_output_root = os.path.abspath(
+            str(
+                protocol_paths.get(
+                    "runtime_output_root",
+                    self.protocol_output_root,
+                )
+            )
+        )
+        self.response_dir = os.path.join(
+            self.runtime_output_root,
+            "responses",
+        )
+        self.stdout_dir = os.path.join(
+            self.runtime_output_root,
+            "candidate_stdout",
+        )
+        self.reflection_dir = os.path.join(
+            self.runtime_output_root,
+            "reflections",
+        )
+        for artifact_dir in (
+            self.response_dir,
+            self.stdout_dir,
+            self.reflection_dir,
+        ):
+            os.makedirs(artifact_dir, exist_ok=True)
 
         # Hydra 命令行 override 已经合并进 self.cfg.problem。评价子进程不能继续
         # 读取仓库中的原始 YAML，否则 workflows_per_instance 等运行参数会被忽略。
@@ -657,6 +700,27 @@ class SeEvo:
         self.print_individual_self_evolution_reflection_prompt = True
 
 
+    def _runtime_artifact_path(self, category: str, file_name: str) -> str:
+        """Return an absolute path inside this execution's Hydra directory."""
+        directory_attributes = {
+            "response": "response_dir",
+            "stdout": "stdout_dir",
+            "reflection": "reflection_dir",
+        }
+        if category not in directory_attributes:
+            raise ValueError(f"unknown runtime artifact category: {category}")
+        directory = getattr(
+            self,
+            directory_attributes[category],
+            os.getcwd(),
+        )
+        os.makedirs(directory, exist_ok=True)
+        name = os.path.basename(str(file_name))
+        if name != str(file_name) or name in {"", ".", ".."}:
+            raise ValueError("runtime artifact file_name must be a plain filename")
+        return os.path.abspath(os.path.join(directory, name))
+
+
 
     def init_population(self) -> None:
         """Initialize population with seed function and LLM-generated individuals (train mode)
@@ -703,8 +767,14 @@ class SeEvo:
                             # Convert each saved rule file into the same individual structure used in training.
                             # 将每个已保存规则文件转换为与训练阶段一致的个体结构。 将读取到的规则封装为统一个体
                             individual = {
-                                "stdout_filepath": f"problem_iter{self.iteration}_stdout{response_id}.txt", # 运行评价程序时保存输出和报错的文件
-                                "code_path": f"problem_iter{self.iteration}_code{response_id}.py", # 候选代码的逻辑路径或追踪标识
+                                "stdout_filepath": self._runtime_artifact_path(
+                                    "stdout",
+                                    f"problem_iter{self.iteration}_stdout{response_id}.txt",
+                                ), # 运行评价程序时保存输出和报错的文件
+                                "code_path": os.path.join(
+                                    self.generated_dir,
+                                    f"candidate_iter{self.iteration}_ind{response_id}.py",
+                                ), # 候选代码的逻辑路径或追踪标识
                                 "code": code, # 真正要评价的 Python 启发式函数
                                 "response_id": response_id, # 个体编号
                             }
@@ -739,8 +809,14 @@ class SeEvo:
             # 构建种子个体， 种子个体作为基线，后续生成的启发式规则需要在其基础上改进。
             # 初始时self.iteration = 0， 所以文件名通常是 problem_iter0_stdout0.txt  problem_iter0_code0.py
             seed_ind = {
-                "stdout_filepath": f"problem_iter{self.iteration}_stdout0.txt",
-                "code_path": f"problem_iter{self.iteration}_code0.py",
+                "stdout_filepath": self._runtime_artifact_path(
+                    "stdout",
+                    f"problem_iter{self.iteration}_stdout0.txt",
+                ),
+                "code_path": os.path.join(
+                    self.generated_dir,
+                    f"candidate_iter{self.iteration}_ind0.py",
+                ),
                 "code": code,
                 "response_id": 0,
             }
@@ -751,7 +827,8 @@ class SeEvo:
             # 验证种子函数是否能够正常执行， 如果种子函数出现问题，程序停止，不再调用LLM
             if not self.seed_ind["exec_success"]:
                 raise RuntimeError(
-                    f"Seed function is invalid. Please check the stdout file in {os.getcwd()}."
+                    "Seed function is invalid. Please check the stdout file: "
+                    + str(self.seed_ind["stdout_filepath"])
                 )
 
             self.update_iter() # 更新测试种群的最优解
@@ -897,6 +974,37 @@ class SeEvo:
         ]
         return [str(item).strip().upper() for item in scenarios]
 
+    def _shared_evaluation_executor(self):
+        """Return the one pool that bounds every evaluation subprocess.
+
+        All CMA-ES batches — including those of structures being optimized
+        concurrently — submit here, so ``max_parallel_evaluations`` stays a
+        hard, process-wide ceiling no matter how many structures are in
+        flight. The pool is created on first use and reused for the whole run
+        because thread startup is irrelevant next to a multi-second
+        simulation, but repeatedly building and tearing down a pool per batch
+        would serialize batches at their own barriers.
+        """
+        with self._evaluation_lock:
+            if self._evaluation_executor is None:
+                workers = max(
+                    1,
+                    int(self._optimizer_config().max_parallel_evaluations),
+                )
+                self._evaluation_executor = ThreadPoolExecutor(
+                    max_workers=workers,
+                    thread_name_prefix="parameter-eval",
+                )
+            return self._evaluation_executor
+
+    def _shutdown_evaluation_executor(self) -> None:
+        """Release evaluation threads once the run is finished."""
+        with self._evaluation_lock:
+            executor = self._evaluation_executor
+            self._evaluation_executor = None
+        if executor is not None:
+            executor.shutdown(wait=True)
+
     def _run_parameter_evaluation_context(
         self,
         command: list[str],
@@ -1019,7 +1127,13 @@ class SeEvo:
                         resource_config_hash=resource_config_hash,
                         precision=config.cache_precision,
                     )
-                    cached = cache.get(cache_key) if cache is not None else None
+                    if cache is None:
+                        cached = None
+                    else:
+                        # 缓存键含 structure_hash，同代结构互不共享条目，
+                        # 因此加锁只影响命中统计与日志写入的原子性，不改命中结果。
+                        with self._shared_state_lock:
+                            cached = cache.get(cache_key)
                     group.append(len(contexts))
                     contexts.append(
                         {
@@ -1083,21 +1197,30 @@ class SeEvo:
                     context["seed"],
                 )
         elif pending:
-            with ThreadPoolExecutor(
-                max_workers=workers,
-                thread_name_prefix="parameter-eval",
-            ) as executor:
-                future_to_index = {
-                    executor.submit(
-                        self._run_parameter_evaluation_context,
-                        context["command"],
-                        context["scenario_id"],
-                        context["seed"],
-                    ): index
-                    for index, context in pending
-                }
-                for future in as_completed(future_to_index):
+            # 共享池而不是每批新建：同代其他结构的批次也投在这里，
+            # 于是 max_parallel_evaluations 是全进程上限，而不再是每批上限。
+            executor = self._shared_evaluation_executor()
+            future_to_index = {
+                executor.submit(
+                    self._run_parameter_evaluation_context,
+                    context["command"],
+                    context["scenario_id"],
+                    context["seed"],
+                ): index
+                for index, context in pending
+            }
+            failure = None
+            for future in as_completed(future_to_index):
+                try:
                     completed_results[future_to_index[future]] = future.result()
+                except BaseException as exc:  # noqa: BLE001 - 见下方说明
+                    # 共享池不能像 with 语句那样在异常时关掉整个池——别的结构
+                    # 还在用它。先把本批剩余结果收完再抛出第一个异常，
+                    # 语义与原来 with 块内 future.result() 直接抛出一致。
+                    if failure is None:
+                        failure = exc
+            if failure is not None:
+                raise failure
 
         cache_entries = []
         aggregates = []
@@ -1124,11 +1247,12 @@ class SeEvo:
             aggregate["scenario_ids"] = scenario_ids
             aggregate["evaluation_context_count"] = len(seed_results)
             aggregates.append(aggregate)
-        if cache is not None:
-            cache.put_many(cache_entries)
-        self.parameter_evaluation_count = int(
-            getattr(self, "parameter_evaluation_count", 0)
-        ) + len(pending)
+        with self._shared_state_lock:
+            if cache is not None:
+                cache.put_many(cache_entries)
+            self.parameter_evaluation_count = int(
+                getattr(self, "parameter_evaluation_count", 0)
+            ) + len(pending)
         return aggregates
 
     def _write_parameter_artifacts(
@@ -1171,29 +1295,46 @@ class SeEvo:
             )
         return history_path, diagnostics_path
 
+    def _warm_start_for(self, structure_hash: str):
+        """Read this structure's warm start under the shared-state lock.
+
+        Warm starts are written by the *previous* generation, and structure
+        hashes are unique within a generation, so a concurrently prepared
+        sibling can never write the key being read here. The lock only keeps
+        the dict itself consistent.
+        """
+        with self._shared_state_lock:
+            warm_starts = getattr(self, "parameter_warm_starts", {})
+            value = warm_starts.get(structure_hash)
+            return dict(value) if isinstance(value, dict) else value
+
     def _record_cross_generation_diagnostics(
         self,
         structure_hash: str,
         diagnostics: dict,
     ) -> dict:
-        history_by_structure = getattr(
-            self,
-            "parameter_diagnostic_history",
-            None,
-        )
-        if history_by_structure is None:
-            history_by_structure = {}
-            self.parameter_diagnostic_history = history_by_structure
-        records = history_by_structure.setdefault(str(structure_hash), [])
-        records.append(
-            {
-                "iteration": int(self.iteration),
-                "diagnostics": json.loads(
-                    json.dumps(diagnostics, ensure_ascii=True, allow_nan=False)
-                ),
-            }
-        )
-        del records[:-20]
+        # 同代结构哈希互不重复，因此各自只碰自己那条记录；锁只保证
+        # 字典本身在多结构并发准备时的完整性。
+        with self._shared_state_lock:
+            history_by_structure = getattr(
+                self,
+                "parameter_diagnostic_history",
+                None,
+            )
+            if history_by_structure is None:
+                history_by_structure = {}
+                self.parameter_diagnostic_history = history_by_structure
+            records = history_by_structure.setdefault(str(structure_hash), [])
+            records.append(
+                {
+                    "iteration": int(self.iteration),
+                    "diagnostics": json.loads(
+                        json.dumps(diagnostics, ensure_ascii=True, allow_nan=False)
+                    ),
+                }
+            )
+            del records[:-20]
+            records = list(records)
         result = dict(diagnostics)
         result["cross_generation_evidence"] = (
             accumulate_cross_generation_diagnostics(records)
@@ -1250,9 +1391,7 @@ class SeEvo:
                 train_seeds=train_seeds,
                 validation_seeds=validation_seeds,
                 final_test_seeds=final_test_seeds,
-                warm_start=getattr(self, "parameter_warm_starts", {}).get(
-                    candidate.structure_hash
-                ),
+                warm_start=self._warm_start_for(candidate.structure_hash),
             )
             best_parameters = optimization.best_parameters
             diagnostics = generate_parameter_diagnostics(
@@ -1270,9 +1409,10 @@ class SeEvo:
             optimization_payload["scenario_ids"] = (
                 self._optimization_scenario_ids()
             )
-            self.parameter_warm_starts[candidate.structure_hash] = dict(
-                best_parameters
-            )
+            with self._shared_state_lock:
+                self.parameter_warm_starts[candidate.structure_hash] = dict(
+                    best_parameters
+                )
         else:
             best_parameters = schema.values_dict(schema.initial_values)
             diagnostics = {
@@ -1410,10 +1550,14 @@ class SeEvo:
         """
         # Save response to file
         # 将响应保存到文件
-        if file_name is None:
-            file_name = f"problem_iter{self.iteration}_response{response_id}.txt"
+        default_file_name = file_name is None
+        if default_file_name:
+            file_name = self._runtime_artifact_path(
+                "response",
+                f"problem_iter{self.iteration}_response{response_id}.txt",
+            )
         else:
-            file_name = file_name + ".txt"
+            file_name = os.path.abspath(file_name + ".txt")
             
         with open(file_name, 'w', encoding="utf-8") as file:
             file.write(response + '\n')
@@ -1424,8 +1568,11 @@ class SeEvo:
 
         # Determine stdout filepath
         # 确定标准输出文件路径
-        if file_name.endswith("_response" + str(response_id) + ".txt"):
-            std_out_filepath = f"problem_iter{self.iteration}_stdout{response_id}.txt"
+        if default_file_name:
+            std_out_filepath = self._runtime_artifact_path(
+                "stdout",
+                f"problem_iter{self.iteration}_stdout{response_id}.txt",
+            )
         else:
             std_out_filepath = file_name[:-4] + "_stdout.txt"
         
@@ -1433,7 +1580,10 @@ class SeEvo:
         # 通过 response_id 保持单个个体的响应、代码和输出文件可追踪。
         individual = {
             "stdout_filepath": std_out_filepath,
-            "code_path": f"problem_iter{self.iteration}_code{response_id}.py",
+            "code_path": os.path.join(
+                getattr(self, "generated_dir", os.getcwd()),
+                f"candidate_iter{self.iteration}_ind{response_id}.py",
+            ),
             "code": code,
             "response_id": response_id,
             "response_filepath": os.path.abspath(file_name),
@@ -1669,6 +1819,67 @@ class SeEvo:
         return individual
 
 
+    def _prepare_individuals_concurrently(
+        self,
+        population: list[dict],
+        response_ids: list[int],
+    ) -> None:
+        """Run every structure's CMA-ES stage, overlapping them when allowed.
+
+        Each structure is independent: cache keys, warm starts, diagnostic
+        records and on-disk artifacts are all namespaced by ``structure_hash``,
+        which is unique within a generation because duplicates were already
+        rejected. Overlapping them therefore changes only scheduling, never a
+        single evaluated value.
+
+        Failures are recorded per structure with the same message the serial
+        version produced, so one bad candidate cannot abort the generation.
+        """
+        if not response_ids:
+            return
+        concurrency = min(
+            len(response_ids),
+            max(1, int(self._optimizer_config().max_parallel_evaluations)),
+        )
+        if concurrency == 1:
+            for response_id in response_ids:
+                self._prepare_one_individual(population, response_id)
+            return
+        # 这个池只承载"等待自己那批评价结果"的个体线程，与
+        # _shared_evaluation_executor 必须是两个池，否则等待方会占满执行方。
+        with ThreadPoolExecutor(
+            max_workers=concurrency,
+            thread_name_prefix="structure-prepare",
+        ) as executor:
+            futures = [
+                executor.submit(
+                    self._prepare_one_individual,
+                    population,
+                    response_id,
+                )
+                for response_id in response_ids
+            ]
+            for future in futures:
+                # _prepare_one_individual 自己吞掉候选级异常；这里 result()
+                # 只会因为真正的内部缺陷而抛出，那种情况就该让整轮失败。
+                future.result()
+
+    def _prepare_one_individual(
+        self,
+        population: list[dict],
+        response_id: int,
+    ) -> None:
+        """Prepare one structure, marking it invalid on any candidate failure."""
+        try:
+            population[response_id] = self._prepare_individual_for_evaluation(
+                population[response_id]
+            )
+        except Exception as exc:
+            population[response_id] = self.mark_invalid_individual(
+                population[response_id],
+                f"Rule preparation failed: {type(exc).__name__}: {exc}",
+            )
+
     def evaluate_population(self, population: list[dict], case_num: list) -> list[dict]:
         """Evaluate population by running code in parallel and computing objective values.
         通过并行运行代码并计算目标值来评估种群。
@@ -1684,11 +1895,12 @@ class SeEvo:
             和 traceback_msg 等评估信息。
         """
         # 下标与 population 严格对齐；None 表示该个体在启动前或启动时已失败。
-        inner_runs = [] # 用来保存每个个体对应的评价子进程
+        inner_runs = [None] * len(population)  # 每个个体对应的评价子进程
         seen_structure_hashes = set()
-        
-        # Execute code for each individual
-        # 为每个个体执行代码
+
+        # 第一步（必须串行）：合法性与"同代重复结构"判定。重复判定依赖遍历
+        # 顺序——先出现的保留、后出现的作废——并发化会改变哪个个体被作废。
+        prepare_ids = []
         for response_id in range(len(population)):
             if population[response_id].get("candidate_validation_error"):
                 population[response_id] = self.mark_invalid_individual(
@@ -1696,7 +1908,6 @@ class SeEvo:
                     "Candidate validation failed: "
                     + population[response_id]["candidate_validation_error"],
                 )
-                inner_runs.append(None)
                 continue
             # Skip if response contains no valid code
             # 如果响应中没有有效代码，则跳过该个体  LLM 的响应不一定始终包含合法 Python 代码
@@ -1704,7 +1915,6 @@ class SeEvo:
                 population[response_id] = self.mark_invalid_individual(
                     population[response_id], "Invalid response!"
                 )
-                inner_runs.append(None)
                 continue
             try:
                 parsed_candidate = self._parse_rule_candidate(
@@ -1720,35 +1930,44 @@ class SeEvo:
                         "Duplicate structure_hash in the same population: "
                         + structure_hash,
                     )
-                    inner_runs.append(None)
                     continue
                 seen_structure_hashes.add(structure_hash)
-                population[response_id] = self._prepare_individual_for_evaluation(
-                    population[response_id]
-                )
             except Exception as exc:
                 population[response_id] = self.mark_invalid_individual(
                     population[response_id],
                     f"Rule preparation failed: {type(exc).__name__}: {exc}",
                 )
-                inner_runs.append(None)
                 continue
-            
+            prepare_ids.append(response_id)
+
+        # 第二步（并发）：每个结构各跑一次 CMA-ES。单个批次只有
+        # population_size × scenarios × stage_seeds 个上下文，填不满评价池；
+        # 让多个结构同时准备，才能把共享池的槽位吃满。结构之间不共享任何
+        # 结果——缓存键、暖启动、诊断记录、产物路径都以 structure_hash 区分，
+        # 而同代结构哈希唯一，所以并发不改变任何个体的评价结果。
+        self._prepare_individuals_concurrently(population, prepare_ids)
+
+        # 第三步（串行）：按原下标顺序启动最终评价子进程，保持日志与
+        # inner_runs 的顺序语义不变。
+        for response_id in prepare_ids:
+            if not population[response_id].get("rule_prepared"):
+                # 准备阶段已在 _prepare_individuals_concurrently 里标记为无效。
+                continue
+
             # 用于追踪当前正在启动哪个个体
             logging.info(f"Iteration {self.iteration}: Running Code {response_id}")
-            
+
             try:
                 # 每个个体由独立 Python 子进程评价，避免候选全局状态相互污染。
                 process = self._run_code(population[response_id], response_id, case_num)
-                inner_runs.append(process)
+                inner_runs[response_id] = process
             except Exception as e:
                 # 启动失败
                 logging.info(f"Error for response_id {response_id}: {e}")
                 population[response_id] = self.mark_invalid_individual(
                     population[response_id], str(e)
                 )
-                inner_runs.append(None)
-        
+
         # Collect results and update population with objective values
         # 收集评价结果，并用目标值更新种群
         for response_id, inner_run in enumerate(inner_runs):
@@ -1930,6 +2149,87 @@ class SeEvo:
                 break
         return selected
 
+    def _run_one_counterfactual_job(
+        self,
+        scenario_id: str,
+        seed: int,
+        command: list[str],
+    ) -> dict:
+        """Replay one frozen rule on one scenario/seed and return its manifest."""
+        child_env = os.environ.copy()
+        child_env["PYTHONIOENCODING"] = "utf-8"
+        child_env["PYTHONUTF8"] = "1"
+        # 与参数评价子进程同样限制 BLAS 线程，避免并发回放时嵌套超订。
+        child_env["OMP_NUM_THREADS"] = "1"
+        child_env["MKL_NUM_THREADS"] = "1"
+        child_env["OPENBLAS_NUM_THREADS"] = "1"
+        child_env["NUMEXPR_NUM_THREADS"] = "1"
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=child_env,
+            timeout=self.cfg.timeout,
+            check=False,
+        )
+        output = (completed.stdout or "") + "\n" + (completed.stderr or "")
+        traceback_msg = filter_traceback(output)
+        if completed.returncode != 0 or traceback_msg:
+            raise RuntimeError(
+                "counterfactual frozen-rule evaluation failed for "
+                f"{scenario_id}/{seed}: "
+                + (traceback_msg or output[-2000:])
+            )
+        result = parse_result_json(output)
+        run_manifests = result.get("counterfactual_manifests", [])
+        if len(run_manifests) != 1:
+            raise RuntimeError(
+                "counterfactual evaluator did not return exactly one run manifest"
+            )
+        manifest = dict(run_manifests[0])
+        if bool(manifest.get("used_test_seed", True)):
+            raise RuntimeError("counterfactual manifest is not test-seed isolated")
+        return manifest
+
+    def _run_counterfactual_jobs(self, jobs: list[tuple]) -> list[dict]:
+        """Run replay jobs through the shared pool, returning manifests in order."""
+        if not jobs:
+            return []
+        workers = min(
+            len(jobs),
+            max(1, int(self._optimizer_config().max_parallel_evaluations)),
+        )
+        if workers == 1:
+            return [
+                self._run_one_counterfactual_job(scenario_id, seed, command)
+                for scenario_id, seed, command in jobs
+            ]
+        executor = self._shared_evaluation_executor()
+        futures = [
+            executor.submit(
+                self._run_one_counterfactual_job,
+                scenario_id,
+                seed,
+                command,
+            )
+            for scenario_id, seed, command in jobs
+        ]
+        manifests = []
+        failure = None
+        for future in futures:
+            try:
+                manifests.append(future.result())
+            except BaseException as exc:  # noqa: BLE001
+                # 共享池不能整体关闭，先等所有任务收敛再抛出第一个异常，
+                # 与原串行版"首个失败即中止本结构分析"的可观察行为一致。
+                if failure is None:
+                    failure = exc
+        if failure is not None:
+            raise failure
+        return manifests
+
     def _run_counterfactual_analysis(self, individual: dict) -> None:
         seeds = self._counterfactual_analysis_seeds()
         scenarios = list(self.counterfactual_config.scenario_ids)
@@ -1941,9 +2241,7 @@ class SeEvo:
         traces = []
         comparisons = []
         reports = []
-        child_env = os.environ.copy()
-        child_env["PYTHONIOENCODING"] = "utf-8"
-        child_env["PYTHONUTF8"] = "1"
+        jobs = []
         for scenario_id in scenarios:
             for seed in seeds:
                 metadata = {
@@ -1990,50 +2288,34 @@ class SeEvo:
                         output_root,
                     ]
                 )
-                completed = subprocess.run(
-                    command,
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    env=child_env,
-                    timeout=self.cfg.timeout,
-                    check=False,
+                jobs.append((scenario_id, seed, command))
+
+        # 每个 (scenario, seed) 都是一次完整的冻结规则回放，产物文件按
+        # structure_hash/scenario/seed 命名，互不读写对方的路径，因此可以并发。
+        # 结果按 jobs 的原顺序取回，聚合输入序列逐条不变。
+        # 唯一的例外是 counterfactual 估计缓存：它的路径只由 output_root 决定，
+        # 不含上述三个字段，于是所有并发子进程会抢同一个 cache.json.tmp。
+        # cfg 里已把 cache.enabled 关掉；再打开之前必须先把它按 job 分片。
+        run_manifests = self._run_counterfactual_jobs(jobs)
+
+        for manifest in run_manifests:
+            manifests.append(manifest)
+            traces.extend(
+                self._trace_from_dict(row)
+                for row in load_jsonl(manifest["trace_path"])
+            )
+            comparisons.extend(
+                self._comparison_from_dict(row)
+                for row in load_jsonl(manifest["comparison_path"])
+            )
+            with open(
+                manifest["diagnostics_path"],
+                "r",
+                encoding="utf-8",
+            ) as handle:
+                reports.extend(
+                    DiagnosticReport(**row) for row in json.load(handle)
                 )
-                output = (completed.stdout or "") + "\n" + (completed.stderr or "")
-                traceback_msg = filter_traceback(output)
-                if completed.returncode != 0 or traceback_msg:
-                    raise RuntimeError(
-                        "counterfactual frozen-rule evaluation failed for "
-                        f"{scenario_id}/{seed}: "
-                        + (traceback_msg or output[-2000:])
-                    )
-                result = parse_result_json(output)
-                run_manifests = result.get("counterfactual_manifests", [])
-                if len(run_manifests) != 1:
-                    raise RuntimeError(
-                        "counterfactual evaluator did not return exactly one run manifest"
-                    )
-                manifest = dict(run_manifests[0])
-                if bool(manifest.get("used_test_seed", True)):
-                    raise RuntimeError("counterfactual manifest is not test-seed isolated")
-                manifests.append(manifest)
-                traces.extend(
-                    self._trace_from_dict(row)
-                    for row in load_jsonl(manifest["trace_path"])
-                )
-                comparisons.extend(
-                    self._comparison_from_dict(row)
-                    for row in load_jsonl(manifest["comparison_path"])
-                )
-                with open(
-                    manifest["diagnostics_path"],
-                    "r",
-                    encoding="utf-8",
-                ) as handle:
-                    reports.extend(
-                        DiagnosticReport(**row) for row in json.load(handle)
-                    )
 
         used_test_seed = any(
             bool(manifest.get("used_test_seed", True)) for manifest in manifests
@@ -2148,8 +2430,26 @@ class SeEvo:
     def _attach_counterfactual_feedback(self, population: list[dict]) -> list[dict]:
         """Analyze only post-CMA frozen elites, never ordinary CMA vectors."""
         selected = self._select_counterfactual_structures(population)
-        for individual in selected:
-            self._run_counterfactual_analysis(individual)
+        if len(selected) <= 1:
+            for individual in selected:
+                self._run_counterfactual_analysis(individual)
+            return selected
+        # 被选中的结构之间不共享可变状态：产物路径、汇总文件、写回的 individual
+        # 字段全部按 structure_hash 区分，聚合也只吃自己那批 manifest。
+        # 让它们并发，才能把每结构 scenarios × seeds 的回放一起填进共享池。
+        # 注意这层并发会与内层的 scenario×seed 并发相乘，同时在跑的子进程数是
+        # 两层的乘积——任何按 output_root（而非 structure_hash）定址的写入都会
+        # 被它们同时命中，counterfactual 估计缓存正是因此关掉的。
+        with ThreadPoolExecutor(
+            max_workers=len(selected),
+            thread_name_prefix="counterfactual",
+        ) as executor:
+            futures = [
+                executor.submit(self._run_counterfactual_analysis, individual)
+                for individual in selected
+            ]
+            for future in futures:
+                future.result()
         return selected
 
     def _critical_state_archive_instance(self) -> CriticalStateArchive:
@@ -3360,11 +3660,17 @@ class SeEvo:
         
         # Save reflections to files
         # 将反思结果保存到文件
-        short_term_file = f"problem_iter{self.iteration}_short_term_reflections.txt"
+        short_term_file = self._runtime_artifact_path(
+            "reflection",
+            f"problem_iter{self.iteration}_short_term_reflections.txt",
+        )
         with open(short_term_file, 'w', encoding="utf-8") as file:
             file.write("\n".join(short_term_reflections) + '\n')
         
-        long_term_file = f"problem_iter{self.iteration}_long_term_reflection.txt"
+        long_term_file = self._runtime_artifact_path(
+            "reflection",
+            f"problem_iter{self.iteration}_long_term_reflection.txt",
+        )
         with open(long_term_file, 'w', encoding="utf-8") as file:
             file.write(self.long_term_reflection_str + '\n')
 
@@ -3645,16 +3951,24 @@ class SeEvo:
             tuple[str, str]。返回全局最优代码 self.best_code_overall
             和对应路径 self.best_code_path_overall。
         """
-        if self.mode == "test":
-            # Test mode: run single iteration
-            # 测试模式：运行单次迭代
-            logging.info("Test mode: Running single iteration...")
-            self._run_single_iteration()
-        else:
-            # Train mode: normal multi-iteration loop
-            # 训练模式：正常执行多轮迭代
-            while self.function_evals < self.cfg.max_fe:
+        try:
+            if self.mode == "test":
+                # Test mode: run single iteration
+                # 测试模式：运行单次迭代
+                logging.info("Test mode: Running single iteration...")
                 self._run_single_iteration()
-            self._finalize_best_rule_admission()
-        
+            else:
+                # Train mode: normal multi-iteration loop
+                # 训练模式：正常执行多轮迭代
+                while self.function_evals < self.cfg.max_fe:
+                    self._run_single_iteration()
+                self._finalize_best_rule_admission()
+        finally:
+            self._shutdown_evaluation_executor()
+            # 评估缓存平时只追加日志，退出前压实一次，让快照文件自身完整。
+            # 放在 finally 里是因为中断的长跑同样需要可直接续跑的缓存。
+            cache = getattr(self, "parameter_evaluation_cache", None)
+            if cache is not None:
+                cache.flush()
+
         return self.best_code_overall, self.best_code_path_overall

@@ -1,7 +1,0 @@
-- Prioritize hard DDL feasibility via binary `slack <= 0` gating—eliminates penalty leakage and is validated across ≥18 decisions, 2 seeds, and 1 scenario.  
-- Enforce critical-path awareness *only* under deadline pressure using `upward_rank × remaining_work × ddl_gate`, removing redundant `criticality_scale` and `critical_path_booster`.  
-- Replace mean±std normalization with quantile-based (`Q1`/`Q3`) robust range normalization for outlier resilience and slack-boundary sensitivity.  
-- Unify congestion signal as `ready_wait_time + uncertainty`, gated jointly by DDL feasibility and high-congestion threshold—resolves ≥18 occurrences of `avoidable_marginal_energy_or_load_cost`.  
-- Introduce sign-preserving MAD normalization *only for slack* to sharpen urgency near deadline violation—confirmed in ≥16 `higher_ddl_risk_choice` failures.  
-- Add conditional `ddl_protection_gate` (sigmoid activated only for `slack ≥ 0`) to enable energy/uncertainty penalties *exclusively* when DDL-feasible—validated by ≥18 cross-agent consensus failures.  
-- Replace saturating logistic starvation relief with clipped linear `wait_benefit`, improving low-wait discriminability without flat gradients.

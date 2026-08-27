@@ -59,7 +59,14 @@ from hrl_mix.train_config import (
     build_train_config,
     environment_scenario_values,
 )
-from hrl_mix.train_eval import evaluate_hrl_three_layer_multi_seed
+from hrl_mix.train_eval import (
+    aggregate_seed_results,
+    evaluate_hrl_three_layer_multi_seed,
+)
+from hrl_mix.validation_parallel import (
+    ValidationEvaluationPool,
+    resolve_worker_count as resolve_validation_workers,
+)
 from hrl_mix.safe_training_pipeline import (
     SafeStageMetricsLogger,
     SafeTrainingController,
@@ -212,6 +219,39 @@ def _checkpoint_curriculum_state(controller):
         "stage_type": controller.current_stage.stage_type,
         "controller_state": controller.state_dict(),
     }
+
+
+def _skipped_validation_result(skipped_energy, *, return_safety_metrics):
+    """构造非验证 episode 的评估占位值。
+
+    元数必须与 :func:`_evaluate_training_scenarios` 在同一 ``return_safety_metrics``
+    下的返回元数一致：训练循环用同一个布尔量决定请求、占位与解包三处，任何
+    一处分叉都会在某些开关组合下抛 ``too many values to unpack``。
+    """
+    skipped_energy = float(skipped_energy)
+    base = (0.0, 0.0, 0.0, skipped_energy)
+    if not return_safety_metrics:
+        return base
+    return (
+        *base,
+        {
+            "deadline_violation_rate": 0.0,
+            "zero_violation_pass": False,
+            "fuzzy_energy_score": skipped_energy,
+            "safety_cost": 0.0,
+            "shield_intervention_rate": 0.0,
+            "fallback_rate": 0.0,
+            "max_fuzzy_lateness": 0.0,
+            "mean_fuzzy_lateness": 0.0,
+            "all_seed_feasible": False,
+            "all_seed_evaluation_completed": False,
+            "completed_evaluation_seed_rate": 0.0,
+            "feasible_seed_rate": 0.0,
+            "worst_seed_violation": 0.0,
+            "worst_seed_lateness": 0.0,
+            "validation_seed_count": 0,
+        },
+    )
 
 
 def _checkpoint_runtime_metadata(
@@ -396,6 +436,7 @@ def _evaluate_training_scenarios(
     seeds,
     return_safety_metrics,
     scenarios=None,
+    evaluation_pool=None,
 ):
     '''Evaluate an explicit scenario set using the shared validation metrics.'''
     scenarios = tuple(cfg.training_scenarios if scenarios is None else scenarios)
@@ -410,9 +451,10 @@ def _evaluate_training_scenarios(
             manager_agent,
             seeds=seeds,
             return_safety_metrics=return_safety_metrics,
+            evaluation_pool=evaluation_pool,
         )
 
-    results = []
+    scenario_kwargs = []
     for scenario in scenarios:
         kwargs = _scenario_env_kwargs(
             base_env_kwargs,
@@ -429,16 +471,49 @@ def _evaluate_training_scenarios(
         for key in _ENV_SCALE_KEYS:
             if key in active_env_kwargs:
                 kwargs[key] = active_env_kwargs[key]
-        result = evaluate_hrl_three_layer_multi_seed(
-            env_cls,
-            kwargs,
-            vm_agent,
-            host_agent,
-            manager_agent,
-            seeds=seeds,
+        scenario_kwargs.append((str(scenario), kwargs))
+
+    seeds = tuple(seeds)
+    if evaluation_pool is None:
+        results = [
+            (
+                scenario,
+                evaluate_hrl_three_layer_multi_seed(
+                    env_cls,
+                    kwargs,
+                    vm_agent,
+                    host_agent,
+                    manager_agent,
+                    seeds=seeds,
+                    return_safety_metrics=return_safety_metrics,
+                ),
+            )
+            for scenario, kwargs in scenario_kwargs
+        ]
+    else:
+        # 场景与 seed 一起摊平成一张作业表再分发。只按 seed 并行的话，场景
+        # 之间仍是串行的，课程学习下就浪费掉大半 worker。
+        jobs = [
+            (kwargs, seed)
+            for _, kwargs in scenario_kwargs
+            for seed in seeds
+        ]
+        flat = evaluation_pool.evaluate_jobs(
+            jobs,
             return_safety_metrics=return_safety_metrics,
         )
-        results.append((str(scenario), result))
+        results = []
+        for position, (scenario, _) in enumerate(scenario_kwargs):
+            offset = position * len(seeds)
+            results.append(
+                (
+                    scenario,
+                    aggregate_seed_results(
+                        flat[offset:offset + len(seeds)],
+                        return_safety_metrics=return_safety_metrics,
+                    ),
+                )
+            )
 
     means = tuple(
         float(np.mean([result[index] for _, result in results]))
@@ -569,6 +644,7 @@ def train(
     safe_rl_dynamic_lambda_enabled: bool = False,
     safe_rl_heuristic_manager_enabled: bool = False,
     manager_heuristic_manifest: str | None = None,
+    llm_run_manifest: str | None = None,
     safe_rl_offline_pretrain_manifest: str | None = None,
     safe_rl_offline_pretrain_epochs: int = 5,
     safe_rl_offline_pretrain_behavior_cloning: bool = False,
@@ -583,6 +659,7 @@ def train(
     protocol: str | None = None,
     source_scenario: str | None = None,
     resource_scale: str | None = None,
+    validation_workers: int = 1,
 ):
     """执行一次完整训练
 
@@ -590,6 +667,9 @@ def train(
     - scenario：两位场景代码，例如 SS 表示 small task + small resource
     - ddl：deadline 条件，例如 T/M/L 或 Tight/Medium/Loose
     - max_episodes：可选训练轮数；为空时使用配置默认值
+    - validation_workers：验证评估的工作进程数。``1``（默认）完全不建进程
+      池，与改动前逐字相同；``0`` 表示自动取 ``cpu_count - 2``。worker 与父
+      进程同设备，返回值按 seed 顺序聚合，因此与串行逐位一致。
     """
     # 统一从配置模块生成所有训练参数，避免主循环中散落大量局部超参数
     cfg = build_train_config(
@@ -608,6 +688,7 @@ def train(
         manager_heuristic_manifest=(
             manager_heuristic_manifest
         ),
+        llm_run_manifest=llm_run_manifest,
         safe_rl_offline_pretrain_manifest=(
             safe_rl_offline_pretrain_manifest
         ),
@@ -1205,6 +1286,16 @@ def train(
         cfg.safe_rl.enabled
         and cfg.safe_rl.model_selection.enabled
     )
+    # 评估返回值是 4 元组还是 5 元组，必须只有这一处判据：请求安全指标的
+    # 条件、跳过验证时构造的占位元组、以及解包的分支三者一旦分叉，就会在
+    # 某些开关组合下抛 "too many values to unpack"。这四个子条件在整个训练
+    # 循环内都不变（都在循环之前一次性确定），所以在这里求一次即可。
+    validation_returns_safety_metrics = bool(
+        feasibility_first_selection
+        or lagrange_controller.enabled
+        or training_controller is not None
+        or metric_store is not None
+    )
     best_model_metrics = None
     if (
         feasibility_first_selection
@@ -1243,6 +1334,76 @@ def train(
     best_ckpt_vm = os.path.join(cfg.save_dir, "best_vm.pth")
     best_ckpt_host = os.path.join(cfg.save_dir, "best_host.pth")
     best_ckpt_mgr = os.path.join(cfg.save_dir, "best_manager.pth")
+
+    # 验证评估的进程级并行。worker 与父进程同设备：验证结果直接决定 best
+    # checkpoint，masked argmax 在 cpu/cuda 之间的最后一两个 ulp 差异有极小
+    # 概率翻转选择，所以这里绝不降级到 cpu。
+    validation_pool = None
+    # 课程学习开启时一次验证是"场景 × seed"摊平后的作业表，比单场景的
+    # seed 数大；按最大那一批定容量，另一批多出来的 worker 只是闲置。
+    validation_job_count = len(cfg.validation_seeds) * (
+        len(tuple(cfg.training_scenarios))
+        if training_controller is not None
+        else 1
+    )
+    resolved_validation_workers = resolve_validation_workers(
+        validation_workers,
+        job_count=validation_job_count,
+    )
+    if resolved_validation_workers > 1:
+        validation_pool = ValidationEvaluationPool(
+            EnvCls,
+            vm_agent,
+            host_agent,
+            manager_agent,
+            workers=resolved_validation_workers,
+            device=str(device),
+            weights_path=os.path.join(
+                cfg.save_dir, "validation_weights.pt"
+            ),
+        )
+    print(
+        "[validation parallel] "
+        f"requested={validation_workers} "
+        f"workers={resolved_validation_workers} "
+        f"device={device} "
+        f"seeds={len(cfg.validation_seeds)} "
+        f"jobs_per_validation={validation_job_count} "
+        f"audit={'on' if validation_pool is not None and validation_pool.audit_enabled else 'off'}"
+    )
+    # 并行只改变执行方式、不改变结果，因此不进 config_snapshot（否则会动到
+    # checkpoint 身份哈希）。单独落一份出处文件供复现时查证。
+    validation_parallel_manifest_path = os.path.join(
+        cfg.save_dir, "validation_parallel.json"
+    )
+    with open(
+        validation_parallel_manifest_path, "w", encoding="utf-8"
+    ) as handle:
+        json.dump(
+            {
+                "schema_version": 1,
+                "requested_workers": int(validation_workers),
+                "worker_count": int(resolved_validation_workers),
+                "parallel_backend": (
+                    "process_pool_spawn"
+                    if validation_pool is not None
+                    else "serial"
+                ),
+                "worker_device": str(device),
+                "validation_seed_count": len(cfg.validation_seeds),
+                "jobs_per_validation": int(validation_job_count),
+                "bitwise_audit_enabled": bool(
+                    validation_pool is not None
+                    and validation_pool.audit_enabled
+                ),
+            },
+            handle,
+            ensure_ascii=False,
+            allow_nan=False,
+            sort_keys=True,
+            indent=2,
+        )
+        handle.write("\n")
 
     global_step = (
         int(training_resume_payload["global_step"])
@@ -1344,6 +1505,9 @@ def train(
                 or episode_idx + 1 == cfg.max_episodes
             )
             if validation_due:
+                if validation_pool is not None:
+                    # 本轮验证的全部场景共用同一份权重，只广播一次。
+                    validation_pool.publish_weights()
                 curriculum_eval_result = None
                 if training_controller is not None:
                     curriculum_eval_result = _evaluate_training_scenarios(
@@ -1358,6 +1522,7 @@ def train(
                         seeds=cfg.validation_seeds,
                         return_safety_metrics=True,
                         scenarios=tuple(cfg.training_scenarios),
+                        evaluation_pool=validation_pool,
                     )
                 # Only fixed source-scenario validation may select checkpoint.
                 eval_result = _evaluate_training_scenarios(
@@ -1372,42 +1537,18 @@ def train(
                     seeds=cfg.validation_seeds,
                     scenarios=(str(cfg.source_scenario or cfg.training_scenarios[0]).upper(),),
                     return_safety_metrics=(
-                        feasibility_first_selection
-                        or lagrange_controller.enabled
-                        or training_controller is not None
-                        or metric_store is not None
+                        validation_returns_safety_metrics
                     ),
+                    evaluation_pool=validation_pool,
                 )
             else:
-                skipped_energy = float(env.total_energy - ep_energy0)
-                eval_result = (
-                    0.0,
-                    0.0,
-                    0.0,
-                    skipped_energy,
-                    {
-                        "deadline_violation_rate": 0.0,
-                        "zero_violation_pass": False,
-                        "fuzzy_energy_score": skipped_energy,
-                        "safety_cost": 0.0,
-                        "shield_intervention_rate": 0.0,
-                        "fallback_rate": 0.0,
-                        "max_fuzzy_lateness": 0.0,
-                        "mean_fuzzy_lateness": 0.0,
-                        "all_seed_feasible": False,
-                        "all_seed_evaluation_completed": False,
-                        "completed_evaluation_seed_rate": 0.0,
-                        "feasible_seed_rate": 0.0,
-                        "worst_seed_violation": 0.0,
-                        "worst_seed_lateness": 0.0,
-                        "validation_seed_count": 0,
-                    },
+                eval_result = _skipped_validation_result(
+                    float(env.total_energy - ep_energy0),
+                    return_safety_metrics=(
+                        validation_returns_safety_metrics
+                    ),
                 )
-            if (
-                feasibility_first_selection
-                or lagrange_controller.enabled
-                or training_controller is not None
-            ):
+            if validation_returns_safety_metrics:
                 (
                     eval_vm,
                     eval_host,
@@ -2704,6 +2845,8 @@ def train(
         )
 
     logger.close()
+    if validation_pool is not None:
+        validation_pool.close()
     print(
         "Training finished.\n"
         f"VM final model: {vm_final}\n"

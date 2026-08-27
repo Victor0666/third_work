@@ -1,7 +1,0 @@
-- Prioritize hard deadline feasibility via binary `slack <= 0` gating—validated across ≥18 decisions, 2 seeds, 1 scenario.  
-- Enforce critical-path awareness *only* under deadline pressure using `upward_rank × remaining_work × (slack <= 0)`—reduces violation rate (0.593 → 0.620).  
-- Use MAD-normalized slack (clipped to [−2,2]) as primary urgency signal—sharper, outlier-resilient, and feasibility-first aligned.  
-- Introduce `min_exec_time × upward_rank × (slack <= 0)` successor-release interaction—validated in ≥5 cross-agent consensus failures to unblock fast-executing critical-path blockers.  
-- Gate energy/uncertainty penalties strictly by `slack >= 0`—aligns risk aversion with DDL feasibility without softening hard constraints.  
-- Replace all quantile-based normalization with robust median-MAD scaling—improves rank-order stability under small-N ready sets and outlier stress.  
-- Remove inactive parameters (`hard_ddl_violation_penalty`, `wait_saturation_offset`, `congestion_activation_threshold`)—confirmed inactive across ≥2 elites and 3 parameter diagnostics.

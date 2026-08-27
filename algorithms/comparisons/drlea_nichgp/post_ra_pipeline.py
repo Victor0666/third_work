@@ -11,6 +11,7 @@ from .checkpointing import (
     portable_path,
     prepare_output,
     read_json,
+    warn_if_source_changed,
     write_json,
 )
 from .gp_fitness_cache import routing_online_hash
@@ -48,6 +49,12 @@ def run_after_ra(
     output = prepare_output(config)
     identity = protocol_artifact_identity(config)
     ra_path = Path(ra_checkpoint)
+    # 只告警不失败：已经训练好的 RA 记的是旧口径指纹，硬失败会把几天的算力
+    # 直接作废。这里的作用是让"stage-1 与 stage-2 代码不同源"这件事显式暴露。
+    ra_source_status = warn_if_source_changed(
+        ra_path.parent / "ra_manifest.json",
+        label="stage-1 RA checkpoint",
+    )
     routing = RoutingAgent.load(
         ra_path,
         device=gp_device,
@@ -153,6 +160,7 @@ def run_after_ra(
             "routing_inference_device": str(routing.device),
             "compute_device": str(sequencing.device),
             "gp_worker_count": int(max(1, gp_workers)),
+            "ra_source_hash_status": ra_source_status,
             "process_cpu_seconds": float(
                 time.process_time() - started_cpu
             ),

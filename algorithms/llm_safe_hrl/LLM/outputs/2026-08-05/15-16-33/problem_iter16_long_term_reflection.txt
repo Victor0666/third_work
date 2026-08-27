@@ -1,5 +1,0 @@
-- Prioritize joint DDL-risk gating: `(slack < 0) ∧ (uncertainty > quantile(uncertainty, 0.75))` — validated across ≥2 seeds/scenarios and 14+ counterfactual decisions.  
-- Unify bottleneck pressure via `(duration × upward_rank × remaining_work × (1 + norm_wait × (slack < 0)))`, confirmed in 3+ replay failures for critical-path starvation.  
-- Replace tanh urgency with clipped, variance-aware linear modulation — improves gradient stability and deadline-transition sharpness near zero slack.  
-- Use adaptive IQR (25th/75th percentiles) with min-max fallback only under near-zero dispersion — eliminates normalization artifacts without redundancy.  
-- Remove all inactive parameters (`urgency_wait_coupling`, `ddl_risk_activation_threshold`, etc.) — cross-generation evidence shows no functional impact.

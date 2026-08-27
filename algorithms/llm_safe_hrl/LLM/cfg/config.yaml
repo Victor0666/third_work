@@ -5,6 +5,10 @@ defaults:
   - problem: cews_task_constructive
 
 hydra:
+  run:
+    # Absolute, per-execution directory resolved from this LLM package, so
+    # launching from a different current directory does not change placement.
+    dir: ${runtime_output_root}
   job:
     chdir: True
 
@@ -24,6 +28,13 @@ data_dir: data  # Directory to load trained rules from (only used in test mode)
 protocol: single
 source_scenario: SS
 resource_scale: null
+ddl: T
+# Optional human-readable label. The collision-resistant execution ID remains
+# automatic and is never a DRL-EA run index such as a0.
+run_name: null
+execution_id: ${llm_execution_id:${run_name}}
+experiment_key: ${llm_experiment_key:${protocol},${source_scenario},${resource_scale},${ddl}}
+runtime_output_root: ${llm_runtime_output_root:${experiment_key},${execution_id}}
 
 # LLM parameters
 # 大语言模型参数
@@ -144,8 +155,13 @@ counterfactual_feedback:
     max_representative_cases: 4
     max_feedback_chars: 12000
 
+  # 关闭：这份 cache 的路径只由 output_root 决定，不含 structure_hash/scenario/
+  # seed，而回放已经是并发的（结构之间 + scenario×seed 之间两层），于是十几个
+  # eval.py 子进程会抢同一个 cache.json.tmp，在 Windows 上表现为 EACCES 或
+  # WinError 32。代价可忽略：命中缓存并不能省掉子进程和 episode 本身，只省
+  # compare() 那一步——实测 137 条共 4.4 s，而每次 put 都要全量重写 411 KB。
   cache:
-    enabled: true
+    enabled: false
     path: counterfactual_feedback/cache.json
 
 # Offline cross-generation stress states. This consumes only frozen-rule

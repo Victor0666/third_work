@@ -13,7 +13,14 @@ import torch
 from algorithms.llm_safe_hrl import scenario_registry
 from project_paths import PROJECT_ROOT
 
-from .checkpointing import file_sha256, read_json, source_hash, write_json
+from .checkpointing import (
+    SOURCE_HASH_SCHEME_VERSION,
+    file_sha256,
+    python_tree_identity as _python_tree_identity,
+    read_json,
+    source_hash,
+    write_json,
+)
 from .gp_features import GP_TERMINALS, GP_TERMINAL_VERSION
 
 
@@ -30,13 +37,6 @@ def _file_identity(value: str | Path) -> dict:
     return {
         "path": Path(value).as_posix(),
         "sha256": file_sha256(path) if path.is_file() else None,
-    }
-
-
-def _python_tree_identity(root: Path) -> dict[str, str]:
-    return {
-        path.relative_to(PROJECT_ROOT).as_posix(): file_sha256(path)
-        for path in sorted(root.glob("*.py"))
     }
 
 
@@ -70,6 +70,7 @@ def evaluation_identity(config, routing_agent, device: str) -> dict:
         "dax_files": [_file_identity(path) for path in config.dax_paths],
         "deadline_cache_files": deadline_paths,
         "drlea_source_hash": source_hash(),
+        "drlea_source_hash_scheme": SOURCE_HASH_SCHEME_VERSION,
         "shared_source_files": {
             Path(scenario_registry.__file__)
             .relative_to(PROJECT_ROOT)

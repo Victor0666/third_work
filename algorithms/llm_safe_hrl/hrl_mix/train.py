@@ -142,6 +142,16 @@ def main(argv=None):
         ),
     )
     parser.add_argument(
+        "--llm-run-manifest",
+        default=None,
+        help=(
+            "run_manifest.json from one completed, matching SeEvo run. "
+            "The protocol identity and DDL setting are validated before "
+            "its heuristic library is used. Mutually exclusive with "
+            "--manager-heuristic-manifest."
+        ),
+    )
+    parser.add_argument(
         "--offline-pretrain-manifest",
         default=None,
         help=(
@@ -205,7 +215,28 @@ def main(argv=None):
             "--safe-training-pipeline-config."
         ),
     )
+    parser.add_argument(
+        "--validation-workers",
+        type=int,
+        default=1,
+        help=(
+            "Worker processes for periodic validation episodes. 1 "
+            "(default) keeps the serial path unchanged; 0 auto-selects "
+            "cpu_count-2. Workers run on the same device as the parent, "
+            "so validation results and best-checkpoint selection are "
+            "bit-identical to the serial path. Set "
+            "SAFE_HRL_VALIDATION_PARALLEL_AUDIT=1 to re-run every batch "
+            "serially and assert that."
+        ),
+    )
     args = parser.parse_args(argv)
+    if args.validation_workers < 0:
+        parser.error("--validation-workers must be non-negative")
+    if args.llm_run_manifest and args.manager_heuristic_manifest:
+        parser.error(
+            "--llm-run-manifest and --manager-heuristic-manifest are "
+            "mutually exclusive"
+        )
     if args.episodes not in (None, 600):
         parser.error("formal Safe-HRL training requires exactly 600 total episodes")
     source_scenario = args.source_scenario or args.scenario or "SS"
@@ -234,6 +265,7 @@ def main(argv=None):
         manager_heuristic_manifest=(
             args.manager_heuristic_manifest
         ),
+        llm_run_manifest=args.llm_run_manifest,
         safe_rl_offline_pretrain_manifest=(
             args.offline_pretrain_manifest
         ),
@@ -264,6 +296,7 @@ def main(argv=None):
         protocol=args.protocol,
         source_scenario=args.source_scenario,
         resource_scale=args.resource_scale,
+        validation_workers=args.validation_workers,
     )
 
 

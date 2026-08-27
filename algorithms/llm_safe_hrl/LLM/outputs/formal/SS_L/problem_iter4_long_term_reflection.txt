@@ -1,6 +1,0 @@
-- Prioritize tasks with tight or negative slack via smooth tanh-based urgency, bounded by `slack_clip_upper` to avoid outlier-driven over-penalization.  
-- Boost upward rank under deadline pressure using `boosted_rank`, not additive penalties, directly reducing lateness (evidence: 0.62→0.60 violation rate).  
-- Introduce `remaining_work_weight` to prefer tasks unblocking large downstream work—critical-path aware but feasibility-first.  
-- Apply joint gating: only activate risk-aware coupling (`uncert_gate = (norm_uncert > thres) & (slack_pressure > 0)`) when both uncertainty and deadline pressure co-occur.  
-- Replace exponential starvation relief with bounded `tanh(wait_decay * norm_wait)` for stable, discriminative anti-starvation behavior.  
-- Use robust `mean(abs(x)) + ε` scaling—not MAD/clipping—to normalize heterogeneous features (seconds, joules, dimensionless) without outlier sensitivity.
