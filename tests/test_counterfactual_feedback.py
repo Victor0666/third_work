@@ -120,6 +120,24 @@ class FakeEnvironment:
     def _task_id(task):
         return int(task)
 
+    def idle_feasible_vm_ids(self, task):
+        """Offer every VM as a candidate.
+
+        This stub is a fixed oracle for the downstream diagnostic logic, not a
+        model of the VM policy, so it deliberately does not re-implement the
+        idle filter; keeping every VM candidate preserves the distinct per-task
+        outcomes the agent assertions below depend on. The production idle-only
+        contract is covered against the real environment in
+        tests/test_cews_task_constructive.py.
+        """
+        del task
+        return list(self.vm_ids)
+
+    def select_host_then_vm_deterministic(self, task, candidate_vm_ids=None):
+        del candidate_vm_ids
+        vm_id, details = self.select_vm_deterministic(task)
+        return int(self.vms[vm_id].host_id), int(vm_id), details
+
     def select_vm_deterministic(self, task):
         task = int(task)
         vm_id = 0 if task in {0, 2} else 1

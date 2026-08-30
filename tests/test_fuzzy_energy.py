@@ -18,6 +18,7 @@ for import_root in (str(PROJECT_ROOT), str(LLM_ROOT)):
     if import_root not in sys.path:
         sys.path.insert(0, import_root)
 
+from base.heuristic_admission import CEWS_EVALUATOR_PROTOCOL_VERSION
 from base.hrl_env import HrlHeftEnv
 from common.resource_opt import Host, TriangularFuzzyNumber
 from common.workflow_opt import LoadRecord, energy_from_records
@@ -389,7 +390,10 @@ class FuzzyResultProtocolTests(unittest.TestCase):
             parsed["constraint_feasible"],
             parsed["feasible_seed_rate"] == 1.0,
         )
-        self.assertEqual(parsed["evaluator_protocol_version"], 2)
+        self.assertEqual(
+            parsed["evaluator_protocol_version"],
+            CEWS_EVALUATOR_PROTOCOL_VERSION,
+        )
         self.assertTrue(parsed["interface_valid"])
         self.assertEqual(
             parsed["function_name"],

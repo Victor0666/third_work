@@ -643,6 +643,7 @@ def train(
     safe_rl_state_enabled: bool = False,
     safe_rl_dynamic_lambda_enabled: bool = False,
     safe_rl_heuristic_manager_enabled: bool = False,
+    manager_heuristic_llm_only: bool = False,
     manager_heuristic_manifest: str | None = None,
     llm_run_manifest: str | None = None,
     safe_rl_offline_pretrain_manifest: str | None = None,
@@ -684,6 +685,9 @@ def train(
         ),
         safe_rl_heuristic_manager_enabled=(
             safe_rl_heuristic_manager_enabled
+        ),
+        manager_heuristic_llm_only=(
+            manager_heuristic_llm_only
         ),
         manager_heuristic_manifest=(
             manager_heuristic_manifest
@@ -842,6 +846,9 @@ def train(
         manager_mode=cfg.safe_rl.manager_heuristics.mode,
         manager_heuristic_library_path=(
             cfg.safe_rl.manager_heuristics.library_manifest_path
+        ),
+        manager_heuristic_llm_only=(
+            cfg.safe_rl.manager_heuristics.llm_only
         ),
         experiment_protocol_identity=cfg.experiment_protocol,
         manager_heuristic_recent_window=(

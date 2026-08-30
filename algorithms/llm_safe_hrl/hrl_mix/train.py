@@ -131,6 +131,19 @@ def main(argv=None):
         ),
     )
     parser.add_argument(
+        "--llm-only-heuristics",
+        action="store_true",
+        help=(
+            "Remove the five built-in FCFS/SJF/MCF/HUR/EDF action "
+            "slots so the Manager can only select admitted SeEvo LLM "
+            "rules. Requires --safe-rl-heuristic-manager. Default is "
+            "off. The Manager action dimension and heuristic action "
+            "schema version both change, so runs with and without "
+            "this flag get separate output directories and are not "
+            "checkpoint-compatible."
+        ),
+    )
+    parser.add_argument(
         "--manager-heuristic-manifest",
         default=None,
         help=(
@@ -262,6 +275,7 @@ def main(argv=None):
         safe_rl_heuristic_manager_enabled=(
             args.safe_rl_heuristic_manager
         ),
+        manager_heuristic_llm_only=args.llm_only_heuristics,
         manager_heuristic_manifest=(
             args.manager_heuristic_manifest
         ),

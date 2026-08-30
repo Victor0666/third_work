@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import json
 from pathlib import Path
+import sys
 import tempfile
 import unittest
 
@@ -26,6 +27,9 @@ from base.manager_heuristics import (
 from LLM.rule_optimization import (
     freeze_rule_source,
     parse_rule_candidate,
+)
+from algorithms.llm_safe_hrl.scenario_registry import (
+    resolve_experiment_protocol,
 )
 
 
@@ -587,6 +591,115 @@ class AdmissionLoaderIntegrityTests(AdmissionFixture):
                 seevo_iteration=0,
                 seevo_individual=0,
             )
+
+
+class ManifestCliProtocolTests(AdmissionFixture):
+    """验证登记工具把实验协议身份带进记录并对照 manifest 校验。"""
+
+    def setUp(self):
+        super().setUp()
+        sys.path.insert(0, str(PROJECT_ROOT / "tools"))
+        self.addCleanup(
+            lambda: sys.path.remove(str(PROJECT_ROOT / "tools"))
+        )
+        import manage_safe_heuristic_manifest
+
+        self.cli = manage_safe_heuristic_manifest
+        self.protocol = resolve_experiment_protocol(
+            "single", source_scenario="SS"
+        ).identity()
+
+    def _write(self, name, payload):
+        path = self.root / name
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        return str(path)
+
+    def _argv(self, *extra):
+        source = self.make_source()
+        report = self.reports / "cli.json"
+        report.write_text(
+            json.dumps(_result(source, self.config)),
+            encoding="utf-8",
+        )
+        return [
+            "--manifest", str(self.manifest),
+            "--candidate", str(source),
+            "--evaluation-report", str(report),
+            "--config", self._write("config.json", self.config),
+            "--heuristic-id", "cli_rule",
+            "--seevo-iteration", "4",
+            "--seevo-individual", "2",
+            *extra,
+        ]
+
+    def test_protocol_identity_is_stamped_into_record_and_manifest(self):
+        argv = self._argv(
+            "--experiment-protocol",
+            self._write("protocol.json", self.protocol),
+        )
+        self.assertEqual(self.cli.main(argv), 0)
+
+        payload = json.loads(
+            self.manifest.read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            payload["experiment_protocol"], self.protocol
+        )
+        self.assertEqual(
+            payload["llm_rules"][0]["experiment_protocol"],
+            self.protocol,
+        )
+        # 只有带上协议身份，加载器才能强制执行协议绑定。
+        load_manager_heuristic_library(
+            self.manifest,
+            expected_protocol_identity=self.protocol,
+        )
+
+    def test_protocol_less_registration_is_refused_by_default(self):
+        # 评价配置里没有协议字段，也没有 --experiment-protocol：
+        # 若放行就会建出一条事后无法再绑定协议的 manifest 谱系。
+        with self.assertRaises(SystemExit):
+            self.cli.main(self._argv())
+        self.assertFalse(self.manifest.exists())
+
+        # 明确声明后仍可用于旧的无协议 manifest。
+        self.assertEqual(
+            self.cli.main(
+                self._argv("--allow-missing-protocol")
+            ),
+            0,
+        )
+        payload = json.loads(
+            self.manifest.read_text(encoding="utf-8")
+        )
+        self.assertNotIn("experiment_protocol", payload)
+
+    def test_manifest_from_another_protocol_is_rejected(self):
+        self.assertEqual(
+            self.cli.main(
+                self._argv(
+                    "--experiment-protocol",
+                    self._write("protocol.json", self.protocol),
+                )
+            ),
+            0,
+        )
+        other = resolve_experiment_protocol(
+            "multi", source_scenario=None, resource_scale="S"
+        ).identity()
+        argv = [
+            *self._argv(
+                "--experiment-protocol",
+                self._write("other.json", other),
+            ),
+        ]
+        argv[argv.index("--heuristic-id") + 1] = "cli_rule_2"
+        # 拦截来自 append_admission_record 已有的“记录 vs manifest”校验，
+        # 而不是本次新增的 expected_protocol_identity——后者在本工具里是
+        # 冗余的断言，因为记录本身就是用同一份身份构造的。这里锁定的是
+        # 跨协议登记必须失败这一行为，与由哪一道检查拦下无关。
+        with self.assertRaises(ValueError):
+            self.cli.main(argv)
 
 
 if __name__ == "__main__":

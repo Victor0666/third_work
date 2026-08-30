@@ -195,6 +195,7 @@ class SafeManagerHeuristicConfig:
     mode: str = "legacy_rule_weight_mode"
     library_manifest_path: str | None = None
     recent_window: int = 20
+    llm_only: bool = False
 
     def __post_init__(self) -> None:
         if self.mode not in {
@@ -216,6 +217,12 @@ class SafeManagerHeuristicConfig:
             raise ValueError(
                 "heuristic_selection_mode requires "
                 "library_manifest_path"
+            )
+        if self.llm_only and self.mode != "heuristic_selection_mode":
+            # legacy_rule_weight_mode 下 Manager 输出的是五条固定规则的权重增量，
+            # 根本没有“只选 LLM 规则”这个语义，静默忽略会让实验记录失真。
+            raise ValueError(
+                "llm_only requires heuristic_selection_mode"
             )
 
 
@@ -688,6 +695,7 @@ def build_train_config(
     safe_rl_state_enabled: bool = False,
     safe_rl_dynamic_lambda_enabled: bool = False,
     safe_rl_heuristic_manager_enabled: bool = False,
+    manager_heuristic_llm_only: bool = False,
     manager_heuristic_manifest: str | None = None,
     llm_run_manifest: str | None = None,
     safe_rl_offline_pretrain_manifest: str | None = None,
@@ -747,6 +755,14 @@ def build_train_config(
                 "safe_rl_heuristic_manager_enabled=True requires "
                 "safe_rl_state_enabled=True"
             )
+    if (
+        manager_heuristic_llm_only
+        and not safe_rl_heuristic_manager_enabled
+    ):
+        raise ValueError(
+            "manager_heuristic_llm_only=True requires "
+            "safe_rl_heuristic_manager_enabled=True"
+        )
     if llm_run_manifest and not safe_rl_heuristic_manager_enabled:
         raise ValueError(
             "llm_run_manifest requires safe_rl_heuristic_manager_enabled=True"
@@ -1010,6 +1026,11 @@ def build_train_config(
             "curriculum_enabled": bool(safe_rl_curriculum_enabled),
             "optimizer_seed": int(optimizer_seed),
         }
+        if manager_heuristic_llm_only:
+            # 只在开启时才写入这一项：run_name 是整个 payload 的摘要，无条件新增
+            # 键会改变所有既有 safe_rl 运行的目录名。开/关两种配置仍然互不相同，
+            # 因为“缺少该键”与“该键为 True”的摘要必然不同。
+            safe_name_payload["llm_only_heuristics"] = True
         run_name = safe_hrl_run_id(
             scenario,
             ddl_name,
@@ -1161,6 +1182,7 @@ def build_train_config(
                     else None
                 ),
                 recent_window=20,
+                llm_only=bool(manager_heuristic_llm_only),
             ),
             offline_pretraining=OfflinePretrainingConfig(
                 enabled=offline_pretraining_enabled,

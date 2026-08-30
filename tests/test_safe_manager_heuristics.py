@@ -297,6 +297,7 @@ def _make_environment(
     manifest_path=None,
     scenario="SS",
     random_seed=0,
+    llm_only=False,
 ):
     scenario = str(scenario).upper()
     task_code = scenario[0]
@@ -328,6 +329,7 @@ def _make_environment(
         safe_rl_state_enabled=selection,
         manager_mode=manager_mode,
         manager_heuristic_library_path=manifest_path,
+        manager_heuristic_llm_only=llm_only,
         manager_heuristic_recent_window=4,
         scenario_code=scenario,
         task_code=task_code,
@@ -811,6 +813,139 @@ class LegacyManagerModeTests(unittest.TestCase):
                 workflows_per_episode=1,
                 manager_mode=HEURISTIC_SELECTION_MODE,
                 manager_heuristic_library_path=DEFAULT_LIBRARY,
+            )
+
+
+class LlmOnlyHeuristicTests(unittest.TestCase):
+    """验证 --llm-only-heuristics 真正移除传统规则动作槽。"""
+
+    def test_traditional_slots_are_removed_not_just_masked(self):
+        with tempfile.TemporaryDirectory() as td:
+            manifest = _write_test_library(Path(td))
+            full = load_manager_heuristic_library(manifest)
+            llm_only = load_manager_heuristic_library(
+                manifest, include_traditional=False
+            )
+
+        # 完整库含五个传统槽；LLM-only 库里一个都不剩。
+        self.assertEqual(len(full) - len(llm_only), 5)
+        self.assertTrue(
+            all(item.is_llm_rule for item in llm_only)
+        )
+        self.assertTrue(
+            any(item.source == "traditional" for item in full)
+        )
+        # 不是“留槽 + mask”：传统 ID 必须彻底消失，
+        # 否则任何绕过可用性 mask 的路径仍能选到传统规则。
+        self.assertEqual(
+            {item.heuristic_id for item in llm_only}
+            & {"traditional_fcfs", "traditional_edf"},
+            set(),
+        )
+
+    def test_action_dim_and_schema_version_follow_the_flag(self):
+        with tempfile.TemporaryDirectory() as td:
+            manifest = _write_test_library(Path(td))
+            full_env = _make_environment(
+                manager_mode=HEURISTIC_SELECTION_MODE,
+                manifest_path=str(manifest),
+            )
+            llm_env = _make_environment(
+                manager_mode=HEURISTIC_SELECTION_MODE,
+                manifest_path=str(manifest),
+                llm_only=True,
+            )
+
+        self.assertEqual(
+            full_env.manager_action_dim - llm_env.manager_action_dim,
+            5,
+        )
+        self.assertEqual(
+            llm_env.manager_action_dim,
+            len(llm_env.manager_heuristics),
+        )
+        # 动作集合变了，schema 版本必须跟着变，
+        # 这样与旧 checkpoint 的不兼容是显式失败而不是静默错位。
+        self.assertNotEqual(
+            full_env.manager_heuristic_schema_version,
+            llm_env.manager_heuristic_schema_version,
+        )
+        # 起始动作必须落在某个被准入的 LLM 规则上。
+        self.assertTrue(
+            llm_env.manager_heuristics[
+                llm_env.selected_heuristic_index
+            ].is_llm_rule
+        )
+
+    def test_library_without_any_llm_rule_fails_loudly(self):
+        with tempfile.TemporaryDirectory() as td:
+            manifest = _write_test_library(Path(td))
+            payload = json.loads(
+                manifest.read_text(encoding="utf-8")
+            )
+            payload["llm_rules"] = []
+            manifest.write_text(
+                json.dumps(payload), encoding="utf-8"
+            )
+            # 传统规则不再兜底，空动作空间必须当场报错。
+            with self.assertRaisesRegex(
+                ValueError,
+                "LLM-only Manager heuristic library is empty",
+            ):
+                load_manager_heuristic_library(
+                    manifest, include_traditional=False
+                )
+            # 同一个 manifest 在默认模式下仍然可用，
+            # 说明报错来自开关本身而不是 manifest 损坏。
+            self.assertEqual(
+                len(load_manager_heuristic_library(manifest)), 5
+            )
+
+    def test_llm_only_requires_heuristic_selection_mode(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            "llm_only requires heuristic_selection_mode",
+        ):
+            SafeManagerHeuristicConfig(
+                mode="legacy_rule_weight_mode",
+                llm_only=True,
+            )
+
+    def test_run_name_separates_the_two_variants(self):
+        from hrl_mix.train_config import build_train_config
+
+        def _run_name(llm_only):
+            with mock.patch("hrl_mix.train_config.os.makedirs"):
+                return build_train_config(
+                    scenario="SS",
+                    ddl="T",
+                    max_episodes=1,
+                    safe_rl_enabled=True,
+                    safe_rl_shield_enabled=True,
+                    safe_rl_state_enabled=True,
+                    safe_rl_heuristic_manager_enabled=True,
+                    manager_heuristic_llm_only=llm_only,
+                ).run_name
+
+        # 两种配置必须写到不同目录，否则会互相覆盖且事后无法分辨。
+        self.assertNotEqual(_run_name(False), _run_name(True))
+        # 关闭时的 run_name 不受本次改动影响：payload 只在开启时才新增该键，
+        # 因此既有 safe_rl 运行目录保持稳定。
+        self.assertEqual(_run_name(False), _run_name(False))
+
+    def test_llm_only_requires_the_heuristic_manager(self):
+        from hrl_mix.train_config import build_train_config
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "manager_heuristic_llm_only=True requires",
+        ):
+            build_train_config(
+                scenario="SS",
+                ddl="T",
+                max_episodes=1,
+                safe_rl_enabled=True,
+                manager_heuristic_llm_only=True,
             )
 
 

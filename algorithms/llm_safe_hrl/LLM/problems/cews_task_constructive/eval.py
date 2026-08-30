@@ -451,9 +451,13 @@ def run_instance(
 ) -> dict:
     """运行一个 seed 对应的完整离散事件调度实例。
 
-    循环不训练策略：有 ready task 时调用一次 LLM 规则选任务，再调用固定 VM
-    策略分配；没有 ready task 时推进到下一个任务完成或工作流到达事件。
-    ``environment_factory`` 仅用于测试注入轻量环境，正常评价使用真实环境。
+    循环不训练策略：ready task 与空闲 VM 同时存在时，调用一次 LLM 规则选任务，
+    再由环境按 Host -> VM 的固定规则分配；ready 集非空但所有 VM 都在忙时，等待
+    最近一次资源事件而不是把任务排到忙 VM 之后；ready 集为空时推进到下一个决策点。
+
+    只从空闲 VM 中选择，与 deadline 缓存生成器、各比较算法以及 Safe-HRL 运行时
+    的口径一致；允许 busy-VM 排队会让任务堆积到少数最省电的机器上，产生本评价器
+    独有的调度结果。``environment_factory`` 仅用于测试注入轻量环境。
     """
     environment = (
         environment_factory(config, seed)
@@ -467,11 +471,29 @@ def run_instance(
     decisions = 0
     stalled_steps = 0
 
+    def progress_snapshot():
+        """推进事件前后的最小状态快照，用于检测环境停滞。"""
+        return (
+            float(environment.current_time),
+            int(environment.completed_workflows),
+            len(environment.event_heap),
+            int(environment.next_arrival_idx),
+        )
+
     # done_flag 只由环境在所有工作流完成或既定终止状态到达时设置。
     while not bool(environment.done_flag):
         ready_tasks = environment.get_ready_tasks()
-        if ready_tasks:
-            # 第一阶段：候选规则只对 ready task 排序，不接触 VM。
+        # 空闲集必须在调用规则之前求出：无法分配的步上不应消耗一次规则调用，
+        # 也不应向反事实轨迹注入没有对应 assign_task 的幽灵决策。
+        # get_feasible_vms 只校验任务、不依赖任务，因而任一 ready task 都可作
+        # 探针，得到的空闲集对本步所有 ready task 相同。
+        idle_vm_ids = (
+            environment.idle_feasible_vm_ids(ready_tasks[0])
+            if ready_tasks
+            else []
+        )
+        if ready_tasks and idle_vm_ids:
+            # 第一阶段：候选规则只对 ready task 排序，不接触 Host 和 VM。
             if counterfactual_session is None:
                 selected_task = environment.select_task_with_priority_rule(
                     ready_tasks, priority_function
@@ -490,31 +512,36 @@ def run_instance(
                     selection_details,
                     decisions,
                 )
-            # 第二阶段：环境只在可行 VM 中执行固定、可重复的选择规则。
-            selected_vm, _selection_details = environment.select_vm_deterministic(
-                selected_task
+            # 第二阶段：环境只在“可行且空闲”的 VM 中执行固定、可重复的选择
+            # 规则；先在含空闲 VM 的 Host 之间选择，再在该 Host 内选 VM。
+            _selected_host, selected_vm, _selection_details = (
+                environment.select_host_then_vm_deterministic(
+                    selected_task,
+                    candidate_vm_ids=idle_vm_ids,
+                )
             )
             # 真正的状态修改只发生在 assign_task；此前全部估计函数均为只读。
             environment.assign_task(selected_task, selected_vm)
             decisions += 1
             stalled_steps = 0
+        elif ready_tasks:
+            # 有 ready task 但没有任何空闲 VM：必须等待最近一次资源事件，而不是
+            # 把任务排到某台正在忙的 VM 之后。这里不能用 advance_to_next_event，
+            # 它只推进到“下一个决策点”，而 ready 集已非空时它可能立即返回、不
+            # 推进时间，从而误触发下面的停滞保护。
+            before = progress_snapshot()
+            environment.advance_to_next_resource_event()
+            stalled_steps = (
+                stalled_steps + 1 if progress_snapshot() == before else 0
+            )
         else:
             # 没有 ready task 不代表调度结束：可能有正在运行的任务，或下一个
-            # 工作流尚未到达。记录推进前后的最小状态快照，用于检测环境停滞。
-            before = (
-                float(environment.current_time),
-                int(environment.completed_workflows),
-                len(environment.event_heap),
-                int(environment.next_arrival_idx),
-            )
+            # 工作流尚未到达。
+            before = progress_snapshot()
             environment.advance_to_next_event()
-            after = (
-                float(environment.current_time),
-                int(environment.completed_workflows),
-                len(environment.event_heap),
-                int(environment.next_arrival_idx),
+            stalled_steps = (
+                stalled_steps + 1 if progress_snapshot() == before else 0
             )
-            stalled_steps = stalled_steps + 1 if after == before else 0
 
         # 两个安全条件只防止错误候选/异常环境无限占用评价进程；它们不改变
         # 正常实例的目标值和调度选择。

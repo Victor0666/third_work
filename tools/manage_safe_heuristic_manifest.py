@@ -49,12 +49,47 @@ def parse_args(argv=None):
     parser.add_argument("--display-name", default=None)
     parser.add_argument("--seevo-iteration", required=True, type=int)
     parser.add_argument("--seevo-individual", required=True, type=int)
+    parser.add_argument(
+        "--experiment-protocol",
+        default=None,
+        help=(
+            "YAML/JSON file carrying the experiment protocol identity, "
+            "either nested under 'experiment_protocol' or as the "
+            "mapping itself. The identity is stamped into the record "
+            "AND checked against the manifest, which is what binds a "
+            "registered rule to one protocol. If omitted, the protocol "
+            "is taken from --config when that file declares one."
+        ),
+    )
+    parser.add_argument(
+        "--allow-missing-protocol",
+        action="store_true",
+        help=(
+            "Register a rule with no protocol identity. Only for "
+            "legacy protocol-less manifests; the resulting manifest "
+            "lineage cannot be bound to a protocol afterwards."
+        ),
+    )
     return parser.parse_args(argv)
+
+
+def _load_protocol_identity(path) -> dict:
+    """从独立文件读取实验协议身份，接受嵌套或裸映射两种写法。"""
+    payload = _load_yaml(path)
+    nested = payload.get("experiment_protocol")
+    if isinstance(nested, dict):
+        return nested
+    return payload
 
 
 def main(argv=None) -> int:
     args = parse_args(argv)
     manifest_path = Path(args.manifest).resolve()
+    expected_protocol = (
+        _load_protocol_identity(args.experiment_protocol)
+        if args.experiment_protocol
+        else None
+    )
     record = build_admission_record(
         heuristic_id=args.heuristic_id,
         display_name=args.display_name,
@@ -64,8 +99,25 @@ def main(argv=None) -> int:
         manifest_path=manifest_path,
         seevo_iteration=args.seevo_iteration,
         seevo_individual=args.seevo_individual,
+        experiment_protocol=expected_protocol,
     )
-    append_admission_record(manifest_path, record)
+    # 没有显式协议、评价配置里也没有时，记录会不带任何协议身份，并进一步建出
+    # 同样不带协议的 manifest 谱系。这种谱系事后无法再绑定协议，因此必须显式
+    # 声明才允许，不能静默发生。
+    if (
+        record.get("experiment_protocol") is None
+        and not args.allow_missing_protocol
+    ):
+        raise SystemExit(
+            "refusing to register a heuristic without an experiment "
+            "protocol identity: pass --experiment-protocol, or declare "
+            "it in --config, or pass --allow-missing-protocol"
+        )
+    append_admission_record(
+        manifest_path,
+        record,
+        expected_protocol_identity=expected_protocol,
+    )
     print(
         f"heuristic_id={record['heuristic_id']} "
         f"version={record['version']} "

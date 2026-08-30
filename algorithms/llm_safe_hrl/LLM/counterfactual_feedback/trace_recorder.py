@@ -194,7 +194,13 @@ class TraceRecorder:
         if max(release_counts, default=0) > min(release_counts, default=0):
             reasons.append("successor_release_difference")
 
-        selected_vm, vm_details = environment.select_vm_deterministic(selected)
+        # Same candidate set as the evaluator: idle VMs only, host chosen first.
+        _selected_host, _selected_vm, vm_details = (
+            environment.select_host_then_vm_deterministic(
+                selected,
+                candidate_vm_ids=environment.idle_feasible_vm_ids(selected),
+            )
+        )
         current_risk = float(vm_details.get("deadline_violation", 0.0))
         if (
             self._previous_selected_risk is not None

@@ -787,8 +787,18 @@ def load_manager_heuristic_library(
     *,
     runtime_context: Mapping | None = None,
     expected_protocol_identity=None,
+    include_traditional: bool = True,
 ) -> tuple[ManagerHeuristic, ...]:
-    """加载五个传统规则及 manifest 中所有稳定 LLM 动作槽。"""
+    """加载五个传统规则及 manifest 中所有稳定 LLM 动作槽。
+
+    ``include_traditional=False`` 时完全不构造 FCFS/SJF/MCF/HUR/EDF 动作槽，
+    Manager 的动作空间只剩 manifest 中的 LLM 规则。这里选择直接移除而不是把
+    传统槽标记为不可用：动作维度必须真实反映可选集合，留下永远被 mask 掉的
+    空槽既浪费网络输出，也让任何绕过 mask 的代码路径重新选到传统规则。
+
+    动作集合的变化会经由 ``heuristic_action_schema_version`` 体现，因而与旧
+    checkpoint 的不兼容是显式失败而不是静默错位。
+    """
     path = Path(manifest_path).resolve()
     if not path.is_file():
         raise FileNotFoundError(
@@ -881,8 +891,10 @@ def load_manager_heuristic_library(
             raise ValueError(
                 f"{label} must be a relative child directory"
             )
-    heuristics = _traditional_heuristics(
-        manifest_admission_scope
+    heuristics = (
+        _traditional_heuristics(manifest_admission_scope)
+        if include_traditional
+        else []
     )
     heuristics.extend(
         _llm_heuristic(
@@ -896,6 +908,13 @@ def load_manager_heuristic_library(
         )
         for entry in entries
     )
+    if not heuristics:
+        # 只可能发生在 include_traditional=False 且 manifest 没有 LLM 规则时。
+        # 单独报错，避免退化成下游“动作空间为空”这类难以定位的现象。
+        raise ValueError(
+            "LLM-only Manager heuristic library is empty: "
+            f"{path} declares no LLM rule"
+        )
     identifiers = [
         heuristic.heuristic_id for heuristic in heuristics
     ]

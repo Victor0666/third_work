@@ -367,6 +367,7 @@ class HrlHeftEnv(gym.Env):
         safe_rl_state_recent_record_window=100,
         manager_mode=LEGACY_RULE_WEIGHT_MODE,
         manager_heuristic_library_path=None,
+        manager_heuristic_llm_only=False,
         experiment_protocol_identity=None,
         manager_heuristic_recent_window=20,
         scenario_code=None,
@@ -422,6 +423,11 @@ class HrlHeftEnv(gym.Env):
             None
             if manager_heuristic_library_path is None
             else str(manager_heuristic_library_path)
+        )
+        # 为真时 Manager 动作空间只含 manifest 中的 LLM 规则，
+        # 五个传统规则连动作槽都不会构造。
+        self.manager_heuristic_llm_only = bool(
+            manager_heuristic_llm_only
         )
         self.experiment_protocol_identity = (
             None
@@ -725,14 +731,24 @@ class HrlHeftEnv(gym.Env):
                     expected_protocol_identity=(
                         self.experiment_protocol_identity
                     ),
+                    include_traditional=(
+                        not self.manager_heuristic_llm_only
+                    ),
                 )
             )
             availability = heuristic_availability_mask(
                 self.manager_heuristics
             )
             if not np.any(availability > 0.5):
+                # LLM-only 模式下传统规则不再兜底，全部 LLM 规则被拒即无动作可选。
                 raise ValueError(
                     "heuristic selection has no admitted Manager action"
+                    + (
+                        " (llm_only mode: every LLM rule was rejected "
+                        "by admission)"
+                        if self.manager_heuristic_llm_only
+                        else ""
+                    )
                 )
             self.selected_heuristic_index = int(
                 np.flatnonzero(availability > 0.5)[0]
@@ -1564,9 +1580,14 @@ class HrlHeftEnv(gym.Env):
     def get_feasible_vms(self, task):
         """返回处理能力和带宽均为有限正数的稳定 VM ID 列表。
 
-        三角模糊处理能力/带宽的 lower、modal、upper 三点必须全部合法。正在忙的
-        VM 仍然“可行”，其等待代价由确定性选择器的 queue_time 显式计入；若把
-        busy VM 直接排除，调度结果会依赖事件调用时机并失去全局可比性。
+        三角模糊处理能力/带宽的 lower、modal、upper 三点必须全部合法。本方法只
+        回答“这台 VM 能不能跑这个任务”，不回答“现在能不能派上去”：正在忙的 VM
+        仍然可行，其等待代价由确定性选择器的 queue_time 显式计入。
+
+        是否允许排到 busy VM 后面由调用方决定，两种口径都存在：Safe-HRL 运行时
+        接受排队；CEWS 评价器与反事实估计器不接受，它们用 ``idle_feasible_vm_ids``
+        把结果收窄到当前空闲的子集，以与各比较算法的 ``global_vm_action_mask``
+        保持同一口径。
         """
         # _task_id 同时验证整数 ID 或 Task 对象可映射到当前环境任务。
         self._task_id(task)
@@ -3435,44 +3456,38 @@ class HrlHeftEnv(gym.Env):
             "score_direction": "lower_is_higher_priority",
         }
 
-    def select_vm_deterministic(
-        self,
-        task,
-        candidate_vm_ids=None,
-    ):
-        """对已选任务使用固定 deadline/energy 策略选择一个可行 VM。
+    def idle_feasible_vm_ids(self, task):
+        """返回当前时刻既可行又空闲的稳定 VM ID 列表。
 
-        每台 VM 都计算 exec_time、comm_time、queue_time、predicted_finish_time、
-        incremental_energy 和 deadline_violation。排序规则为：
+        判据与比较算法使用的 ``global_vm_action_mask`` 完全一致：VM 必须通过
+        ``get_feasible_vms`` 的处理能力/带宽校验，且 ``vm_available_at`` 不晚于
+        当前时刻。该方法只读，不修改任何环境状态，也不选择任务、Host 或 VM。
 
-        modal 模式：
-        1. 若存在按时 VM：最小增量能耗 -> 最早完成 -> 最小 vm_id；
-        2. 若全部延期：最小违反量 -> 最小增量能耗 -> 最早完成 -> 最小 vm_id。
-
-        fuzzy 模式把“按时”改为 eta 风险完成时刻满足子截止期，并使用风险调整
-        模糊边际能耗。两种模式均由环境统一执行，LLM 不能改变 VM 选择口径。
-
-        最后使用 vm_id 可保证完全相同代价下结果仍确定，不依赖字典遍历偶然顺序。
-        ``candidate_vm_ids`` 是向后兼容的可选候选子集，仅供 safety shield 在
-        当前硬合法（空闲）VM 中调用同一固定规则；省略时 CEWS 原接口和语义不变。
+        本接口供不允许 busy-VM 排队的调用方使用（CEWS 评价器、反事实估计器），
+        避免它们各自重复实现“空闲且可行”的判定而产生口径漂移。
         """
         task_id = self._task_id(task)
-        feasible_vms = self.get_feasible_vms(task_id)
-        if candidate_vm_ids is not None:
-            allowed = {
-                int(vm_id) for vm_id in candidate_vm_ids
-            }
-            feasible_vms = [
-                vm_id for vm_id in feasible_vms
-                if int(vm_id) in allowed
-            ]
-        if not feasible_vms:
-            raise NoFeasibleVMError(f"Task {task_id} has no feasible VM.")
+        index_by_vm_id = {
+            int(vm_id): index
+            for index, vm_id in enumerate(self.vm_ids)
+        }
+        now = float(self.current_time)
+        return [
+            int(vm_id)
+            for vm_id in self.get_feasible_vms(task_id)
+            if float(self.vm_available_at[index_by_vm_id[int(vm_id)]])
+            <= now + 1e-9
+        ]
 
-        deadline = self._task_deadline(task_id)
+    def _score_vm_candidates(self, task_id, vm_ids, deadline):
+        """为给定 VM 集合计算固定规则排序所需的全部预测量。
+
+        由 ``select_vm_deterministic`` 与 ``select_host_then_vm_deterministic``
+        共用，保证两者的候选打分逐位相同。本方法只预测，不修改环境状态。
+        """
         # 保存完整预测详情，既供排序使用，也便于测试和实验诊断。
         candidates = []
-        for vm_id in feasible_vms:
+        for vm_id in vm_ids:
             _, vm_index = self._vm_id_and_index(vm_id)
             exec_time = self.estimate_exec_time(task_id, vm_id)
             comm_time = self.estimate_comm_time(task_id, vm_id)
@@ -3512,8 +3527,15 @@ class HrlHeftEnv(gym.Env):
                     max(0.0, predicted_finish_time - deadline)
                 )
             candidates.append(candidate)
+        return candidates
 
-        # 先分组再排序，可确保“按时优先”是硬规则，而不是一个可被能耗抵消的权重。
+    def _fixed_rule_group_and_keys(self, candidates, deadline):
+        """执行“按时优先”硬分组，并返回该组对应的固定排序键顺序。
+
+        先分组再排序，可确保“按时优先”是硬规则，而不是一个可被能耗抵消的权重。
+        分组必须在全部候选上一次性完成：若按 Host 分别分组，某台 Host 内全部
+        延期而全局仍存在按时 VM 时，结果会与全局固定规则不一致。
+        """
         if getattr(self, "fuzzy_enabled", False):
             on_time = [
                 item
@@ -3521,48 +3543,146 @@ class HrlHeftEnv(gym.Env):
                 if item["fuzzy_finish_risk"] <= deadline
             ]
             if on_time:
-                selected = select_vm_candidate_by_fixed_rule_order(
-                    on_time,
-                    (
-                        "fuzzy_incremental_energy_score",
-                        "fuzzy_finish_risk",
-                        "predicted_finish_time",
-                    ),
+                return on_time, (
+                    "fuzzy_incremental_energy_score",
+                    "fuzzy_finish_risk",
+                    "predicted_finish_time",
                 )
-            else:
-                selected = select_vm_candidate_by_fixed_rule_order(
-                    candidates,
-                    (
-                        "deadline_violation",
-                        "fuzzy_incremental_energy_score",
-                        "fuzzy_finish_risk",
-                        "predicted_finish_time",
-                    ),
-                )
-        else:
-            on_time = [
-                item
-                for item in candidates
-                if item["predicted_finish_time"] <= deadline
+            return candidates, (
+                "deadline_violation",
+                "fuzzy_incremental_energy_score",
+                "fuzzy_finish_risk",
+                "predicted_finish_time",
+            )
+        on_time = [
+            item
+            for item in candidates
+            if item["predicted_finish_time"] <= deadline
+        ]
+        if on_time:
+            return on_time, (
+                "incremental_energy",
+                "predicted_finish_time",
+            )
+        return candidates, (
+            "deadline_violation",
+            "incremental_energy",
+            "predicted_finish_time",
+        )
+
+    def _fixed_rule_candidate_set(self, task, candidate_vm_ids):
+        """解析候选 VM、打分并完成全局分组，返回 ``(存活候选, 排序键)``。
+
+        ``select_vm_deterministic`` 与 ``select_host_then_vm_deterministic``
+        共用本方法，因而两者面对的候选集合、打分与分组完全一致。
+        """
+        task_id = self._task_id(task)
+        feasible_vms = self.get_feasible_vms(task_id)
+        if candidate_vm_ids is not None:
+            allowed = {
+                int(vm_id) for vm_id in candidate_vm_ids
+            }
+            feasible_vms = [
+                vm_id for vm_id in feasible_vms
+                if int(vm_id) in allowed
             ]
-            if on_time:
-                selected = select_vm_candidate_by_fixed_rule_order(
-                    on_time,
-                    (
-                        "incremental_energy",
-                        "predicted_finish_time",
-                    ),
-                )
-            else:
-                selected = select_vm_candidate_by_fixed_rule_order(
-                    candidates,
-                    (
-                        "deadline_violation",
-                        "incremental_energy",
-                        "predicted_finish_time",
-                    ),
-                )
+        if not feasible_vms:
+            raise NoFeasibleVMError(f"Task {task_id} has no feasible VM.")
+
+        deadline = self._task_deadline(task_id)
+        candidates = self._score_vm_candidates(
+            task_id,
+            feasible_vms,
+            deadline,
+        )
+        return self._fixed_rule_group_and_keys(candidates, deadline)
+
+    def select_vm_deterministic(
+        self,
+        task,
+        candidate_vm_ids=None,
+    ):
+        """对已选任务使用固定 deadline/energy 策略选择一个可行 VM。
+
+        每台 VM 都计算 exec_time、comm_time、queue_time、predicted_finish_time、
+        incremental_energy 和 deadline_violation。排序规则为：
+
+        modal 模式：
+        1. 若存在按时 VM：最小增量能耗 -> 最早完成 -> 最小 vm_id；
+        2. 若全部延期：最小违反量 -> 最小增量能耗 -> 最早完成 -> 最小 vm_id。
+
+        fuzzy 模式把“按时”改为 eta 风险完成时刻满足子截止期，并使用风险调整
+        模糊边际能耗。两种模式均由环境统一执行，LLM 不能改变 VM 选择口径。
+
+        最后使用 vm_id 可保证完全相同代价下结果仍确定，不依赖字典遍历偶然顺序。
+        ``candidate_vm_ids`` 是向后兼容的可选候选子集，仅供 safety shield 在
+        当前硬合法（空闲）VM 中调用同一固定规则；省略时 CEWS 原接口和语义不变。
+        """
+        survivors, order_keys = self._fixed_rule_candidate_set(
+            task,
+            candidate_vm_ids,
+        )
+        selected = select_vm_candidate_by_fixed_rule_order(
+            survivors,
+            order_keys,
+        )
         return int(selected["vm_id"]), dict(selected)
+
+    def select_host_then_vm_deterministic(
+        self,
+        task,
+        candidate_vm_ids=None,
+    ):
+        """按 Manager -> Host -> VM 的层次形态执行同一条固定规则。
+
+        返回 ``(host_id, vm_id, details)``。候选打分、按时/延期分组与排序键
+        全部复用 ``select_vm_deterministic`` 的实现，随后把存活候选按 Host
+        分桶：先在每台 Host 内选出最优 VM，再在这些 Host 最优之间选出胜者。
+
+        因为固定排序键以 ``vm_id`` 兜底而构成全序，而全序上的 argmin 对划分
+        可分解（``min`` 于并集等于各子集 ``min`` 的 ``min``），本方法返回的
+        VM 与 ``select_vm_deterministic`` 在相同候选集合下逐位相同。层次形态
+        只让 Host 这一层显式化——边际能耗本就定义在 Host 的功率曲线上——而不
+        改变任何数值结果，也不引入新的 Host 级排序准则。
+
+        没有空闲/可行 VM 的 Host 不会形成分桶，因而天然被排除在 Host 选择之外。
+        """
+        survivors, order_keys = self._fixed_rule_candidate_set(
+            task,
+            candidate_vm_ids,
+        )
+
+        candidates_by_host = {}
+        for item in survivors:
+            host_id = int(self.vms[int(item["vm_id"])].host_id)
+            candidates_by_host.setdefault(host_id, []).append(item)
+
+        host_best = []
+        for host_id in sorted(candidates_by_host):
+            best = dict(
+                select_vm_candidate_by_fixed_rule_order(
+                    candidates_by_host[host_id],
+                    order_keys,
+                )
+            )
+            best["host_id"] = int(host_id)
+            best["host_candidate_count"] = len(
+                candidates_by_host[host_id]
+            )
+            host_best.append(best)
+
+        selected = dict(
+            select_vm_candidate_by_fixed_rule_order(
+                host_best,
+                order_keys,
+            )
+        )
+        selected["host_count"] = len(host_best)
+        return (
+            int(selected["host_id"]),
+            int(selected["vm_id"]),
+            selected,
+        )
 
     def assign_task(self, task, vm):
         """把一个 ready task 真正分配给可行 VM，并返回分配前预测详情。

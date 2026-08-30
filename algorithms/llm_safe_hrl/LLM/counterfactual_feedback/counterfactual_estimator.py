@@ -142,7 +142,13 @@ class LocalCounterfactualEstimator:
         self.resource_config_hash = str(resource_config_hash)
 
     def estimate_outcome(self, environment, task_id: int) -> CounterfactualOutcome:
-        vm_id, details = environment.select_vm_deterministic(task_id)
+        # The counterfactual must use the same candidate set as the real
+        # decision: idle VMs only, chosen host first. Ranking over busy VMs
+        # would report an assignment the evaluator can never make.
+        host_id, vm_id, details = environment.select_host_then_vm_deterministic(
+            task_id,
+            candidate_vm_ids=environment.idle_feasible_vm_ids(task_id),
+        )
         workflow_id = int(environment.task_meta[task_id][0])
         deadline = float(environment.workflows[workflow_id].deadline)
         if hasattr(environment, "predict_task_vm_action_risk"):
@@ -177,7 +183,6 @@ class LocalCounterfactualEstimator:
             critical_ids = set()
             evidence_quality = "medium"
         start_time = modal - float(details["exec_time"]) - float(details["comm_time"])
-        host_id = int(environment.vms[vm_id].host_id)
         before, after = _host_load(environment, host_id, vm_id, start_time)
         released, critical_released = _successor_evidence(environment, task_id, critical_ids)
         fuzzy_energy = float(

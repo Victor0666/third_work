@@ -17,6 +17,9 @@ from unittest import mock
 import numpy as np
 from omegaconf import OmegaConf
 
+from algorithms.llm_safe_hrl.base.heuristic_admission import (
+    CEWS_EVALUATOR_PROTOCOL_VERSION,
+)
 from algorithms.llm_safe_hrl.paths import LLM_ROOT
 from algorithms.llm_safe_hrl.scenario_registry import (
     apply_scenario_to_problem_config,
@@ -1410,7 +1413,9 @@ class TinyEndToEndTests(unittest.TestCase):
                         "evaluation_config_sha256": "d" * 64,
                         "interface_valid": True,
                         "function_name": "get_task_priority_v2",
-                        "evaluator_protocol_version": 2,
+                        "evaluator_protocol_version": (
+                            CEWS_EVALUATOR_PROTOCOL_VERSION
+                        ),
                         "scenario_id": scenario_id,
                         "structure_hash": candidate.structure_hash,
                         "parameter_schema_hash": candidate.parameter_schema.schema_hash,
