@@ -135,8 +135,9 @@ def main(argv=None):
         action="store_true",
         help=(
             "Remove the five built-in FCFS/SJF/MCF/HUR/EDF action "
-            "slots so the Manager can only select admitted SeEvo LLM "
-            "rules. Requires --safe-rl-heuristic-manager. Default is "
+            "slots so the Manager can only select available SeEvo LLM "
+            "rules from safe-admission or Top-K manifests. Requires "
+            "--safe-rl-heuristic-manager. Default is "
             "off. The Manager action dimension and heuristic action "
             "schema version both change, so runs with and without "
             "this flag get separate output directories and are not "

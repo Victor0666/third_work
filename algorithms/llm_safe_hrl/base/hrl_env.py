@@ -740,12 +740,13 @@ class HrlHeftEnv(gym.Env):
                 self.manager_heuristics
             )
             if not np.any(availability > 0.5):
-                # LLM-only 模式下传统规则不再兜底，全部 LLM 规则被拒即无动作可选。
+                # LLM-only 模式下传统规则不再兜底；安全准入和 Top-K
+                # 技术验证均可能令某个 LLM 动作不可用。
                 raise ValueError(
-                    "heuristic selection has no admitted Manager action"
+                    "heuristic selection has no available Manager action"
                     + (
-                        " (llm_only mode: every LLM rule was rejected "
-                        "by admission)"
+                        " (llm_only mode: every LLM rule failed "
+                        "admission or Top-K artifact validation)"
                         if self.manager_heuristic_llm_only
                         else ""
                     )

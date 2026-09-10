@@ -35,6 +35,7 @@ from base.heuristic_admission import (
     ADMISSION_SCOPE_MODE,
     ADMISSION_MANIFEST_SCHEMA_VERSION,
     ADMISSION_RECORD_SCHEMA_VERSION,
+    CEWS_EVALUATOR_PROTOCOL_VERSION,
     RESOURCE_DOMAIN_ALLOWED_SCENARIOS,
     admission_policy_from_config,
     canonical_json_sha256,
@@ -43,6 +44,13 @@ from base.heuristic_admission import (
     normalize_admission_scope,
     parse_evaluation_report,
     record_sha256,
+)
+from base.topk_schema import (
+    SAFE_ADMISSION_MODE,
+    TOPK_MANIFEST_SCHEMA_VERSION,
+    TOPK_RECORD_SCHEMA_VERSION,
+    TOPK_SELECTION_MODE,
+    TOPK_SELECTION_POLICY_VERSION,
 )
 
 LEGACY_RULE_WEIGHT_MODE = "legacy_rule_weight_mode"
@@ -139,6 +147,7 @@ class ManagerHeuristic:
     version: str
     admitted: bool
     availability_reason: str
+    selected_for_manager: bool = False
     traditional_feature_index: int | None = None
     priority_rule: Callable | None = field(
         default=None,
@@ -153,7 +162,9 @@ class ManagerHeuristic:
 
     @property
     def available(self) -> bool:
-        return bool(self.admitted)
+        return bool(
+            self.admitted or self.selected_for_manager
+        )
 
     @property
     def is_llm_rule(self) -> bool:
@@ -169,6 +180,21 @@ class ManagerHeuristic:
             ),
             "rule_version": self.version,
             "admitted": bool(self.admitted),
+            "selected_for_manager": bool(
+                self.selected_for_manager
+            ),
+            "available": bool(self.available),
+            "availability_basis": self.metadata.get(
+                "availability_basis",
+                "safe_admission" if self.admitted else "",
+            ),
+            "selection_rank": self.metadata.get(
+                "selection_rank"
+            ),
+            "selection_status": self.metadata.get(
+                "selection_status",
+                "",
+            ),
             "availability_reason": self.availability_reason,
             "traditional_feature_index": (
                 self.traditional_feature_index
@@ -583,6 +609,240 @@ def _admission_reasons(
     return list(dict.fromkeys(reasons))
 
 
+def _topk_selection_key(evaluation: Mapping) -> tuple:
+    """Return the deterministic feasibility-first key used by Top-K export."""
+    numeric_fields = (
+        "max_deadline_violation_rate_across_seeds",
+        "max_fuzzy_lateness",
+        "fuzzy_total_energy_score",
+        "objective_cv_across_seeds",
+    )
+    values = []
+    for field in numeric_fields:
+        value = evaluation.get(field)
+        if (
+            isinstance(value, bool)
+            or not isinstance(
+                value,
+                (int, float, np.integer, np.floating),
+            )
+            or not np.isfinite(float(value))
+        ):
+            raise ValueError(f"invalid_evaluation_metric:{field}")
+        values.append(float(value))
+    source_hash = str(
+        evaluation.get("candidate_sha256", "")
+    ).strip().lower()
+    if len(source_hash) != 64:
+        raise ValueError("invalid_evaluation_candidate_hash")
+    return (
+        0 if bool(evaluation.get("constraint_feasible", False)) else 1,
+        *values,
+        source_hash,
+    )
+
+
+def _topk_reasons(
+    entry: Mapping,
+    runtime_context: Mapping | None,
+    manifest_admission_scope: Mapping,
+    manifest_protocol: Mapping,
+) -> list[str]:
+    """Validate Top-K provenance without applying admission thresholds."""
+    evaluation = entry.get("evaluation")
+    if not isinstance(evaluation, Mapping):
+        return ["missing_evaluation"]
+    reasons = _admission_scope_reasons(
+        entry,
+        runtime_context,
+        manifest_admission_scope,
+    )
+    reasons.extend(
+        _admission_context_reasons(
+            entry,
+            runtime_context,
+        )
+    )
+    if (
+        entry.get("record_schema_version")
+        != TOPK_RECORD_SCHEMA_VERSION
+    ):
+        reasons.append("topk_record_schema_mismatch")
+    if entry.get("source_kind") != "seevo_generated":
+        reasons.append("untrusted_source_kind")
+    if not str(entry.get("source_file", "")).strip():
+        reasons.append("missing_source_file")
+    source_hash = str(
+        entry.get("source_hash", "")
+    ).strip().lower()
+    if len(source_hash) != 64:
+        reasons.append("invalid_source_hash")
+    iteration = entry.get("seevo_iteration")
+    if (
+        isinstance(iteration, bool)
+        or not isinstance(iteration, (int, np.integer))
+        or int(iteration) < 0
+    ):
+        reasons.append("invalid_seevo_iteration")
+    if entry.get("function_name") != "get_task_priority_v2":
+        reasons.append("invalid_priority_function_name")
+    if entry.get("record_sha256") != record_sha256(entry):
+        reasons.append("topk_record_hash_mismatch")
+    if bool(entry.get("admitted", False)):
+        reasons.append("topk_record_must_not_claim_admission")
+    if entry.get("admission_status") != "not_applied":
+        reasons.append("topk_admission_status_mismatch")
+    if bool(entry.get("passed_final_admission", False)):
+        reasons.append("topk_final_admission_flag_mismatch")
+    if not bool(entry.get("selected_for_manager", False)):
+        reasons.append("topk_record_not_selected")
+    if entry.get("selection_status") != "selected":
+        reasons.append("topk_selection_status_mismatch")
+    rank = entry.get("selection_rank")
+    if (
+        isinstance(rank, bool)
+        or not isinstance(rank, (int, np.integer))
+        or int(rank) < 1
+    ):
+        reasons.append("invalid_selection_rank")
+
+    if (
+        str(entry.get("evaluation_result_sha256", ""))
+        != canonical_json_sha256(evaluation)
+    ):
+        reasons.append("evaluation_result_hash_mismatch")
+    if not bool(evaluation.get("interface_valid", False)):
+        reasons.append("candidate_interface_invalid")
+    if not bool(
+        evaluation.get("all_evaluation_seeds_completed", False)
+    ):
+        reasons.append("evaluation_seeds_incomplete")
+    if (
+        evaluation.get("evaluator_protocol_version")
+        != CEWS_EVALUATOR_PROTOCOL_VERSION
+    ):
+        reasons.append("evaluator_protocol_version_mismatch")
+
+    try:
+        expected_key = _topk_selection_key(evaluation)
+        persisted_key = entry.get("selection_key")
+        if (
+            not isinstance(persisted_key, list)
+            or not _context_values_match(
+                list(expected_key),
+                persisted_key,
+            )
+        ):
+            reasons.append("topk_selection_key_mismatch")
+    except ValueError as exc:
+        reasons.append(str(exc))
+
+    seeds = evaluation.get("seeds")
+    if (
+        not isinstance(seeds, list)
+        or not seeds
+        or any(
+            isinstance(seed, bool)
+            or not isinstance(seed, (int, np.integer))
+            for seed in seeds
+        )
+    ):
+        reasons.append("missing_evaluation_seeds")
+        seeds = []
+    else:
+        expected_seeds = {
+            int(seed)
+            for seed in manifest_protocol.get(
+                "llm_train_seeds",
+                [],
+            )
+        }
+        actual_seeds = {int(seed) for seed in seeds}
+        final_test_seeds = {
+            int(seed)
+            for seed in manifest_protocol.get(
+                "final_test_seeds",
+                [],
+            )
+        }
+        if expected_seeds and actual_seeds != expected_seeds:
+            reasons.append("topk_evaluation_seed_set_mismatch")
+        if actual_seeds.intersection(final_test_seeds):
+            reasons.append("final_test_seed_leakage")
+
+    scenario_id = str(
+        evaluation.get("scenario_id", "")
+    ).strip().upper()
+    training_scenarios = {
+        str(value).strip().upper()
+        for value in manifest_protocol.get(
+            "training_scenarios",
+            [],
+        )
+    }
+    if not scenario_id or scenario_id not in training_scenarios:
+        reasons.append("topk_evaluation_scenario_mismatch")
+
+    optimization_field_map = {
+        "structure_hash": "structure_hash",
+        "parameter_schema_hash": "parameter_schema_hash",
+        "best_parameter_hash": "best_parameter_hash",
+        "optimizer_config_hash": "optimizer_config_hash",
+        "optimizer_seed": "optimizer_seed",
+        "frozen_rule_hash": "frozen_rule_hash",
+        "parameter_diagnostics_hash": "parameter_diagnostics_hash",
+        "parameter_training_seeds": "training_seeds",
+        "parameter_validation_seeds": "validation_seeds",
+    }
+    if bool(entry.get("optimization_metadata_present", False)):
+        for record_field, evaluation_field in optimization_field_map.items():
+            if not _context_values_match(
+                entry.get(record_field),
+                evaluation.get(evaluation_field),
+            ):
+                reasons.append(
+                    f"record_optimization_field_mismatch:{record_field}"
+                )
+        if str(entry.get("frozen_rule_hash", "")).lower() != source_hash:
+            reasons.append("frozen_rule_hash_mismatch")
+    else:
+        reasons.append("missing_optimization_metadata")
+
+    flattened_fields = {
+        "evaluation_seeds": evaluation.get("seeds"),
+        "fuzzy_energy_mean": evaluation.get(
+            "fuzzy_total_energy_mean"
+        ),
+        "fuzzy_energy_std": evaluation.get(
+            "fuzzy_total_energy_std"
+        ),
+        "fuzzy_energy_score": evaluation.get(
+            "fuzzy_total_energy_score"
+        ),
+        "deadline_violation_rate": evaluation.get(
+            "max_deadline_violation_rate_across_seeds"
+        ),
+        "max_fuzzy_lateness": evaluation.get(
+            "max_fuzzy_lateness"
+        ),
+        "feasible_seed_rate": evaluation.get(
+            "feasible_seed_rate"
+        ),
+        "objective_cv_across_seeds": evaluation.get(
+            "objective_cv_across_seeds"
+        ),
+    }
+    reasons.extend(
+        f"record_evaluation_field_mismatch:{field}"
+        for field, expected in flattened_fields.items()
+        if not _context_values_match(
+            entry.get(field),
+            expected,
+        )
+    )
+    return list(dict.fromkeys(reasons))
+
+
 def _load_priority_rule(path: Path, function_name: str):
     digest = hashlib.sha256(
         str(path).encode("utf-8")
@@ -665,6 +925,8 @@ def _llm_heuristic(
     trusted_report_root: str,
     manifest_admission_policy: Mapping,
     manifest_admission_scope: Mapping,
+    manifest_protocol: Mapping,
+    selection_mode: str,
 ) -> ManagerHeuristic:
     heuristic_id = str(entry.get("heuristic_id", "")).strip()
     version = str(entry.get("version", "")).strip()
@@ -678,12 +940,20 @@ def _llm_heuristic(
             f"LLM heuristic {heuristic_id} has no version"
         )
 
-    reasons = _admission_reasons(
-        entry,
-        runtime_context,
-        manifest_admission_policy,
-        manifest_admission_scope,
-    )
+    if selection_mode == TOPK_SELECTION_MODE:
+        reasons = _topk_reasons(
+            entry,
+            runtime_context,
+            manifest_admission_scope,
+            manifest_protocol,
+        )
+    else:
+        reasons = _admission_reasons(
+            entry,
+            runtime_context,
+            manifest_admission_policy,
+            manifest_admission_scope,
+        )
     function = None
     candidate_path = None
     if not reasons:
@@ -760,8 +1030,19 @@ def _llm_heuristic(
                 f"{exc}"
             )
 
-    admitted = not reasons
+    validated = not reasons
+    is_topk = selection_mode == TOPK_SELECTION_MODE
+    admitted = validated and not is_topk
+    selected_for_manager = validated and is_topk
     metadata = dict(entry)
+    metadata["availability_basis"] = (
+        TOPK_SELECTION_MODE
+        if is_topk
+        else SAFE_ADMISSION_MODE
+    )
+    metadata["selected_for_manager"] = bool(
+        selected_for_manager
+    )
     if candidate_path is not None:
         metadata["resolved_source_file"] = str(
             candidate_path
@@ -772,10 +1053,15 @@ def _llm_heuristic(
         source="seevo_llm",
         version=version,
         admitted=admitted,
+        selected_for_manager=selected_for_manager,
         availability_reason=(
-            "safe_admission_passed"
-            if admitted
-            else ";".join(reasons)
+            "top_k_selected"
+            if selected_for_manager
+            else (
+                "safe_admission_passed"
+                if admitted
+                else ";".join(reasons)
+            )
         ),
         priority_rule=function,
         metadata=MappingProxyType(metadata),
@@ -810,12 +1096,31 @@ def load_manager_heuristic_library(
         raise ValueError(
             "safe heuristic manifest must be a JSON object"
         )
-    if (
-        payload.get("schema_version")
-        != HEURISTIC_LIBRARY_SCHEMA_VERSION
-    ):
+    selection_mode = str(
+        payload.get(
+            "selection_mode",
+            SAFE_ADMISSION_MODE,
+        )
+    ).strip().lower()
+    if selection_mode not in {
+        SAFE_ADMISSION_MODE,
+        TOPK_SELECTION_MODE,
+    }:
         raise ValueError(
-            "safe heuristic manifest schema mismatch"
+            "unsupported heuristic selection mode: "
+            f"{selection_mode}"
+        )
+    expected_schema = (
+        TOPK_MANIFEST_SCHEMA_VERSION
+        if selection_mode == TOPK_SELECTION_MODE
+        else HEURISTIC_LIBRARY_SCHEMA_VERSION
+    )
+    if payload.get("schema_version") != expected_schema:
+        raise ValueError(
+            "safe heuristic manifest schema mismatch: "
+            f"mode={selection_mode}, "
+            f"expected={expected_schema}, "
+            f"actual={payload.get('schema_version')}"
         )
     entries = payload.get("llm_rules")
     if not isinstance(entries, list):
@@ -845,6 +1150,13 @@ def load_manager_heuristic_library(
             manifest_protocol,
             artifact_name="safe heuristic manifest",
         )
+    if (
+        selection_mode == TOPK_SELECTION_MODE
+        and not isinstance(manifest_protocol, Mapping)
+    ):
+        raise ValueError(
+            "Top-K heuristic manifest is missing experiment_protocol"
+        )
     if manifest_protocol is not None:
         for entry in entries:
             if not isinstance(entry, Mapping):
@@ -871,9 +1183,85 @@ def load_manager_heuristic_library(
     trusted_report_root = str(
         payload.get("trusted_report_root", "")
     ).strip()
-    manifest_admission_policy = admission_policy_from_config(
-        {"admission": payload.get("admission_policy")}
-    )
+    if selection_mode == SAFE_ADMISSION_MODE:
+        manifest_admission_policy = admission_policy_from_config(
+            {"admission": payload.get("admission_policy")}
+        )
+    else:
+        manifest_admission_policy = {}
+        selection_policy = payload.get("selection_policy")
+        if not isinstance(selection_policy, Mapping):
+            raise ValueError(
+                "Top-K heuristic manifest is missing selection_policy"
+            )
+        if (
+            selection_policy.get("policy_version")
+            != TOPK_SELECTION_POLICY_VERSION
+        ):
+            raise ValueError(
+                "Top-K selection policy version mismatch"
+            )
+        expected_ranking_fields = [
+            "constraint_feasible",
+            "max_deadline_violation_rate_across_seeds",
+            "max_fuzzy_lateness",
+            "fuzzy_total_energy_score",
+            "objective_cv_across_seeds",
+            "candidate_sha256",
+        ]
+        if (
+            selection_policy.get("ranking_fields")
+            != expected_ranking_fields
+        ):
+            raise ValueError(
+                "Top-K ranking fields do not match the supported policy"
+            )
+        if (
+            selection_policy.get("unique_structure_first")
+            is not True
+        ):
+            raise ValueError(
+                "Top-K policy must enable unique_structure_first"
+            )
+        if selection_policy.get("hard_energy_threshold") is not None:
+            raise ValueError(
+                "Top-K policy must not declare a hard energy threshold"
+            )
+        requested_k = int(
+            selection_policy.get("requested_k", 0)
+        )
+        selected_count = int(
+            selection_policy.get("selected_count", -1)
+        )
+        if requested_k < 1:
+            raise ValueError(
+                "Top-K requested_k must be positive"
+            )
+        if (
+            selected_count != requested_k
+            or selected_count != len(entries)
+        ):
+            raise ValueError(
+                "Top-K requested_k, selected_count and llm_rules "
+                "length must match"
+            )
+        ranks = [
+            int(entry.get("selection_rank", -1))
+            for entry in entries
+        ]
+        if ranks != list(range(1, len(entries) + 1)):
+            raise ValueError(
+                "Top-K selection ranks must be consecutive and "
+                "start from 1"
+            )
+        frozen_hashes = [
+            str(entry.get("frozen_rule_hash", "")).lower()
+            for entry in entries
+        ]
+        if len(set(frozen_hashes)) != len(frozen_hashes):
+            raise ValueError(
+                "Top-K frozen rule hashes must be unique"
+            )
     manifest_admission_scope = normalize_admission_scope(
         payload.get("admission_scope")
     )
@@ -905,6 +1293,12 @@ def load_manager_heuristic_library(
             trusted_report_root=trusted_report_root,
             manifest_admission_policy=manifest_admission_policy,
             manifest_admission_scope=manifest_admission_scope,
+            manifest_protocol=(
+                manifest_protocol
+                if isinstance(manifest_protocol, Mapping)
+                else {}
+            ),
+            selection_mode=selection_mode,
         )
         for entry in entries
     )
